@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#101827" />
+  <meta name="theme-color" content="#0f172a" />
   <meta name="description" content="Quản lý tài chính gia đình: thu chi, ngân sách, tài sản, đầu tư, mục tiêu và vay nợ." />
   <title>Tài chính gia đình</title>
   <link rel="manifest" href="/manifest.webmanifest" />
@@ -14,7 +14,7 @@
   <link rel="stylesheet" href="/budget-board.css" />
   <link rel="stylesheet" href="/pro-app.css" />
   <link rel="stylesheet" href="/analytics-investments.css" />
-  <link rel="stylesheet" href="/upgrade-v3.css" />
+  <link rel="stylesheet" href="/finance-v3.css" />
 </head>
 <body>
   <div id="unlock" class="unlock hidden">
@@ -37,11 +37,17 @@
     <aside class="sidebar">
       <div class="brand"><div class="brand-mark">₫</div><div><strong>Tài chính GD</strong><span id="familyNameSide">Gia đình</span></div></div>
       <nav id="nav" class="nav">
+        <span class="nav-label">Quản lý</span>
         <button data-view="dashboard" class="active">⌂ <span>Tổng quan</span></button>
         <button data-view="budget">▤ <span>Ngân sách</span></button>
-        <button data-view="assets">◫ <span>Tài sản</span></button>
+        <button data-view="transactions">↕ <span>Thu chi</span></button>
+        <span class="nav-label">Phân tích</span>
         <button data-view="analytics">◉ <span>Phân tích</span></button>
+        <span class="nav-label">Tài sản</span>
+        <button data-view="accounts">◫ <span>Tài sản</span></button>
+        <button data-view="investments">↗ <span>Đầu tư</span></button>
         <button data-view="goals">◎ <span>Mục tiêu & nợ</span></button>
+        <span class="nav-label">Hệ thống</span>
         <button data-view="settings">⚙ <span>Cài đặt</span></button>
       </nav>
       <div class="side-note"><span class="dot"></span><div>Dữ liệu riêng tư<br><small>Supabase + khóa gia đình</small></div></div>
@@ -56,7 +62,6 @@
             <input id="monthPicker" type="month" />
             <button class="btn month-step" type="button" onclick="changeMonth(1)" title="Tháng sau">›</button>
           </div>
-          <button id="settingsBtn" class="btn" type="button" data-v3-action="settings" title="Cài đặt">⚙</button>
           <button id="quickAdd" class="btn primary">＋ Giao dịch</button>
         </div>
       </header>
@@ -66,9 +71,9 @@
     <nav id="mobileNav" class="mobile-nav">
       <button data-view="dashboard" class="active"><b>⌂</b><span>Tổng quan</span></button>
       <button data-view="budget"><b>▤</b><span>Ngân sách</span></button>
-      <button data-view="assets"><b>◫</b><span>Tài sản</span></button>
-      <button data-view="analytics"><b>◉</b><span>Phân tích</span></button>
-      <button data-view="goals"><b>◎</b><span>Mục tiêu</span></button>
+      <button data-view="transactions"><b>↕</b><span>Thu chi</span></button>
+      <button data-view="accounts"><b>◫</b><span>Tài sản</span></button>
+      <button type="button" onclick="openMoreMenu()"><b>•••</b><span>Khác</span></button>
     </nav>
   </div>
 
@@ -82,7 +87,9 @@
   <script src="/pro-app.js" defer></script>
   <script src="/pro-guard.js" defer></script>
   <script src="/analytics-investments.js" defer></script>
-  <script src="/upgrade-v3.js" defer></script>
+  <script src="/v3-core.js" defer></script>
+  <script src="/v3-ui.js" defer></script>
+  <script src="/v3-forms.js" defer></script>
   <script src="/actions.js" defer></script>
 </body>
 </html>
