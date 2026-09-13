@@ -4,6 +4,8 @@
   V.legacy.transactions=V.legacy.transactions||window.transactions;
   V.legacy.goals=V.legacy.goals||window.goals;
   V.legacy.settings=V.legacy.settings||window.settings;
+  V.legacy.deleteLoan=V.legacy.deleteLoan||window.deleteLoan;
+  V.legacy.deleteGoal=V.legacy.deleteGoal||window.deleteGoal;
 
   function accountHasTransactions(id){return !!id&&(state.fullTransactions||[]).some(t=>t.account_id===id||t.transfer_account_id===id)}
   function openAccountV3(id=''){
@@ -39,6 +41,20 @@
     modal(`Thanh toán ${esc(target.name)}`,`<div class="form-grid"><div class="field"><label>Số tiền</label><input name="amount" type="number" min="1" max="${debt}" value="${debt}" required autofocus></div><div class="field"><label>Trả từ</label><select name="account_id" required>${options(sources,sources[0].id,x=>`${x.name} · ${x.currency}`)}</select></div><div class="field"><label>Ngày</label><input name="transaction_date" type="date" value="${today()}" required></div><div class="field full"><label>Ghi chú</label><input name="note" value="Thanh toán ${esc(target.name)}"></div></div>`,fd=>api('save_transaction',{transaction_type:'transfer',amount:fd.amount,currency:target.currency||state.base,fx_rate:1,transaction_date:fd.transaction_date,account_id:fd.account_id,transfer_account_id:targetId,category_id:null,note:fd.note||''}),'Thanh toán');
   }
 
+
+  async function deleteLoanV3(id){
+    const linked=(state.fullTransactions||[]).filter(t=>t.loan_id===id);
+    if(linked.length)return toast('Khoản này đã có lịch sử giao dịch nên không xóa trực tiếp. Hãy tất toán để giữ đúng lịch sử tài sản.',true);
+    if(!confirm('Xóa khoản vay/nợ chưa có giao dịch này?'))return;
+    try{await api('delete_loan',{id});await refresh();toast('Đã xóa khoản nợ')}catch(e){toast(e.message,true)}
+  }
+  async function deleteGoalV3(id){
+    const g=(state.goals||[]).find(x=>x.id===id),linked=(state.fullTransactions||[]).filter(t=>t.goal_id===id);
+    if(linked.length||n(g?.current_amount)>0)return toast('Mục tiêu này đã có dòng tiền. Hãy rút/chuyển tiền về trước; không xóa lịch sử trực tiếp.',true);
+    if(!confirm('Xóa mục tiêu chưa có dòng tiền này?'))return;
+    try{await api('delete_goal',{id});await refresh();toast('Đã xóa mục tiêu')}catch(e){toast(e.message,true)}
+  }
+
   function showInfo(title,body){const dlg=$('#modal'),mb=$('#modalBody'),form=$('#modalForm');mb.innerHTML=`<div class="modal-head"><h3>${esc(title)}</h3><button class="mini-btn" type="button" onclick="document.getElementById('modal').close()">✕</button></div><div class="modal-content">${body}</div><div class="modal-actions"><button class="btn primary" type="button" onclick="document.getElementById('modal').close()">Đóng</button></div>`;form.onsubmit=e=>e.preventDefault();dlg.showModal()}
   function showFormulaInfo(){showInfo('Công thức đang dùng',`<div class="v3-formulas"><p><b>Tài sản ròng</b> = tài sản trong tài khoản + khoản phải thu − dư âm tài khoản − khoản vay phải trả.</p><p><b>Dòng tiền</b> = thu nhập − chi tiêu. Chuyển khoản, tiết kiệm, đầu tư và trả gốc không bị tính là chi tiêu lần hai.</p><p><b>Tích lũy chuyển vào</b> = tiền ròng từ tiền mặt/ngân hàng sang tiết kiệm + đầu tư trong kỳ, chia cho thu nhập.</p><p><b>Khả năng chi trả</b> = tiền khả dụng / chi tiêu trung bình 3 tháng gần nhất.</p><p><b>Ngoại tệ</b>: JPY và VND không cộng 1:1. Tổng chính chỉ dùng tiền tệ cơ sở.</p></div>`)}
   function runFinanceDiagnostics(){const r=V.diagnostics();showInfo('Kiểm tra dữ liệu',`<div class="v3-diagnostics"><div class="${r.issues.length?'bad':'ok'}"><strong>${r.issues.length?`${r.issues.length} vấn đề cần xem`:'✓ Không thấy lỗi liên kết quan trọng'}</strong></div>${r.issues.length?`<ul>${r.issues.slice(0,20).map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}${r.notes.length?`<h4>Lưu ý</h4><ul>${r.notes.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}<p>Kiểm tra này không sửa dữ liệu tự động.</p></div>`)}
@@ -49,5 +65,5 @@
   function titleForV3(v){return({dashboard:['Tổng quan','Bức tranh tài chính của gia đình'],budget:['Ngân sách','Thu nhập · cố định · biến động · nợ'],transactions:['Thu chi','Lịch sử dòng tiền và chuyển tài sản'],analytics:['Phân tích','Tháng, năm và xu hướng tài sản'],accounts:['Tài sản','Tài khoản, tiết kiệm và tín dụng'],investments:['Đầu tư','Vốn, giá trị hiện tại và lãi/lỗ'],goals:['Mục tiêu & nợ','Mục tiêu tiết kiệm, phải thu và phải trả'],settings:['Cài đặt','Danh mục, dữ liệu và thiết bị']})[v]||['Tài chính gia đình','']}
   function renderV3(){if(!state.household)return;const views={dashboard:V.dashboardV3,budget:V.budgetV3,transactions:V.legacy.transactions,analytics:V.analyticsV3,accounts:V.accountsV3,investments:V.investmentsV3,goals:V.legacy.goals,settings:settingsV3},fn=views[state.view]||V.dashboardV3;$('#content').innerHTML=fn?fn():'';if(state.view==='settings')$('#householdForm')?.addEventListener('submit',saveHousehold)}
 
-  Object.assign(window,{financialPosition:V.financialPosition,dashboard:V.dashboardV3,analytics:V.analyticsV3,budget:V.budgetV3,accounts:V.accountsV3,investments:V.investmentsV3,settings:settingsV3,titleFor:titleForV3,render:renderV3,openAccount:openAccountV3,openTransaction:openTransactionV3,openLoan:openLoanV3,openLoanPayment:openLoanPaymentV3,openCreditPayment:openCreditPaymentV3,showFormulaInfo,runFinanceDiagnostics,openMoreMenu,navigateFromMore});
+  Object.assign(window,{financialPosition:V.financialPosition,dashboard:V.dashboardV3,analytics:V.analyticsV3,budget:V.budgetV3,accounts:V.accountsV3,investments:V.investmentsV3,settings:settingsV3,titleFor:titleForV3,render:renderV3,openAccount:openAccountV3,openTransaction:openTransactionV3,openLoan:openLoanV3,openLoanPayment:openLoanPaymentV3,openCreditPayment:openCreditPaymentV3,deleteLoan:deleteLoanV3,deleteGoal:deleteGoalV3,showFormulaInfo,runFinanceDiagnostics,openMoreMenu,navigateFromMore});
 })();

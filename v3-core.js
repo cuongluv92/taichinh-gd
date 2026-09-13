@@ -1,13 +1,21 @@
 (() => {
   const V = window.__V3 = window.__V3 || {};
+  V.localToday = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+  const localMonth=V.localToday().slice(0,7), utcMonth=new Date().toISOString().slice(0,7);
+  if(state.month===utcMonth && localMonth!==utcMonth) state.month=localMonth;
+  try{ window.today=V.localToday; }catch{}
   V.TRANSFER_TYPES = new Set(['transfer','goal_save','goal_withdraw']);
   V.POSITIVE_TYPES = new Set(['income','loan_borrow','loan_collect','loan_repayment','investment_gain']);
   V.NEGATIVE_TYPES = new Set(['expense','transfer','loan_lend','loan_out','loan_pay','goal_save','goal_withdraw','investment_loss']);
   V.monthKey = d => String(d || '').slice(0,7);
   V.yearKey = d => String(d || '').slice(0,4);
   V.baseTx = t => (t.currency || state.base) === state.base;
-  V.baseAmount = t => V.baseTx(t) ? n(t.amount) * n(t.fx_rate || 1) : 0;
-  V.accountById = id => activeAccounts().find(a => a.id === id);
+  V.baseAmount = t => V.baseTx(t) ? n(t.amount) : 0;
+  V.accountById = id => (state.accounts||[]).find(a => a.id === id);
+  V.accountStartDate = a => {
+    const dates=(state.fullTransactions||[]).filter(t=>t.account_id===a.id||t.transfer_account_id===a.id).map(t=>String(t.transaction_date||'')).filter(Boolean).sort();
+    return dates[0] || V.localToday();
+  };
 
   V.txDeltaForAccount = (t, accountId) => {
     let delta = 0;
@@ -20,6 +28,7 @@
   };
 
   V.accountBalanceAt = (a, endDate='9999-12-31') => {
+    if(endDate < V.accountStartDate(a)) return 0;
     let bal = n(a.opening_balance);
     (state.fullTransactions || []).forEach(t => {
       if(String(t.transaction_date || '') <= endDate) bal += V.txDeltaForAccount(t, a.id);
@@ -37,7 +46,7 @@
   };
 
   V.financialPosition = (endDate='9999-12-31') => {
-    const ac = activeAccounts().filter(a => (a.currency || state.base) === state.base);
+    const ac = (state.accounts||[]).filter(a => (a.currency || state.base) === state.base);
     let accountAssets=0, accountLiabilities=0, liquid=0, invested=0;
     ac.forEach(a => {
       const bal = V.accountBalanceAt(a,endDate);
@@ -107,20 +116,21 @@
     for(let i=0;i<count;i++){const d=new Date(end);d.setMonth(d.getMonth()-i);const key=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`,s=V.statsFor(V.periodTransactions('month',key));if(s.expense>0){total+=s.expense;used++}}
     return used?total/used:0;
   };
-  V.endOfMonthDate = key => {const [y,m]=key.split('-').map(Number);return new Date(y,m,0).toISOString().slice(0,10)};
-  V.netWorthSeries = (count=12) => {const end=new Date(`${state.month}-01T00:00:00`),rows=[];for(let i=count-1;i>=0;i--){const d=new Date(end);d.setMonth(d.getMonth()-i);const key=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;rows.push({month:key,value:V.financialPosition(V.endOfMonthDate(key)).netWorth})}return rows};
+  V.endOfMonthDate = key => {const [y,m]=key.split('-').map(Number);return new Date(Date.UTC(y,m,0)).toISOString().slice(0,10)};
+  V.dataStartMonth = () => { const dates=(state.fullTransactions||[]).map(t=>V.monthKey(t.transaction_date)).filter(Boolean).sort(); return dates[0] || localMonth; };
+  V.netWorthSeries = (count=12) => {const end=new Date(`${state.month}-01T00:00:00`),rows=[],start=V.dataStartMonth();for(let i=count-1;i>=0;i--){const d=new Date(end);d.setMonth(d.getMonth()-i);const key=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;if(key<start)continue;rows.push({month:key,value:V.financialPosition(V.endOfMonthDate(key)).netWorth})}return rows};
 
   V.assetComposition = (endDate='9999-12-31') => {
-    const groups=[['Tiền mặt','cash'],['Ngân hàng','bank'],['Tiết kiệm','savings'],['Đầu tư','investment']].map(([label,type])=>({label,value:activeAccounts().filter(a=>(a.currency||state.base)===state.base&&a.account_type===type).reduce((s,a)=>s+Math.max(0,V.accountBalanceAt(a,endDate)),0)}));
+    const groups=[['Tiền mặt','cash'],['Ngân hàng','bank'],['Tiết kiệm','savings'],['Đầu tư','investment']].map(([label,type])=>({label,value:(state.accounts||[]).filter(a=>(a.currency||state.base)===state.base&&a.account_type===type).reduce((s,a)=>s+Math.max(0,V.accountBalanceAt(a,endDate)),0)}));
     const rec=V.financialPosition(endDate).receivables;if(rec>0)groups.push({label:'Phải thu',value:rec});return groups;
   };
-  V.foreignSummary = () => ({foreignTx:(state.fullTransactions||[]).filter(t=>!V.baseTx(t)),foreignAc:activeAccounts().filter(a=>(a.currency||state.base)!==state.base)});
+  V.foreignSummary = () => ({foreignTx:(state.fullTransactions||[]).filter(t=>!V.baseTx(t)),foreignAc:(state.accounts||[]).filter(a=>(a.currency||state.base)!==state.base)});
   V.categoryActualBase = (id,dir='expense') => state.transactions.filter(t=>t.transaction_type===dir&&t.category_id===id&&V.baseTx(t)).reduce((s,t)=>s+V.baseAmount(t),0);
   V.pendingFixed = () => activeCategories('expense').filter(c=>c.cost_type==='fixed'&&n(c.planned_amount)>0&&V.categoryActualBase(c.id,'expense')===0);
   V.dueLoans = () => (state.loans||[]).filter(l=>l.loan_type==='borrowed'&&n(l.remaining_amount)>0&&l.due_date&&daysUntil(l.due_date)!==null&&daysUntil(l.due_date)<=14);
 
   V.diagnostics = () => {
-    const issues=[],notes=[],ac=new Map(activeAccounts().map(a=>[a.id,a])),cats=new Map(state.categories.map(c=>[c.id,c]));
+    const issues=[],notes=[],ac=new Map((state.accounts||[]).map(a=>[a.id,a])),cats=new Map(state.categories.map(c=>[c.id,c]));
     (state.fullTransactions||[]).forEach(t=>{const a=ac.get(t.account_id);if(!a)issues.push(`Giao dịch ${t.id}: thiếu tài khoản nguồn`);else if((a.currency||state.base)!==(t.currency||state.base))issues.push(`Giao dịch ${t.id}: tiền tệ không khớp tài khoản`);if(V.TRANSFER_TYPES.has(t.transaction_type)){const b=ac.get(t.transfer_account_id);if(!b)issues.push(`Giao dịch ${t.id}: thiếu tài khoản nhận`);else if((b.currency||state.base)!==(t.currency||state.base))issues.push(`Giao dịch ${t.id}: tài khoản nhận khác tiền tệ`)}if(['income','expense'].includes(t.transaction_type)){const c=cats.get(t.category_id);if(!c)issues.push(`Giao dịch ${t.id}: thiếu danh mục`);else if(c.direction!==t.transaction_type)issues.push(`Giao dịch ${t.id}: danh mục sai nhóm`)}});
     const legacy=activeAccounts().filter(a=>['loan_receivable','loan_payable'].includes(a.account_type));if(legacy.length)notes.push(`Có ${legacy.length} tài khoản Phải thu/Phải trả kiểu cũ. Nên dùng mục Nợ để tránh đếm trùng.`);
     const foreign=V.foreignSummary();if(foreign.foreignAc.length)notes.push(`Có ${foreign.foreignAc.length} tài khoản ngoại tệ; tổng chính đang loại chúng khỏi ${state.base}.`);
