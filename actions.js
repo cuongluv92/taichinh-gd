@@ -6,7 +6,8 @@
     'openGoal','deleteGoal','openGoalFlow','openLoan','deleteLoan','openLoanPayment',
     'openInvestmentAccount','openInvestmentTransfer','openInvestmentValue',
     'exportData','copyPrivateLink','forgetDevice',
-    'openMoreMenu','navigateFromMore','runFinanceDiagnostics','showFormulaInfo'
+    'openMoreMenu','navigateFromMore','runFinanceDiagnostics','showFormulaInfo',
+    'openBankLoan','openBankPayment','runFormulaSelfTest'
   ]);
 
   function splitTopLevel(src, separator=',') {
