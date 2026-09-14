@@ -1,0 +1,112 @@
+/* Compact readable layer: stronger typography, tighter density, bright palette */
+body.ui-2026{
+  --ui-ink:#172033;
+  --ui-muted:#5f6f86;
+  --ui-line:#dde5ef;
+  --ui-accent:#3b82f6;
+  --ui-accent-hover:#2563eb;
+  --ui-accent-soft:#edf5ff;
+  color:var(--ui-ink);
+  font-size:15px;
+  line-height:1.45;
+}
+
+body.ui-2026 .sidebar{width:212px;padding:14px 10px}
+body.ui-2026 .main{margin-left:212px}
+body.ui-2026 .brand{padding:6px 9px 14px}
+body.ui-2026 .brand strong{font-size:16px;font-weight:700;color:#172033}
+body.ui-2026 .brand span{font-size:12px;color:#66758a}
+body.ui-2026 .nav-label{padding:13px 10px 5px;font-size:10.5px;font-weight:700;color:#718096;letter-spacing:.06em}
+body.ui-2026 .nav button{min-height:39px;padding:8px 10px;font-size:14px;font-weight:600;color:#475569}
+body.ui-2026 .nav button.active{color:#1d4ed8;background:#edf5ff;border-color:#d7e7ff}
+body.ui-2026 .side-note{font-size:11px;color:#64748b}
+
+body.ui-2026 .topbar{height:68px;padding:9px 22px}
+body.ui-2026 .topbar h1{font-size:27px;font-weight:700;letter-spacing:-.025em;color:#172033}
+body.ui-2026 .topbar p{margin-top:1px;font-size:13px;font-weight:500;color:#64748b}
+body.ui-2026 .content{max-width:1520px;padding:18px 22px 38px}
+body.ui-2026 .top-actions{gap:8px}
+body.ui-2026 .month-nav{min-height:40px}
+body.ui-2026 .month-nav input{font-size:13px;font-weight:600;color:#334155}
+body.ui-2026 .btn,body.ui-2026 .v3-view-head button,body.ui-2026 .v3-settings-tools button{min-height:38px;font-size:12.5px;font-weight:650}
+
+body.ui-2026 .v7-focus{margin-bottom:12px;border-radius:15px;box-shadow:0 8px 24px rgba(37,99,235,.06)}
+body.ui-2026 .v7-focus-main{min-height:142px;padding:18px 22px;background:#f3f7ff;color:#172033}
+body.ui-2026 .v7-kicker{font-size:11.5px;font-weight:750;letter-spacing:.055em;color:#2563eb}
+body.ui-2026 .v7-focus-main>strong{margin:5px 0 4px;font-size:clamp(36px,3.5vw,48px);font-weight:750;color:#1d4ed8;letter-spacing:-.04em}
+body.ui-2026 .v7-focus-main>p{font-size:13px;line-height:1.45;color:#52637a}
+body.ui-2026 .v7-focus-actions{margin-top:11px;gap:7px}
+body.ui-2026 .v7-focus-actions button{min-height:36px;font-size:12px;font-weight:650;background:#fff;border-color:#cfdcf0;color:#334155}
+body.ui-2026 .v7-focus-actions button.primary{background:#3b82f6;border-color:#3b82f6;color:#fff}
+body.ui-2026 .v7-focus-side{padding:18px 20px;background:#fff}
+body.ui-2026 .v7-pace-head span{font-size:12.5px;font-weight:650;color:#52637a}
+body.ui-2026 .v7-pace-head b{font-size:19px;font-weight:700;color:#172033}
+body.ui-2026 .v7-focus-side p,body.ui-2026 .v7-focus-side small{font-size:12.5px;color:#66758a}
+
+body.ui-2026 .v7-dashboard>.v3-hero{padding:11px 14px;margin-bottom:10px}
+body.ui-2026 .v7-dashboard>.v3-hero .v3-eyebrow{font-size:10.5px;font-weight:700;color:#64748b}
+body.ui-2026 .v7-dashboard>.v3-hero strong{font-size:25px;font-weight:750;color:#172033}
+body.ui-2026 .v7-dashboard>.v3-hero small{font-size:11.5px;font-weight:550;color:#52637a}
+
+body.ui-2026 .v3-kpis{gap:10px;margin:10px 0 12px}
+body.ui-2026 .v3-kpis section,body.ui-2026 .v3-budget-summary>div{padding:13px 14px;border-radius:12px}
+body.ui-2026 .v3-kpis span,body.ui-2026 .v3-budget-summary span{font-size:12px;font-weight:650;color:#52637a}
+body.ui-2026 .v3-kpis strong,body.ui-2026 .v3-budget-summary strong{font-size:24px;font-weight:750;color:#172033;letter-spacing:-.025em}
+body.ui-2026 .v3-kpis small{font-size:11px;font-weight:500;color:#718096;line-height:1.35}
+
+body.ui-2026 .v3-two{gap:12px;margin:12px 0}
+body.ui-2026 .v3-card{padding:16px;border-radius:13px}
+body.ui-2026 .v3-card-head{margin-bottom:10px}
+body.ui-2026 .v3-card-head h2,body.ui-2026 .pro-section-head h2,body.ui-2026 .panel-title h2,body.ui-2026 .settings-card h2{font-size:18px;font-weight:700;color:#172033;letter-spacing:-.015em}
+body.ui-2026 .v3-card-head p,body.ui-2026 .pro-section-head p,body.ui-2026 .panel-title p{font-size:12.5px;font-weight:500;color:#64748b}
+body.ui-2026 .v3-view-head h2{font-size:22px;font-weight:700;color:#172033}
+body.ui-2026 .v3-view-head p{font-size:12.5px;font-weight:500;color:#64748b}
+body.ui-2026 .v3-chart{min-height:205px}
+body.ui-2026 .year-label{font-size:10px;fill:#64748b}
+
+body.ui-2026 .field label{font-size:12.5px;font-weight:700;color:#475569}
+body.ui-2026 .field small,body.ui-2026 .muted{font-size:11.5px;color:#64748b}
+body.ui-2026 input,body.ui-2026 select,body.ui-2026 textarea,body.ui-2026 .search{font-size:14px;color:#172033}
+
+body.ui-2026 .pro-tx-main strong,body.ui-2026 .tx-main strong{font-size:13.5px;font-weight:650;color:#172033}
+body.ui-2026 .pro-tx-main span,body.ui-2026 .tx-main span{font-size:11.5px;color:#64748b}
+body.ui-2026 .pro-tx-amount>strong,body.ui-2026 .tx-actions>strong{font-size:14px;font-weight:700}
+
+body.ui-2026 .ui-category-order-card{margin-top:12px;padding:16px}
+body.ui-2026 .ui-category-order-head h2{font-size:18px;font-weight:700;color:#172033}
+body.ui-2026 .ui-category-order-head p{font-size:12.5px;color:#5f6f86}
+body.ui-2026 .ui-category-order-preview{gap:12px;margin-top:12px}
+body.ui-2026 .ui-order-group{padding:10px;border-color:#dfe7f2;background:#f8fbff}
+body.ui-2026 .ui-order-group>span{margin-bottom:5px;font-size:11px;font-weight:750;color:#475569}
+body.ui-2026 .ui-order-list{display:grid;gap:5px}
+body.ui-2026 .ui-order-row{min-height:40px;padding:6px 7px;background:#fff;border:1px solid #e3eaf3;border-radius:9px}
+body.ui-2026 .ui-order-row .tx-main strong{font-size:13px}
+body.ui-2026 .ui-order-row .mini-btn{width:32px;height:32px;min-width:32px;border-radius:8px;font-size:15px;font-weight:700}
+body.ui-2026 .ui-order-row .mini-btn:disabled{opacity:.28}
+
+@media(max-width:1180px){
+  body.ui-2026 .sidebar{width:198px}
+  body.ui-2026 .main{margin-left:198px}
+  body.ui-2026 .content{padding-left:16px;padding-right:16px}
+}
+
+@media(max-width:760px){
+  body.ui-2026{font-size:14px}
+  body.ui-2026 .main{margin-left:0}
+  body.ui-2026 .topbar{min-height:62px;padding:8px 10px}
+  body.ui-2026 .topbar h1{font-size:19px}
+  body.ui-2026 .content{padding:11px 9px 96px}
+  body.ui-2026 .v7-focus-main{min-height:0;padding:16px}
+  body.ui-2026 .v7-focus-main>strong{font-size:33px}
+  body.ui-2026 .v7-kicker{font-size:10.5px}
+  body.ui-2026 .v7-focus-main>p{font-size:11.5px}
+  body.ui-2026 .v7-focus-side{padding:14px 15px}
+  body.ui-2026 .v3-kpis{gap:8px}
+  body.ui-2026 .v3-kpis section,body.ui-2026 .v3-budget-summary>div{padding:11px}
+  body.ui-2026 .v3-kpis span{font-size:11px}
+  body.ui-2026 .v3-kpis strong,body.ui-2026 .v3-budget-summary strong{font-size:19px}
+  body.ui-2026 .v3-card{padding:13px}
+  body.ui-2026 .v3-card-head h2,body.ui-2026 .settings-card h2{font-size:16px}
+  body.ui-2026 .v3-card-head p{font-size:11px}
+  body.ui-2026 .ui-category-order-preview{grid-template-columns:1fr}
+}
