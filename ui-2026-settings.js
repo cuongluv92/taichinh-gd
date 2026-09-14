@@ -12,15 +12,18 @@
   let dirty=false;
 
   function sortValue(c){
-    const v=Number(c?.sort_order);
+    const raw=c?.sort_order;
+    if(raw===null||raw===undefined||raw==='')return Number.MAX_SAFE_INTEGER;
+    const v=Number(raw);
     return Number.isFinite(v)?v:Number.MAX_SAFE_INTEGER;
   }
 
   function ordered(direction){
     return (window.state?.categories||[])
       .filter(c=>c&&c.is_active!==false&&c.direction===direction)
-      .slice()
-      .sort((a,b)=>sortValue(a)-sortValue(b)||String(a.name||'').localeCompare(String(b.name||''),'vi'));
+      .map((c,i)=>({c,i}))
+      .sort((a,b)=>sortValue(a.c)-sortValue(b.c)||a.i-b.i)
+      .map(x=>x.c);
   }
 
   function resetDraft(){
