@@ -54,6 +54,21 @@
     return btn;
   }
 
+  function controlsMatch(actions,direction,index,id,total){
+    const buttons=[...actions.querySelectorAll('[data-ui-inline-order]')];
+    if(buttons.length!==2)return false;
+    const up=buttons.find(b=>b.dataset.uiOrderMove==='up');
+    const down=buttons.find(b=>b.dataset.uiOrderMove==='down');
+    if(!up||!down)return false;
+    const idText=String(id||''),indexText=String(index);
+    if(up.dataset.uiOrderDir!==direction||down.dataset.uiOrderDir!==direction)return false;
+    if(up.dataset.uiOrderId!==idText||down.dataset.uiOrderId!==idText)return false;
+    if(up.dataset.uiOrderIndex!==indexText||down.dataset.uiOrderIndex!==indexText)return false;
+    up.disabled=saving||index===0;
+    down.disabled=saving||index===total-1;
+    return true;
+  }
+
   function patchVisibleCategoryRows(){
     if(!window.state||state.view!=='settings')return;
     document.querySelector('[data-ui-category-order-card]')?.remove();
@@ -61,7 +76,8 @@
     if(!panel)return;
 
     const subtitle=panel.querySelector('.panel-title p');
-    if(subtitle)subtitle.textContent='Sửa tên, cố định/biến động, ẩn hoặc dùng ↑ ↓ để đổi thứ tự';
+    const hint='Sửa tên, cố định/biến động, ẩn hoặc dùng ↑ ↓ để đổi thứ tự';
+    if(subtitle&&subtitle.textContent!==hint)subtitle.textContent=hint;
 
     panel.querySelectorAll('.settings-cat-group').forEach(group=>{
       const direction=groupDirection(group);
@@ -72,11 +88,10 @@
         const actions=row.lastElementChild;
         const cat=cats[index];
         if(!actions||!cat)return;
+        if(controlsMatch(actions,direction,index,cat.id,rows.length))return;
         actions.querySelectorAll('[data-ui-inline-order]').forEach(x=>x.remove());
-        const up=makeArrow(direction,index,cat.id,'up',rows.length);
-        const down=makeArrow(direction,index,cat.id,'down',rows.length);
-        actions.prepend(down);
-        actions.prepend(up);
+        actions.prepend(makeArrow(direction,index,cat.id,'down',rows.length));
+        actions.prepend(makeArrow(direction,index,cat.id,'up',rows.length));
       });
     });
   }
