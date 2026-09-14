@@ -10,6 +10,30 @@
     return palette[Math.abs(h)%palette.length];
   }
 
+  function categoryOrderValue(category){
+    const raw=category?.sort_order;
+    if(raw===null||raw===undefined||raw==='') return Number.POSITIVE_INFINITY;
+    const value=Number(raw);
+    return Number.isFinite(value)?value:Number.POSITIVE_INFINITY;
+  }
+
+  function normalizeCategoryOrder(){
+    if(!Array.isArray(window.state?.categories)||state.categories.length<2) return;
+    state.categories=state.categories
+      .map((category,index)=>({category,index,order:categoryOrderValue(category)}))
+      .sort((a,b)=>a.order-b.order||a.index-b.index)
+      .map(x=>x.category);
+  }
+
+  function selectedMonthDate(){
+    const fallback=new Date();
+    const local=window.__V3?.localToday?.()
+      ||(typeof window.today==='function'?window.today():`${fallback.getFullYear()}-${String(fallback.getMonth()+1).padStart(2,'0')}-${String(fallback.getDate()).padStart(2,'0')}`);
+    const currentMonth=String(local).slice(0,7);
+    const selected=String(window.state?.month||currentMonth).slice(0,7);
+    return selected===currentMonth?String(local).slice(0,10):`${selected}-01`;
+  }
+
   function styleToSafeAttrs(styleText=''){
     const css=String(styleText).trim();
     if(!css) return '';
@@ -83,6 +107,32 @@
     window.modal=wrapped;
   }
 
+  function wrapTransactionDefaults(){
+    const openTransactionBefore=window.openTransaction;
+    if(typeof openTransactionBefore==='function' && !openTransactionBefore.__ui2026DateWrapped){
+      const wrapped=function(id='',defaults={}){
+        if(id) return openTransactionBefore.call(this,id,defaults);
+        const next=defaults&&typeof defaults==='object'?{...defaults}:{};
+        if(!next.transaction_date) next.transaction_date=selectedMonthDate();
+        return openTransactionBefore.call(this,'',next);
+      };
+      Object.defineProperty(wrapped,'__ui2026DateWrapped',{value:true});
+      window.openTransaction=wrapped;
+    }
+
+    const openQuickBefore=window.openQuick;
+    if(typeof openQuickBefore==='function' && !openQuickBefore.__ui2026DateWrapped){
+      const wrapped=function(type){
+        if(['income','expense','transfer'].includes(type)){
+          return window.openTransaction?.('',{transaction_type:type,transaction_date:selectedMonthDate()});
+        }
+        return openQuickBefore.call(this,type);
+      };
+      Object.defineProperty(wrapped,'__ui2026DateWrapped',{value:true});
+      window.openQuick=wrapped;
+    }
+  }
+
   function enhanceA11y(){
     const view=window.state?.view;
     document.querySelectorAll('#nav button[data-view],#mobileNav button[data-view]').forEach(btn=>{
@@ -116,15 +166,18 @@
 
   function install(){
     document.body.classList.add(BODY_CLASS);
+    normalizeCategoryOrder();
 
     ['dashboard','budget','transactions','accounts','goals','settings','trendSvg'].forEach(name=>wrapMarkupFunction(window,name));
     const V=window.__V3;
     if(V) ['dashboardV3','analyticsV3','budgetV3','accountsV3','investmentsV3'].forEach(name=>wrapMarkupFunction(V,name));
     wrapModal();
+    wrapTransactionDefaults();
 
     const renderBefore=window.render;
     if(typeof renderBefore==='function' && !renderBefore.__ui2026Wrapped){
       const wrapped=function(...args){
+        normalizeCategoryOrder();
         const out=renderBefore.apply(this,args);
         afterRender();
         return out;
