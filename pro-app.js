@@ -65,6 +65,14 @@ function orderedCategories(direction){
     .sort((a,b)=>categoryOrderValue(a.c)-categoryOrderValue(b.c)||a.i-b.i)
     .map(x=>x.c);
 }
+function applyCategoryOrderPayload(payload){
+  ['income','expense'].forEach(direction=>{
+    (payload[direction]||[]).forEach((id,index)=>{
+      const category=(state.categories||[]).find(c=>c?.id===id);
+      if(category)category.sort_order=index+1;
+    });
+  });
+}
 async function moveCategoryOrder(direction,id,delta){
   if(categoryOrderSaving)return;
   const payload={income:orderedCategories('income').map(c=>c.id),expense:orderedCategories('expense').map(c=>c.id)};
@@ -72,10 +80,12 @@ async function moveCategoryOrder(direction,id,delta){
   if(!Array.isArray(arr))return;
   const index=arr.indexOf(id),next=index+Number(delta||0);
   if(index<0||next<0||next>=arr.length)return;
+  const previous=(state.categories||[]).map(c=>({id:c.id,sort_order:c.sort_order}));
   [arr[index],arr[next]]=[arr[next],arr[index]];
+  applyCategoryOrderPayload(payload);
   categoryOrderSaving=true;
+  if(typeof render==='function')render();
   try{
-    setLoading(true);
     const res=await fetch(CATEGORY_ORDER_RPC_URL,{method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY},body:JSON.stringify({p_key:state.key,p_payload:payload})});
     const text=await res.text();let data;try{data=text?JSON.parse(text):null}catch{data=text}
     if(!res.ok){
@@ -85,13 +95,16 @@ async function moveCategoryOrder(direction,id,delta){
         :/invalid_access_key/i.test(raw)?'Khóa gia đình không đúng.'
         :raw);
     }
-    await refresh();
     toast('Đã đổi thứ tự danh mục');
   }catch(e){
+    previous.forEach(old=>{
+      const category=(state.categories||[]).find(c=>c?.id===old.id);
+      if(category)category.sort_order=old.sort_order;
+    });
+    if(typeof render==='function')render();
     toast(e.message||'Không đổi được thứ tự',true);
   }finally{
     categoryOrderSaving=false;
-    setLoading(false);
   }
 }
 
