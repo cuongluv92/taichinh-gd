@@ -1,0 +1,75 @@
+/* 2026 production UI layer: compact desktop, dedicated mobile, strict-CSP safe */
+:root{
+  --ui-bg:#f3f6fb;
+  --ui-surface:#ffffff;
+  --ui-surface-2:#f8fafc;
+  --ui-ink:#101828;
+  --ui-muted:#667085;
+  --ui-line:#e4e9f0;
+  --ui-line-strong:#d5dce6;
+  --ui-accent:#2f6fed;
+  --ui-accent-hover:#245bcc;
+  --ui-accent-soft:#eef4ff;
+  --ui-positive:#138a5b;
+  --ui-negative:#c83d4b;
+  --ui-warning:#b56b12;
+  --ui-nav:#0c1423;
+  --ui-nav-2:#111c2f;
+  --ui-radius-sm:10px;
+  --ui-radius:14px;
+  --ui-radius-lg:18px;
+  --ui-shadow-sm:0 1px 2px rgba(16,24,40,.03),0 6px 18px rgba(16,24,40,.035);
+  --ui-shadow:0 12px 30px rgba(16,24,40,.06);
+}
+
+html{background:var(--ui-bg)}
+body.ui-2026{background:var(--ui-bg);color:var(--ui-ink);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+body.ui-2026 button,body.ui-2026 input,body.ui-2026 select,body.ui-2026 textarea{font:inherit}
+body.ui-2026 .amount,body.ui-2026 .v3-kpis strong,body.ui-2026 .v3-budget-summary strong,body.ui-2026 .v7-focus-main>strong,body.ui-2026 .account-balance,body.ui-2026 .goal-money strong{font-variant-numeric:tabular-nums lining-nums}
+
+/* Shell */
+body.ui-2026 .sidebar{width:228px;background:var(--ui-nav);padding:18px 12px;border-right:1px solid rgba(255,255,255,.04);box-shadow:none}
+body.ui-2026 .main{margin-left:228px;background:var(--ui-bg);min-width:0}
+body.ui-2026 .brand{padding:6px 10px 16px;gap:10px}
+body.ui-2026 .brand-mark{width:38px;height:38px;border-radius:11px;background:var(--ui-accent);box-shadow:0 8px 20px rgba(47,111,237,.22);font-size:21px}
+body.ui-2026 .brand strong{font-size:15px;letter-spacing:-.01em}
+body.ui-2026 .brand span{font-size:11px;color:#8fa0b8}
+body.ui-2026 .nav{gap:3px;padding:0 4px}
+body.ui-2026 .nav-label{padding:14px 10px 5px;color:#65748b;font-size:9.5px;letter-spacing:.12em}
+body.ui-2026 .nav button{position:relative;min-height:40px;padding:10px 11px;border-radius:10px;color:#a8b4c6;font-size:13px;font-weight:700;gap:10px;transition:background .16s ease,color .16s ease,transform .16s ease}
+body.ui-2026 .nav button:hover{background:rgba(255,255,255,.055);color:#fff}
+body.ui-2026 .nav button.active{background:rgba(47,111,237,.16);color:#fff;box-shadow:none}
+body.ui-2026 .nav button.active::before{content:"";position:absolute;left:-4px;top:9px;bottom:9px;width:3px;border-radius:3px;background:#79a5ff}
+body.ui-2026 .side-note{padding:11px 12px;border-color:#25334a;background:rgba(255,255,255,.025);font-size:11px}
+body.ui-2026 .topbar{height:78px;padding:13px 24px;background:rgba(243,246,251,.94);border-bottom:1px solid rgba(213,220,230,.9);box-shadow:none;backdrop-filter:blur(14px)}
+body.ui-2026 .topbar h1{font-size:21px;font-weight:800;letter-spacing:-.025em}
+body.ui-2026 .topbar p{font-size:12px;margin-top:2px;color:var(--ui-muted)}
+body.ui-2026 .content{max-width:1560px;padding:20px 24px 42px;margin:0 auto}
+body.ui-2026 .top-actions{gap:8px}
+body.ui-2026 .month-nav{display:flex;align-items:center;gap:4px;padding:3px;border:1px solid var(--ui-line);border-radius:12px;background:var(--ui-surface)}
+body.ui-2026 .month-nav .btn{width:34px;height:34px;padding:0;border:0;background:transparent;border-radius:9px;color:#536176}
+body.ui-2026 .month-nav .btn:hover{background:var(--ui-surface-2);color:var(--ui-ink)}
+body.ui-2026 .month-nav input{height:34px;border:0!important;box-shadow:none!important;background:transparent;padding:0 6px;min-width:136px;font-weight:750;color:var(--ui-ink)}
+
+/* Buttons / controls */
+body.ui-2026 .btn,body.ui-2026 .v3-view-head button,body.ui-2026 .v3-settings-tools button{min-height:38px;padding:8px 12px;border:1px solid var(--ui-line-strong);border-radius:10px;background:#fff;color:#344054;font-size:12px;font-weight:750;box-shadow:0 1px 1px rgba(16,24,40,.02);transition:background .16s ease,border-color .16s ease,color .16s ease,transform .16s ease,box-shadow .16s ease}
+body.ui-2026 .btn:hover,body.ui-2026 .v3-view-head button:hover,body.ui-2026 .v3-settings-tools button:hover{background:#f8fafc;border-color:#cbd4df;transform:translateY(-1px)}
+body.ui-2026 .btn.primary,body.ui-2026 .v3-view-head .primary,body.ui-2026 .v3-settings-tools .primary{background:var(--ui-accent);border-color:var(--ui-accent);color:#fff;box-shadow:0 5px 14px rgba(47,111,237,.18)}
+body.ui-2026 .btn.primary:hover,body.ui-2026 .v3-view-head .primary:hover,body.ui-2026 .v3-settings-tools .primary:hover{background:var(--ui-accent-hover);border-color:var(--ui-accent-hover)}
+body.ui-2026 .btn.sm{min-height:32px;padding:6px 9px;font-size:11px}
+body.ui-2026 button:disabled{cursor:not-allowed;opacity:.48;transform:none!important;box-shadow:none!important}
+body.ui-2026 input,body.ui-2026 select,body.ui-2026 textarea,body.ui-2026 .search{border:1px solid var(--ui-line-strong);border-radius:10px;background:#fff;color:var(--ui-ink);min-height:40px;padding:9px 10px;transition:border-color .16s ease,box-shadow .16s ease,background .16s ease}
+body.ui-2026 input:hover,body.ui-2026 select:hover,body.ui-2026 textarea:hover{border-color:#c5cfdb}
+body.ui-2026 input:focus,body.ui-2026 select:focus,body.ui-2026 textarea:focus,body.ui-2026 .search:focus{border-color:#8badf6;box-shadow:0 0 0 3px rgba(47,111,237,.10)}
+body.ui-2026 button:focus-visible,body.ui-2026 input:focus-visible,body.ui-2026 select:focus-visible,body.ui-2026 textarea:focus-visible,body.ui-2026 summary:focus-visible{outline:2px solid #6d9cf8;outline-offset:2px}
+
+/* Global surfaces */
+body.ui-2026 .card,body.ui-2026 .pro-card,body.ui-2026 .v3-card,body.ui-2026 .pro-kpi,body.ui-2026 .pro-account-card,body.ui-2026 .pro-goal-card,body.ui-2026 .goal-summary-card,body.ui-2026 .account-summary>div,body.ui-2026 .settings-panel{background:var(--ui-surface);border-color:var(--ui-line);border-radius:var(--ui-radius);box-shadow:var(--ui-shadow-sm)}
+body.ui-2026 .v3-card{padding:18px}
+body.ui-2026 .v3-card-head{margin-bottom:12px;gap:12px}
+body.ui-2026 .v3-card-head h2,body.ui-2026 .pro-section-head h2,body.ui-2026 .panel-title h2{font-size:15px;font-weight:800;letter-spacing:-.015em}
+body.ui-2026 .v3-card-head p,body.ui-2026 .pro-section-head p,body.ui-2026 .panel-title p{font-size:11px;color:var(--ui-muted)}
+body.ui-2026 .v3-link,body.ui-2026 .text-btn{color:var(--ui-accent)}
+body.ui-2026 .green{color:var(--ui-positive)!important}
+body.ui-2026 .red{color:var(--ui-negative)!important}
+body.ui-2026 .amber{color:var(--ui-warning)!important}
