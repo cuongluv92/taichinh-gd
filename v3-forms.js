@@ -1,69 +1,67 @@
 (() => {
-  const V=window.__V3;
-  V.legacy=V.legacy||{};
-  V.legacy.transactions=V.legacy.transactions||window.transactions;
-  V.legacy.goals=V.legacy.goals||window.goals;
-  V.legacy.settings=V.legacy.settings||window.settings;
-  V.legacy.deleteLoan=V.legacy.deleteLoan||window.deleteLoan;
-  V.legacy.deleteGoal=V.legacy.deleteGoal||window.deleteGoal;
+  const V=window.__V3=window.__V3||{};
+  const BACKUP_RPC=`${SUPABASE_URL}/rest/v1/rpc/taichinh_gd_backup_api`;
 
-  function accountHasTransactions(id){return !!id&&(state.fullTransactions||[]).some(t=>t.account_id===id||t.transfer_account_id===id)}
-  function openAccountV3(id=''){
-    const a=state.accounts.find(x=>x.id===id)||{},locked=accountHasTransactions(id),types=[['cash','Tiền mặt'],['bank','Ngân hàng'],['credit','Thẻ tín dụng'],['savings','Tiết kiệm'],['investment','Đầu tư']];
-    if(id&&['loan_receivable','loan_payable'].includes(a.account_type))types.push([a.account_type,a.account_type==='loan_receivable'?'Phải thu cũ':'Phải trả cũ']);
-    modal(id?'Sửa tài khoản':'Thêm tài khoản',`<div class="form-grid"><div class="field full"><label>Tên tài khoản</label><input name="name" value="${esc(a.name||'')}" required autofocus></div><div class="field"><label>Loại</label><select name="account_type">${types.map(([v,l])=>`<option value="${v}" ${(a.account_type||'bank')===v?'selected':''}>${l}</option>`).join('')}</select></div><div class="field"><label>Tiền tệ</label><select name="currency" ${locked?'disabled':''}><option value="JPY" ${(a.currency||state.base)==='JPY'?'selected':''}>JPY</option><option value="VND" ${(a.currency||state.base)==='VND'?'selected':''}>VND</option></select>${locked?`<input type="hidden" name="currency" value="${esc(a.currency||state.base)}"><small>Đã có giao dịch nên khóa tiền tệ để bảo vệ lịch sử.</small>`:''}</div><div class="field full"><label>Số dư ban đầu</label><input name="opening_balance" type="number" step="1" value="${esc(a.opening_balance||0)}"><small>Thay đổi số dư ban đầu sẽ thay đổi lịch sử số dư.</small></div>${id?'<div class="field full"><small>Khoản cho vay/đi vay mới hãy tạo ở “Mục tiêu & nợ” để tránh đếm trùng.</small></div>':''}</div>`,fd=>api('save_account',{...fd,id:id||null}));
+  function goalHasLinkedHistory(id){
+    return !!id&&(state.fullTransactions||[]).some(t=>t.goal_id===id&&['goal_save','goal_withdraw'].includes(t.transaction_type));
   }
 
-  function txCategoryOptions(type,current){const list=state.categories.filter(c=>c.direction===type&&(c.is_active!==false||c.id===current));return '<option value="">— Chọn danh mục —</option>'+options(list,current)}
-  function openTransactionV3(id='',defaults={}){
-    const found=state.transactions.find(x=>x.id===id);
-    if(found&&isDebtTransaction(found)){const loan=linkedLoanForTransaction(found);if(loan&&['loan_pay','loan_collect'].includes(found.transaction_type))return openLoanPaymentV3(loan.id);return toast('Giao dịch vay/nợ quản lý ở mục Nợ.',true)}
-    const t=found||defaults||{},type=['income','expense','transfer'].includes(t.transaction_type)?t.transaction_type:'expense',ac=activeAccounts().filter(a=>!['loan_receivable','loan_payable'].includes(a.account_type)||a.id===t.account_id||a.id===t.transfer_account_id),selected=t.account_id||defaultMoneyAccountId();
-    modal(id?'Sửa giao dịch':'Ghi giao dịch',`<div class="form-grid"><div class="field"><label>Loại</label><select name="transaction_type" id="v3TxType"><option value="expense" ${type==='expense'?'selected':''}>Chi tiêu</option><option value="income" ${type==='income'?'selected':''}>Thu nhập</option><option value="transfer" ${type==='transfer'?'selected':''}>Chuyển khoản</option></select></div><div class="field"><label>Số tiền</label><input name="amount" type="number" min="1" step="1" value="${esc(t.amount||'')}" required autofocus></div><div class="field"><label>Ngày</label><input name="transaction_date" type="date" value="${esc(t.transaction_date||today())}" required></div><div class="field"><label>Tài khoản</label><select name="account_id" id="v3TxAccount" required><option value="">— Chọn —</option>${options(ac,selected,a=>`${a.name} · ${a.currency}`)}</select></div><div class="field" id="v3CatField"><label>Danh mục</label><select name="category_id" id="v3TxCategory"></select></div><div class="field hidden" id="v3TransferField"><label>Chuyển đến</label><select name="transfer_account_id" id="v3TxTarget"></select></div><div class="field"><label>Tiền tệ</label><input id="v3CurrencyDisplay" disabled><input type="hidden" name="currency" id="v3TxCurrency"></div><div class="field full"><label>Ghi chú</label><input name="note" value="${esc(t.note||'')}" placeholder="Tùy chọn"></div></div>`,async fd=>{if(!fd.account_id)throw new Error('Hãy chọn tài khoản.');if(fd.transaction_type!=='transfer'&&!fd.category_id)throw new Error('Hãy chọn danh mục.');if(fd.transaction_type==='transfer'&&!fd.transfer_account_id)throw new Error('Hãy chọn tài khoản nhận.');await api('save_transaction',{...fd,id:id||null,fx_rate:1,category_id:fd.transaction_type==='transfer'?null:fd.category_id,transfer_account_id:fd.transaction_type==='transfer'?fd.transfer_account_id:null})});
-    const typeEl=$('#v3TxType'),accEl=$('#v3TxAccount'),cat=$('#v3TxCategory'),target=$('#v3TxTarget'),cur=$('#v3TxCurrency'),curText=$('#v3CurrencyDisplay');
-    const sync=()=>{const tr=typeEl.value==='transfer',a=ac.find(x=>x.id===accEl.value),currency=a?.currency||state.base;$('#v3CatField').classList.toggle('hidden',tr);$('#v3TransferField').classList.toggle('hidden',!tr);cur.value=currency;curText.value=currency;if(!tr)cat.innerHTML=txCategoryOptions(typeEl.value,cat.value||t.category_id||'');else target.innerHTML='<option value="">— Chọn —</option>'+options(ac.filter(x=>x.id!==accEl.value&&(x.currency||state.base)===currency),target.value||t.transfer_account_id||'',x=>`${x.name} · ${x.currency}`)};
-    typeEl.onchange=sync;accEl.onchange=sync;sync();
+  const openGoalBefore=window.openGoal;
+  if(typeof openGoalBefore==='function'){
+    window.openGoal=function(id='',...rest){
+      const out=openGoalBefore.call(this,id,...rest);
+      if(id&&goalHasLinkedHistory(id)){
+        const input=document.querySelector('#modalBody input[name="current_amount"]');
+        if(input){
+          input.readOnly=true;
+          input.setAttribute('aria-readonly','true');
+          const field=input.closest('.field');
+          const label=field?.querySelector('label');
+          if(label)label.textContent='Đã có · tự tính từ giao dịch';
+          if(field&&!field.querySelector('[data-final-goal-lock]')){
+            const note=document.createElement('small');
+            note.dataset.finalGoalLock='1';
+            note.textContent='Mục tiêu đã có lịch sử góp/rút nên số này được tính tự động. Muốn thay đổi, hãy ghi góp hoặc rút tiền.';
+            field.appendChild(note);
+          }
+        }
+      }
+      return out;
+    };
   }
 
-  function openLoanV3(id=''){
-    const l=(state.loans||[]).find(x=>x.id===id)||{},isNew=!id,remaining=n(l.remaining_amount),currencies=['JPY','VND'];
-    modal(id?'Sửa khoản vay/nợ':'Thêm khoản vay/nợ',`<div class="form-grid"><div class="field full"><label>Người / đơn vị</label><input name="counterparty" value="${esc(l.counterparty||'')}" required autofocus></div><div class="field"><label>Loại</label><select name="loan_type" ${!isNew?'disabled':''}><option value="borrowed" ${(l.loan_type||'borrowed')==='borrowed'?'selected':''}>Đi vay · phải trả</option><option value="lent" ${l.loan_type==='lent'?'selected':''}>Cho vay · phải thu</option></select>${!isNew?`<input type="hidden" name="loan_type" value="${esc(l.loan_type)}">`:''}</div><div class="field"><label>Tiền tệ</label><select name="currency" id="v3LoanCurrency" ${!isNew?'disabled':''}>${currencies.map(c=>`<option value="${c}" ${(l.currency||state.base)===c?'selected':''}>${c}</option>`).join('')}</select>${!isNew?`<input type="hidden" name="currency" value="${esc(l.currency)}">`:''}</div><div class="field"><label>Số tiền gốc</label><input name="principal" type="number" min="1" value="${esc(l.principal||'')}" ${!isNew?'readonly':''} required></div>${isNew?`<div class="field"><label>Tài khoản nhận / chi</label><select name="funding_account_id" id="v3LoanAccount"><option value="">— Chỉ ghi khoản nợ —</option></select></div>`:`<div class="field"><label>Dư còn lại</label><input value="${money(remaining,l.currency)}" disabled><input type="hidden" name="remaining_amount" value="${remaining}"></div>`}<div class="field"><label>Ngày bắt đầu</label><input name="start_date" type="date" value="${esc(l.start_date||today())}"></div><div class="field"><label>Hạn trả</label><input name="due_date" type="date" value="${esc(l.due_date||'')}"></div><div class="field full"><label>Ghi chú</label><input name="note" value="${esc(l.note||'')}"></div></div>`,async fd=>{const saved=await api('save_loan',{...fd,id:id||null,remaining_amount:isNew?fd.principal:remaining});if(isNew&&fd.funding_account_id)await debtApi('open',{loan_id:saved.id,account_id:fd.funding_account_id,amount:fd.principal,transaction_date:fd.start_date||today(),note:fd.note||''})});
-    if(isNew){const c=$('#v3LoanCurrency'),a=$('#v3LoanAccount');const sync=()=>{a.innerHTML='<option value="">— Chỉ ghi khoản nợ —</option>'+options(activeAccounts().filter(x=>(x.currency||state.base)===c.value&&['cash','bank','savings'].includes(x.account_type)),defaultMoneyAccountId(),x=>`${x.name} · ${x.currency}`)};c.onchange=sync;sync()}
+  async function fullBackup(){
+    if(!state.key)throw new Error('Thiếu khóa gia đình');
+    const res=await fetch(BACKUP_RPC,{
+      method:'POST',
+      headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY},
+      body:JSON.stringify({p_key:state.key})
+    });
+    const text=await res.text();let data;
+    try{data=text?JSON.parse(text):null}catch{data=text}
+    if(!res.ok){
+      const raw=data?.message||data?.hint||String(data||`HTTP ${res.status}`);
+      throw new Error(/invalid_access_key/i.test(raw)?'Khóa gia đình không đúng.':raw);
+    }
+    return data;
   }
 
-  function openLoanPaymentV3(id){
-    const l=(state.loans||[]).find(x=>x.id===id);if(!l)return toast('Không tìm thấy khoản nợ.',true);if(n(l.remaining_amount)<=0)return toast('Khoản này đã tất toán.');const borrowed=l.loan_type==='borrowed',ac=activeAccounts().filter(a=>(a.currency||state.base)===(l.currency||state.base)&&['cash','bank','savings'].includes(a.account_type));if(!ac.length)return toast(`Cần tài khoản ${l.currency} để ${borrowed?'trả':'nhận'} tiền.`,true);
-    modal(borrowed?'Trả nợ':'Thu hồi khoản cho vay',`<div class="form-grid"><div class="field full"><label>${borrowed?'Khoản phải trả':'Khoản phải thu'}</label><input value="${esc(l.counterparty)} · ${money(l.remaining_amount,l.currency)}" disabled></div><div class="field"><label>Số tiền</label><input name="amount" type="number" min="1" max="${esc(l.remaining_amount)}" value="${esc(l.remaining_amount)}" required autofocus></div><div class="field"><label>${borrowed?'Trả từ':'Nhận vào'}</label><select name="account_id" required>${options(ac,ac[0].id,x=>`${x.name} · ${x.currency}`)}</select></div><div class="field"><label>Ngày</label><input name="transaction_date" type="date" value="${today()}" required></div><div class="field full"><label>Ghi chú</label><input name="note"></div></div>`,fd=>debtApi('payment',{loan_id:id,account_id:fd.account_id,amount:fd.amount,transaction_date:fd.transaction_date,note:fd.note||''}),borrowed?'Ghi trả nợ':'Ghi thu tiền');
-  }
+  window.exportData=async function(){
+    try{
+      const data=await fullBackup();
+      const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      const d=typeof V.localToday==='function'?V.localToday():(typeof today==='function'?today():new Date().toISOString().slice(0,10));
+      a.download=`taichinh-gd-full-${d}.json`;
+      a.click();
+      setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+      toast('Đã tạo bản sao đầy đủ');
+    }catch(e){
+      console.error('Full backup failed',e);
+      toast(e.message||'Không tạo được bản sao',true);
+    }
+  };
 
-  function openCreditPaymentV3(targetId){
-    const target=activeAccounts().find(a=>a.id===targetId);if(!target)return toast('Không tìm thấy tài khoản nợ.',true);const debt=Math.max(0,-accountBalance(target));if(!debt)return toast('Tài khoản này hiện không có dư nợ.');const sources=activeAccounts().filter(a=>a.id!==targetId&&(a.currency||state.base)===(target.currency||state.base)&&['bank','cash','savings'].includes(a.account_type));if(!sources.length)return toast(`Cần tài khoản ${target.currency} để thanh toán.`,true);
-    modal(`Thanh toán ${esc(target.name)}`,`<div class="form-grid"><div class="field"><label>Số tiền</label><input name="amount" type="number" min="1" max="${debt}" value="${debt}" required autofocus></div><div class="field"><label>Trả từ</label><select name="account_id" required>${options(sources,sources[0].id,x=>`${x.name} · ${x.currency}`)}</select></div><div class="field"><label>Ngày</label><input name="transaction_date" type="date" value="${today()}" required></div><div class="field full"><label>Ghi chú</label><input name="note" value="Thanh toán ${esc(target.name)}"></div></div>`,fd=>api('save_transaction',{transaction_type:'transfer',amount:fd.amount,currency:target.currency||state.base,fx_rate:1,transaction_date:fd.transaction_date,account_id:fd.account_id,transfer_account_id:targetId,category_id:null,note:fd.note||''}),'Thanh toán');
-  }
-
-
-  async function deleteLoanV3(id){
-    const linked=(state.fullTransactions||[]).filter(t=>t.loan_id===id);
-    if(linked.length)return toast('Khoản này đã có lịch sử giao dịch nên không xóa trực tiếp. Hãy tất toán để giữ đúng lịch sử tài sản.',true);
-    if(!confirm('Xóa khoản vay/nợ chưa có giao dịch này?'))return;
-    try{await api('delete_loan',{id});await refresh();toast('Đã xóa khoản nợ')}catch(e){toast(e.message,true)}
-  }
-  async function deleteGoalV3(id){
-    const g=(state.goals||[]).find(x=>x.id===id),linked=(state.fullTransactions||[]).filter(t=>t.goal_id===id);
-    if(linked.length||n(g?.current_amount)>0)return toast('Mục tiêu này đã có dòng tiền. Hãy rút/chuyển tiền về trước; không xóa lịch sử trực tiếp.',true);
-    if(!confirm('Xóa mục tiêu chưa có dòng tiền này?'))return;
-    try{await api('delete_goal',{id});await refresh();toast('Đã xóa mục tiêu')}catch(e){toast(e.message,true)}
-  }
-
-  function showInfo(title,body){const dlg=$('#modal'),mb=$('#modalBody'),form=$('#modalForm');mb.innerHTML=`<div class="modal-head"><h3>${esc(title)}</h3><button class="mini-btn" type="button" onclick="document.getElementById('modal').close()">✕</button></div><div class="modal-content">${body}</div><div class="modal-actions"><button class="btn primary" type="button" onclick="document.getElementById('modal').close()">Đóng</button></div>`;form.onsubmit=e=>e.preventDefault();dlg.showModal()}
-  function showFormulaInfo(){showInfo('Công thức đang dùng',`<div class="v3-formulas"><p><b>Tài sản ròng</b> = tài sản trong tài khoản + khoản phải thu − dư âm tài khoản − khoản vay phải trả.</p><p><b>Dòng tiền</b> = thu nhập − chi tiêu. Chuyển khoản, tiết kiệm, đầu tư và trả gốc không bị tính là chi tiêu lần hai.</p><p><b>Tích lũy chuyển vào</b> = tiền ròng từ tiền mặt/ngân hàng sang tiết kiệm + đầu tư trong kỳ, chia cho thu nhập.</p><p><b>Khả năng chi trả</b> = tiền khả dụng / chi tiêu trung bình 3 tháng gần nhất.</p><p><b>Ngoại tệ</b>: JPY và VND không cộng 1:1. Tổng chính chỉ dùng tiền tệ cơ sở.</p></div>`)}
-  function runFinanceDiagnostics(){const r=V.diagnostics();showInfo('Kiểm tra dữ liệu',`<div class="v3-diagnostics"><div class="${r.issues.length?'bad':'ok'}"><strong>${r.issues.length?`${r.issues.length} vấn đề cần xem`:'✓ Không thấy lỗi liên kết quan trọng'}</strong></div>${r.issues.length?`<ul>${r.issues.slice(0,20).map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}${r.notes.length?`<h4>Lưu ý</h4><ul>${r.notes.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}<p>Kiểm tra này không sửa dữ liệu tự động.</p></div>`)}
-  function openMoreMenu(){showInfo('Khác',`<div class="v3-more"><button onclick="navigateFromMore('analytics')">◉ <span>Phân tích</span></button><button onclick="navigateFromMore('investments')">↗ <span>Đầu tư</span></button><button onclick="navigateFromMore('goals')">◎ <span>Mục tiêu & nợ</span></button><button onclick="navigateFromMore('settings')">⚙ <span>Cài đặt</span></button></div>`)}
-  function navigateFromMore(v){document.getElementById('modal')?.close();navigate(v)}
-
-  function settingsV3(){const base=V.legacy.settings?V.legacy.settings():'';return `<div class="v3-settings-tools"><section class="v3-card"><div><h2>Độ tin cậy dữ liệu</h2><p>Kiểm tra liên kết tài khoản, tiền tệ, danh mục và dư nợ.</p></div><button class="primary" onclick="runFinanceDiagnostics()">Kiểm tra dữ liệu</button></section><section class="v3-card"><div><h2>Công thức</h2><p>Xem cách app tính tài sản ròng, dòng tiền và tỷ lệ tích lũy.</p></div><button onclick="showFormulaInfo()">Xem công thức</button></section></div>${base}`}
-  function titleForV3(v){return({dashboard:['Tổng quan','Bức tranh tài chính của gia đình'],budget:['Ngân sách','Thu nhập · cố định · biến động · nợ'],transactions:['Thu chi','Lịch sử dòng tiền và chuyển tài sản'],analytics:['Phân tích','Tháng, năm và xu hướng tài sản'],accounts:['Tài sản','Tài khoản, tiết kiệm và tín dụng'],investments:['Đầu tư','Vốn, giá trị hiện tại và lãi/lỗ'],goals:['Mục tiêu & nợ','Mục tiêu tiết kiệm, phải thu và phải trả'],settings:['Cài đặt','Danh mục, dữ liệu và thiết bị']})[v]||['Tài chính gia đình','']}
-  function renderV3(){if(!state.household)return;const views={dashboard:V.dashboardV3,budget:V.budgetV3,transactions:V.legacy.transactions,analytics:V.analyticsV3,accounts:V.accountsV3,investments:V.investmentsV3,goals:V.legacy.goals,settings:settingsV3},fn=views[state.view]||V.dashboardV3;$('#content').innerHTML=fn?fn():'';if(state.view==='settings')$('#householdForm')?.addEventListener('submit',saveHousehold)}
-
-  Object.assign(window,{financialPosition:V.financialPosition,dashboard:V.dashboardV3,analytics:V.analyticsV3,budget:V.budgetV3,accounts:V.accountsV3,investments:V.investmentsV3,settings:settingsV3,titleFor:titleForV3,render:renderV3,openAccount:openAccountV3,openTransaction:openTransactionV3,openLoan:openLoanV3,openLoanPayment:openLoanPaymentV3,openCreditPayment:openCreditPaymentV3,deleteLoan:deleteLoanV3,deleteGoal:deleteGoalV3,showFormulaInfo,runFinanceDiagnostics,openMoreMenu,navigateFromMore});
+  V.fullBackup=fullBackup;
 })();
