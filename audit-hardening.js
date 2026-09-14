@@ -9,6 +9,8 @@
   const categoryById=id=>(state.categories||[]).find(c=>c.id===id);
   const loanById=id=>(state.loans||[]).find(l=>l.id===id);
   const goalById=id=>(state.goals||[]).find(g=>g.id===id);
+  const SYSTEM_TX_RPC=`${SUPABASE_URL}/rest/v1/rpc/taichinh_gd_system_tx_api`;
+  state.protectedSystemTransactionIds=state.protectedSystemTransactionIds||[];
 
   function accountAnchored(id){
     if(!id)return false;
@@ -80,6 +82,31 @@
     lockSelect(offset,s.payment_month_offset,'Thẻ đã có lịch sử nên khoảng tháng thanh toán được khóa.');
     document.querySelectorAll('#modalBody [data-cc-day-target="ccClose"]').forEach(b=>{b.disabled=true;b.setAttribute('aria-disabled','true')});
   });
+
+  wrapOpener('openStatementPayment',()=>{
+    const amount=document.querySelector('#modalBody input[name="amount"]');
+    lockInput(amount,'Kỳ thẻ phải khớp tổng sao kê. Nếu số ngân hàng khác, hãy chỉnh giao dịch/hoàn tiền trước rồi xác nhận lại.');
+  });
+
+  async function loadProtectedSystemTransactions(rerender=false){
+    if(!state.key)return [];
+    const res=await fetch(SYSTEM_TX_RPC,{method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY},body:JSON.stringify({p_key:state.key})});
+    const text=await res.text();let data;try{data=text?JSON.parse(text):null}catch{data=text}
+    if(!res.ok)throw new Error(data?.message||String(data||`HTTP ${res.status}`));
+    state.protectedSystemTransactionIds=data?.ids||[];
+    if(rerender&&state.household)render();
+    return state.protectedSystemTransactionIds;
+  }
+  V.loadProtectedSystemTransactions=loadProtectedSystemTransactions;
+  V.isProtectedSystemTransaction=id=>(state.protectedSystemTransactionIds||[]).includes(id);
+
+  const txListBefore=window.txList;
+  if(typeof txListBefore==='function')window.txList=function(rows,actions=false){
+    if(!rows?.length||!actions)return txListBefore(rows,actions);
+    const locked=new Set(state.protectedSystemTransactionIds||[]);if(!locked.size)return txListBefore(rows,actions);
+    const body=rows.map(t=>{const one=txListBefore([t],!locked.has(t.id)),m=one.match(/^<div class="list">([\s\S]*)<\/div>$/);return m?m[1]:one}).join('');
+    return `<div class="list">${body}</div>`;
+  };
 
   function currentBalanceAt(a,date){
     if(typeof V.accountBalanceAt==='function')return n(V.accountBalanceAt(a,date));
@@ -166,15 +193,24 @@
   const renderBefore=window.render;
   if(typeof renderBefore==='function')window.render=function(...args){const out=renderBefore.apply(this,args);afterRender();queueMicrotask(afterRender);return out};
 
+  const refreshBefore=window.refresh;
+  if(typeof refreshBefore==='function')window.refresh=async function(...args){const out=await refreshBefore.apply(this,args);try{await loadProtectedSystemTransactions(false)}catch(e){console.error('Protected transaction refresh failed',e)}if(state.household)render();return out};
+
   document.addEventListener('click',e=>{
     const b=e.target.closest?.('[data-cc-action="settings"]');if(!b||typeof window.openCardSettings!=='function')return;
     e.preventDefault();e.stopImmediatePropagation();window.openCardSettings(b.dataset.ccId||'');
+  },true);
+  document.addEventListener('click',e=>{
+    const b=e.target.closest?.('[data-cc-action="pay"]');if(!b||typeof window.openStatementPayment!=='function')return;
+    e.preventDefault();e.stopImmediatePropagation();window.openStatementPayment(b.dataset.ccId||'');
   },true);
 
   document.addEventListener('click',e=>{
     const b=e.target.closest?.('[data-view]');if(!b||b.closest('#nav,#mobileNav'))return;
     const v=b.dataset.view;if(!v||typeof window.navigate!=='function')return;e.preventDefault();window.navigate(v);
   });
+
+  let protectedAttempts=0;const protectedTimer=setInterval(async()=>{protectedAttempts++;if(state.key&&state.household){try{await loadProtectedSystemTransactions(false);render();clearInterval(protectedTimer)}catch(e){console.error('Protected transaction load failed',e)}}if(protectedAttempts>40)clearInterval(protectedTimer)},250);
 
   queueMicrotask(afterRender);
 })();
