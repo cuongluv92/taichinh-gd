@@ -7,7 +7,8 @@
     'openInvestmentAccount','openInvestmentTransfer','openInvestmentValue',
     'exportData','copyPrivateLink','forgetDevice',
     'openMoreMenu','navigateFromMore','runFinanceDiagnostics','showFormulaInfo',
-    'openBankLoan','openBankPayment','runFormulaSelfTest'
+    'openBankLoan','openBankPayment','runFormulaSelfTest',
+    'openAllocationPlan','deleteAllocationPlan'
   ]);
 
   function splitTopLevel(src, separator=',') {
