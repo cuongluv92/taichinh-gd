@@ -11,6 +11,46 @@
     'openAllocationPlan','deleteAllocationPlan'
   ]);
 
+  function localToday(){
+    const d=new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+
+  function shiftMonth(month,delta){
+    const [y,m]=String(month).split('-').map(Number);
+    const d=new Date(y,m-1+Number(delta||0),1);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  }
+
+  async function changeMonth(delta){
+    const m=shiftMonth(state.month,delta);
+    try{
+      setLoading(true);
+      const picker=$('#monthPicker');
+      if(picker) picker.value=m;
+      await loadMonth(m);
+      toast(`Đã chuyển sang ${m.replace('-','/')}`);
+    }catch(e){
+      toast(e.message,true);
+    }finally{
+      setLoading(false);
+    }
+  }
+
+  async function jumpCurrentMonth(){
+    const m=localToday().slice(0,7);
+    try{
+      setLoading(true);
+      const picker=$('#monthPicker');
+      if(picker) picker.value=m;
+      await loadMonth(m);
+    }catch(e){
+      toast(e.message,true);
+    }finally{
+      setLoading(false);
+    }
+  }
+
   function splitTopLevel(src, separator=',') {
     const out=[]; let start=0, quote='', escape=false, depth=0;
     for(let i=0;i<src.length;i++){
@@ -99,6 +139,16 @@
     return fn(...args);
   }
 
+  function dispatchInlineInput(spec,el){
+    const code=(spec||'').replace(/\s+/g,'').replace(/;+$/,'');
+    if(code==='state.search=this.value;render()'){
+      state.search=el.value;
+      render();
+      return;
+    }
+    throw new Error('Ô nhập chưa được nối hành động');
+  }
+
   document.addEventListener('click', event => {
     const el=event.target.closest?.('[onclick]');
     if(!el) return;
@@ -115,5 +165,21 @@
     }
   }, true);
 
-  window.__dispatchInlineAction = dispatchInlineAction;
+  document.addEventListener('input', event => {
+    const el=event.target.closest?.('[oninput]');
+    if(!el) return;
+    const spec=el.getAttribute('oninput');
+    if(!spec) return;
+    try{
+      dispatchInlineInput(spec,el);
+    }catch(err){
+      console.error('Input action failed:', spec, err);
+    }
+  }, true);
+
+  Object.assign(window,{
+    shiftMonth,changeMonth,jumpCurrentMonth,
+    __dispatchInlineAction:dispatchInlineAction,
+    __dispatchInlineInput:dispatchInlineInput
+  });
 })();
