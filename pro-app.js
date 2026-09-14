@@ -1,4 +1,6 @@
 const GOAL_RPC_URL = `${SUPABASE_URL}/rest/v1/rpc/taichinh_gd_goal_api`;
+const CATEGORY_ORDER_RPC_URL = `${SUPABASE_URL}/rest/v1/rpc/taichinh_gd_category_order_api`;
+let categoryOrderSaving=false;
 
 async function goalApi(action, payload={}){
   if(!state.key) throw new Error('Thiếu khóa gia đình');
@@ -49,6 +51,56 @@ function totalByCurrency(rows, valueFn=x=>x.amount, currencyFn=x=>x.currency||st
 }
 function daysUntil(date){if(!date)return null;const now=new Date(today()+'T00:00:00'),d=new Date(String(date).slice(0,10)+'T00:00:00');return Math.ceil((d-now)/86400000)}
 function dateStatus(date){const d=daysUntil(date);if(d===null)return '';if(d<0)return `Quá hạn ${Math.abs(d)} ngày`;if(d===0)return 'Đến hạn hôm nay';if(d<=7)return `Còn ${d} ngày`;return `Hạn ${String(date).slice(0,10)}`}
+
+function categoryOrderValue(c){
+  const raw=c?.sort_order;
+  if(raw===null||raw===undefined||raw==='')return Number.MAX_SAFE_INTEGER;
+  const v=Number(raw);
+  return Number.isFinite(v)?v:Number.MAX_SAFE_INTEGER;
+}
+function orderedCategories(direction){
+  return (state.categories||[])
+    .filter(c=>c&&c.is_active!==false&&c.direction===direction)
+    .map((c,i)=>({c,i}))
+    .sort((a,b)=>categoryOrderValue(a.c)-categoryOrderValue(b.c)||a.i-b.i)
+    .map(x=>x.c);
+}
+async function moveCategoryOrder(direction,id,delta){
+  if(categoryOrderSaving)return;
+  const payload={income:orderedCategories('income').map(c=>c.id),expense:orderedCategories('expense').map(c=>c.id)};
+  const arr=payload[direction];
+  if(!Array.isArray(arr))return;
+  const index=arr.indexOf(id),next=index+Number(delta||0);
+  if(index<0||next<0||next>=arr.length)return;
+  [arr[index],arr[next]]=[arr[next],arr[index]];
+  categoryOrderSaving=true;
+  try{
+    setLoading(true);
+    const res=await fetch(CATEGORY_ORDER_RPC_URL,{method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY},body:JSON.stringify({p_key:state.key,p_payload:payload})});
+    const text=await res.text();let data;try{data=text?JSON.parse(text):null}catch{data=text}
+    if(!res.ok){
+      const raw=data?.message||data?.hint||String(data||`HTTP ${res.status}`);
+      throw new Error(/category_order_stale_refresh/i.test(raw)?'Danh mục vừa thay đổi. Hãy tải lại rồi thử lại.'
+        :/invalid_category_order/i.test(raw)?'Thứ tự danh mục không hợp lệ.'
+        :/invalid_access_key/i.test(raw)?'Khóa gia đình không đúng.'
+        :raw);
+    }
+    await refresh();
+    toast('Đã đổi thứ tự danh mục');
+  }catch(e){
+    toast(e.message||'Không đổi được thứ tự',true);
+  }finally{
+    categoryOrderSaving=false;
+    setLoading(false);
+  }
+}
+
+document.addEventListener('click',event=>{
+  const btn=event.target.closest?.('[data-category-move]');
+  if(!btn)return;
+  event.preventDefault();
+  moveCategoryOrder(btn.dataset.direction,btn.dataset.id,Number(btn.dataset.delta));
+});
 
 function openQuick(type){
   if(type==='income') return openTransaction('',{transaction_type:'income',account_id:defaultMoneyAccountId(),transaction_date:today()});
@@ -134,11 +186,11 @@ function txList(rows,actions=false){
 }
 
 function settings(){
-  const income=activeCategories('income'),expense=activeCategories('expense');
-  const catGroup=(title,items)=>`<div class="settings-cat-group"><div class="settings-cat-title"><strong>${title}</strong><button class="text-btn" onclick="openCategory()">＋ Thêm</button></div>${items.map(c=>`<div class="settings-cat-row"><span><i style="background:${esc(c.color)}"></i>${esc(c.name)}</span><div><button class="mini-btn" onclick="openCategory('${c.id}')">✎</button><button class="mini-btn" onclick="archiveCategory('${c.id}')">×</button></div></div>`).join('')||'<div class="empty compact">Chưa có mục</div>'}</div>`;
+  const income=orderedCategories('income'),expense=orderedCategories('expense');
+  const catGroup=(title,direction,items)=>`<div class="settings-cat-group"><div class="settings-cat-title"><strong>${title}</strong><button class="text-btn" onclick="openCategory()">＋ Thêm</button></div>${items.map((c,i)=>`<div class="settings-cat-row"><span><i style="background:${esc(c.color)}"></i>${esc(c.name)}</span><div><button class="mini-btn" type="button" data-category-move data-direction="${direction}" data-id="${esc(c.id)}" data-delta="-1" ${i===0?'disabled':''} title="Đưa lên" aria-label="Đưa ${esc(c.name)} lên">↑</button><button class="mini-btn" type="button" data-category-move data-direction="${direction}" data-id="${esc(c.id)}" data-delta="1" ${i===items.length-1?'disabled':''} title="Đưa xuống" aria-label="Đưa ${esc(c.name)} xuống">↓</button><button class="mini-btn" onclick="openCategory('${c.id}')">✎</button><button class="mini-btn" onclick="archiveCategory('${c.id}')">×</button></div></div>`).join('')||'<div class="empty compact">Chưa có mục</div>'}</div>`;
   return `<div class="settings-grid"><section class="pro-card settings-panel"><div class="panel-title"><div><h2>Gia đình</h2><p>Tên hiển thị và tiền tệ chính</p></div></div><form id="householdForm" class="form-grid"><div class="field"><label>Tên hiển thị</label><input name="name" value="${esc(state.household?.name||'Gia đình')}" required></div><div class="field"><label>Tiền tệ chính</label><select name="base_currency"><option value="JPY" ${state.base==='JPY'?'selected':''}>JPY · Yên Nhật</option><option value="VND" ${state.base==='VND'?'selected':''}>VND · Đồng Việt Nam</option></select></div><div class="field full"><button class="btn primary" type="submit">Lưu thay đổi</button></div></form></section>
   <section class="pro-card settings-panel"><div class="panel-title"><div><h2>Dữ liệu & thiết bị</h2><p>Sao lưu và mở trên thiết bị khác</p></div></div><div class="settings-actions"><button class="btn" onclick="exportData()">⇩ Tải bản sao JSON</button><button class="btn" onclick="copyPrivateLink()">⧉ Sao chép link riêng</button><button class="btn danger" onclick="forgetDevice()">Xóa khóa trên máy này</button></div></section>
-  <section class="pro-card settings-panel categories-panel"><div class="panel-title"><div><h2>Quản lý danh mục</h2><p>Sửa tên, cố định/biến động hoặc ẩn mục không dùng</p></div><button class="btn sm primary" onclick="openCategory()">＋ Danh mục</button></div><div class="settings-category-grid">${catGroup('Thu nhập',income)}${catGroup('Chi tiêu',expense)}</div></section>
+  <section class="pro-card settings-panel categories-panel"><div class="panel-title"><div><h2>Quản lý danh mục</h2><p>Sửa tên, cố định/biến động, ẩn hoặc dùng ↑ ↓ để đổi thứ tự</p></div><button class="btn sm primary" onclick="openCategory()">＋ Danh mục</button></div><div class="settings-category-grid">${catGroup('Thu nhập','income',income)}${catGroup('Chi tiêu','expense',expense)}</div></section>
   <section class="pro-card settings-panel"><div class="panel-title"><div><h2>Tình trạng dữ liệu</h2><p>Tóm tắt dữ liệu hiện có</p></div></div><div class="data-health"><div><strong>${activeAccounts().length}</strong><span>Tài khoản</span></div><div><strong>${state.transactions.length}</strong><span>Giao dịch tháng</span></div><div><strong>${state.goals.length}</strong><span>Mục tiêu</span></div><div><strong>${state.loans.length}</strong><span>Vay/nợ</span></div></div></section></div>`;
 }
 
