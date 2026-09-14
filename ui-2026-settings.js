@@ -1,5 +1,12 @@
 (() => {
   const V=window.__V3=window.__V3||{};
+  if(!document.querySelector('link[href="/ui-2026-compact.css"]')){
+    const link=document.createElement('link');
+    link.rel='stylesheet';
+    link.href='/ui-2026-compact.css';
+    document.head.appendChild(link);
+  }
+
   const ORDER_RPC=`${SUPABASE_URL}/rest/v1/rpc/taichinh_gd_category_order_api`;
   let draft=null;
   let dirty=false;
