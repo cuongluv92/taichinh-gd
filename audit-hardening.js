@@ -167,6 +167,11 @@
   if(typeof renderBefore==='function')window.render=function(...args){const out=renderBefore.apply(this,args);afterRender();queueMicrotask(afterRender);return out};
 
   document.addEventListener('click',e=>{
+    const b=e.target.closest?.('[data-cc-action="settings"]');if(!b||typeof window.openCardSettings!=='function')return;
+    e.preventDefault();e.stopImmediatePropagation();window.openCardSettings(b.dataset.ccId||'');
+  },true);
+
+  document.addEventListener('click',e=>{
     const b=e.target.closest?.('[data-view]');if(!b||b.closest('#nav,#mobileNav'))return;
     const v=b.dataset.view;if(!v||typeof window.navigate!=='function')return;e.preventDefault();window.navigate(v);
   });
