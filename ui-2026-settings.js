@@ -39,14 +39,7 @@
   function patch(){
     if(!window.state||state.view!=='settings')return;
     const content=document.getElementById('content');
-    if(!content)return;
-    const existing=content.querySelector('[data-ui-category-order-card]');
-    if(existing){
-      const fresh=document.createElement('template');
-      fresh.innerHTML=cardHtml().trim();
-      existing.replaceWith(fresh.content.firstElementChild);
-      return;
-    }
+    if(!content||content.querySelector('[data-ui-category-order-card]'))return;
     content.insertAdjacentHTML('beforeend',cardHtml());
   }
 
@@ -56,8 +49,8 @@
     e.preventDefault();
     if(typeof V.openCategoryOrder==='function'){
       V.openCategoryOrder();
-    }else{
-      toast?.('Chức năng sắp xếp chưa sẵn sàng.',true);
+    }else if(typeof window.toast==='function'){
+      window.toast('Chức năng sắp xếp chưa sẵn sàng.',true);
     }
   });
 
