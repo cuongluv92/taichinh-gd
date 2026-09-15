@@ -130,7 +130,7 @@ function renderDashboard() {
   return `
   <div class="grid kpi-grid">
     ${kpiCard('Tài sản ròng', money(pos.netWorth), netWorthSub, pos.netWorth < 0 ? 'red' : '')}
-    ${kpiCard('Tiền khả dụng', money(pos.liquid), 'Tiền mặt · ngân hàng · tiết kiệm')}
+    ${kpiCard('Tiền khả dụng', money(pos.liquidNet), 'Tiền mặt · ngân hàng · tiết kiệm, đã trừ nợ vay', pos.liquidNet < 0 ? 'red' : '')}
     ${kpiCard('Thu nhập tháng', money(s.income), `Kế hoạch ${money(incomePlan)}${momText(s.income, prevStats.income)}`, 'green')}
     ${kpiCard('Chi tiêu tháng', money(s.expense), `Kế hoạch ${money(fixedPlan + variablePlan)} · ${pctText(s.expense, incomePlan)} thu nhập${momText(s.expense, prevStats.expense)}`, '')}
   </div>

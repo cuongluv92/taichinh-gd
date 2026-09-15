@@ -146,7 +146,15 @@ F.financialPosition = (endDate = '9999-12-31') => {
   const borrowed = (state.loans || []).filter(l => l.loan_type === 'borrowed' && (l.currency || state.base) === state.base).reduce((s, l) => s + F.historicalLoanRemaining(l, endDate), 0);
   const totalAssets = accountAssets + receivables;
   const totalLiabilities = accountLiabilities + borrowed;
-  return { accountAssets, accountLiabilities, receivables, borrowed, totalAssets, totalLiabilities, netWorth: totalAssets - totalLiabilities, liquid, invested };
+  // liquidNet: cash on hand minus what's currently owed on borrowed loans
+  // (personal + bank). A fresh disbursement deposits real cash into an
+  // account (liquid goes up) but is simultaneously owed back in full, so
+  // without this the "Tiền khả dụng" card would look like borrowing money
+  // makes you richer. Net worth already nets assets against liabilities
+  // correctly on its own — this mirrors that same logic for the "what can
+  // I actually spend" figure specifically.
+  const liquidNet = liquid - borrowed;
+  return { accountAssets, accountLiabilities, receivables, borrowed, totalAssets, totalLiabilities, netWorth: totalAssets - totalLiabilities, liquid, liquidNet, invested };
 };
 F.assetComposition = (endDate = '9999-12-31') => {
   const groups = [['Tiền mặt', 'cash'], ['Ngân hàng', 'bank'], ['Tiết kiệm', 'savings'], ['Đầu tư', 'investment']]
@@ -279,7 +287,7 @@ F.positionInVND = pos => {
   if (!r) return null;
   return {
     totalAssets: pos.totalAssets * r, totalLiabilities: pos.totalLiabilities * r,
-    netWorth: pos.netWorth * r, liquid: pos.liquid * r, invested: pos.invested * r
+    netWorth: pos.netWorth * r, liquid: pos.liquid * r, liquidNet: pos.liquidNet * r, invested: pos.invested * r
   };
 };
 

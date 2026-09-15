@@ -237,6 +237,8 @@ function tx(overrides) { return { id: overrides.id || Math.random().toString(36)
     fullTransactions: [tx({ account_id: 'bank', loan_id: 'l', transaction_type: 'loan_borrow', amount: 100000, transaction_date: '2026-02-01' })]
   });
   eq('Borrowing 100,000: cash +100,000 and liability +100,000 => net worth unchanged', F.financialPosition().netWorth, 100000);
+  eq('Borrowing 100,000: liquidNet stays flat too (loan proceeds are not "extra" spendable money)', F.financialPosition().liquidNet, 100000);
+  eq('Borrowing 100,000: raw liquid DOES rise (it is real cash sitting in the account)', F.financialPosition().liquid, 200000);
 
   resetState({
     accounts: [acc('bank', 'bank', 'JPY', 80000), acc('sav', 'savings', 'JPY', 20000)],
@@ -274,9 +276,10 @@ function tx(overrides) { return { id: overrides.id || Math.random().toString(36)
   resetState({ base: 'JPY', reporting: { show_vnd_conversion: true, jpy_vnd_rate: 168 } });
   eq('toVND(JPY) uses the explicit entered rate once one exists', F.toVND(1000, 'JPY'), 168000);
   eq('toVND(VND) passes VND amounts through unchanged', F.toVND(50000, 'VND'), 50000);
-  eq('positionInVND multiplies every figure by the current rate', F.positionInVND({ totalAssets: 100, totalLiabilities: 20, netWorth: 80, liquid: 60, invested: 40 }).netWorth, 80 * 168);
+  eq('positionInVND multiplies every figure by the current rate', F.positionInVND({ totalAssets: 100, totalLiabilities: 20, netWorth: 80, liquid: 60, liquidNet: 50, invested: 40 }).netWorth, 80 * 168);
+  eq('positionInVND multiplies liquidNet too', F.positionInVND({ totalAssets: 100, totalLiabilities: 20, netWorth: 80, liquid: 60, liquidNet: 50, invested: 40 }).liquidNet, 50 * 168);
   resetState({ base: 'JPY', reporting: { show_vnd_conversion: false, jpy_vnd_rate: null } });
-  eq('positionInVND is null with no fx rate on file', F.positionInVND({ totalAssets: 100, totalLiabilities: 20, netWorth: 80, liquid: 60, invested: 40 }), null);
+  eq('positionInVND is null with no fx rate on file', F.positionInVND({ totalAssets: 100, totalLiabilities: 20, netWorth: 80, liquid: 60, liquidNet: 50, invested: 40 }), null);
 }
 
 // ---------------------------------------------------------------------

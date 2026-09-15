@@ -10,8 +10,14 @@ function incomePlanTotal() { return F.orderedCategories('income').reduce((s, c) 
 
 function amountLine(kind, planned, actual, basis) {
   const shown = actual > 0 ? actual : planned;
-  const cls = actual > 0 ? '' : 'muted';
-  const sub = actual > 0 && planned > 0 ? `<small>Kế hoạch ${money(planned)}</small>` : (planned <= 0 ? '<small>Chưa đặt kế hoạch</small>' : '');
+  // Dim styling is reserved for a genuinely empty row (nothing planned, nothing
+  // spent) — a planned-only amount is still real information the household
+  // set up on purpose, so it reads at full brightness like actual spend does,
+  // with a small "Kế hoạch" tag (instead of color alone) marking it as not-yet-actual.
+  const cls = shown > 0 ? '' : 'muted';
+  const sub = actual > 0 && planned > 0 ? `<small>Kế hoạch ${money(planned)}</small>`
+    : planned <= 0 ? '<small>Chưa đặt kế hoạch</small>'
+    : '<small>Kế hoạch — chưa có thực tế</small>';
   return { shown, cls, sub, pct: pctText(shown, basis) };
 }
 
@@ -95,7 +101,12 @@ function debtColumn() {
   const items = loans.map(l => {
     const due = F.loanMonthDue(l);
     if ((l.currency || state.base) === state.base) total += n(due.amount);
-    return `<button class="money-line" ${act('openLoanPayment', l.id)}><span class="line-label">${esc(l.counterparty)}<small>${esc(due.note)}</small></span><span class="line-amount"><strong class="${due.amount > 0 ? '' : 'muted'}">${money(due.amount || l.remaining_amount, l.currency)}</strong>${(l.currency || state.base) === state.base ? `<span class="pct">${pctText(due.amount, basis)}</span>` : '<span class="pct">ngoại tệ</span>'}</span></button>`;
+    // The big number here must always equal due.amount — the exact same
+    // figure the column's TỔNG sums below — so the row and the total never
+    // disagree. The full remaining balance (when nothing is due this month)
+    // is still visible via due.note ("Dư nợ ¥X"), just not as the headline
+    // number, which would otherwise look like ¥X is payable right now.
+    return `<button class="money-line" ${act('openLoanPayment', l.id)}><span class="line-label">${esc(l.counterparty)}<small>${esc(due.note)}</small></span><span class="line-amount"><strong class="${due.amount > 0 ? '' : 'muted'}">${money(due.amount, l.currency)}</strong>${(l.currency || state.base) === state.base ? `<span class="pct">${pctText(due.amount, basis)}</span>` : '<span class="pct">ngoại tệ</span>'}</span></button>`;
   });
   return moneyColumn({ title: 'Nợ phải trả', tone: 'debt', items, total: loans.length ? `${money(total)} <span class="pct">${pctText(total, basis)}</span>` : money(0), settingsAction: act('openDebtColumnManager'), emptyText: 'Chưa có khoản nợ' });
 }
