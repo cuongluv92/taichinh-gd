@@ -284,6 +284,16 @@ const RPC_HANDLERS = {
   results.push(`  Thẻ & trả góp column shows the card expense (Rakuten), Chi biến động untouched: ${budgetText.includes('Rakuten')}`);
   await page.screenshot({ path: path.join(SHOT_DIR, 'shot-budget-1440.png'), fullPage: true });
 
+  // Wifi (fx2, kế hoạch 6,000) has no actual transaction this month, so its
+  // row opens quick-entry directly — the amount field should prefill from
+  // the plan instead of forcing a re-type of the same number every month.
+  await page.click('.money-line:has-text("Wifi")');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 });
+  const qePrefill = await page.inputValue('#qeAmount');
+  results.push(`  Quick-entry amount prefills from kế hoạch when opened from a category row (Wifi 6,000): ${qePrefill === '6000'}`);
+  await page.evaluate(() => document.getElementById('modal')?.close());
+  await page.waitForTimeout(50);
+
   for (const w of [430, 390]) {
     await page.setViewportSize({ width: w, height: 800 });
     await page.waitForTimeout(150);
@@ -310,6 +320,9 @@ const RPC_HANDLERS = {
   await page.addInitScript(() => { window.confirm = () => false; });
   await page.reload();
   await page.waitForSelector('#app:not(.hidden)', { timeout: 8000 });
+  // The view loop above ended on "settings" — a reload must land back there,
+  // not reset to Tổng quan.
+  results.push(`RELOAD: stays on last-viewed tab (Cài đặt) instead of resetting to Tổng quan: ${await page.locator('[data-view="settings"].active').count() > 0 && (await page.textContent('#pageTitle')) === 'Cài đặt'}`);
   async function resetToast() { await page.evaluate(() => { const t = document.getElementById('toast'); if (t) t.className = 'toast'; }); }
   async function clickAndCheckModal(label, selector, checkSelector) {
     await page.click(selector);

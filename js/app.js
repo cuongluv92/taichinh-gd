@@ -53,7 +53,9 @@ async function boot() {
     await loadExtras(state.month);
     $('#app').classList.remove('hidden'); $('#unlock').classList.add('hidden');
     $('#monthPicker').value = state.month;
-    navigate('dashboard');
+    let savedView = '';
+    try { savedView = localStorage.getItem(VIEW_STORE) || ''; } catch {}
+    navigate(VIEW_META[savedView] ? savedView : 'dashboard');
   } catch (e) {
     console.error(e);
     localStorage.removeItem(KEY_STORE); state.key = '';
@@ -106,6 +108,7 @@ const VIEW_META = {
 };
 function navigate(v) {
   state.view = v;
+  try { localStorage.setItem(VIEW_STORE, v); } catch {}
   $$('#nav button,#mobileNav button').forEach(b => b.classList.toggle('active', b.dataset.view === v));
   const [t, s] = VIEW_META[v] || VIEW_META.dashboard;
   $('#pageTitle').textContent = t; $('#pageSubtitle').textContent = s;

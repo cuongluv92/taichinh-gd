@@ -21,11 +21,17 @@ function openQuickEntry(defaults = {}) {
   let type = ['income', 'expense'].includes(defaults.transaction_type) ? defaults.transaction_type : 'expense';
   const prefs = readQuickPrefs();
   let categoryId = defaults.category_id || prefs[type]?.category_id || '';
+  // Prefill from the category's planned amount (kế hoạch) when the caller
+  // didn't already give an explicit amount — most entries match the plan
+  // exactly, so this saves re-typing the same number every month; the user
+  // can still overwrite it when the actual amount differs.
+  const plannedAmount = categoryId ? n(F.categoryVersionAt(categoryId, selectedMonthDate())?.planned_amount) : 0;
+  const initialAmount = defaults.amount != null && defaults.amount !== '' ? defaults.amount : (plannedAmount > 0 ? plannedAmount : '');
   const dlg = $('#modal'), mb = $('#modalBody'), form = $('#modalForm');
   mb.innerHTML = `<div class="modal-head"><h3>Nhập nhanh</h3><button class="mini-btn" type="button" aria-label="Đóng" ${act('closeModal')}>✕</button></div>
   <div class="modal-content quick-entry">
     <div class="type-tabs" id="qeTypeTabs"><button type="button" data-t="expense">Chi</button><button type="button" data-t="income">Thu</button></div>
-    <div class="field"><label>Số tiền</label><div class="amount-row"><span id="qeCurrency">${esc(state.base)}</span><input id="qeAmount" name="amount" type="number" min="1" step="1" required autofocus placeholder="0" value="${esc(defaults.amount || '')}"></div><div class="chip-row" id="qeAmountChips"></div></div>
+    <div class="field"><label>Số tiền</label><div class="amount-row"><span id="qeCurrency">${esc(state.base)}</span><input id="qeAmount" name="amount" type="number" min="1" step="1" required autofocus placeholder="0" value="${esc(initialAmount)}"></div><div class="chip-row" id="qeAmountChips"></div></div>
     <label class="mini-label">Danh mục</label><div class="chip-row" id="qeCategoryChips"></div>
     <details class="mt-12"><summary class="details-summary">Thêm chi tiết</summary>
       <div class="form-grid mt-10">

@@ -8,6 +8,7 @@ const SUPABASE_URL = 'https://frqujwlswqmtsxnqnwwc.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_TCG4KliEaKshVW9BKQJiCQ_1UrLbjdC';
 const KEY_STORE = 'taichinh_gd_key_v1';
 const QUICK_PREF_KEY = 'taichinh_gd_quick_entry_v1';
+const VIEW_STORE = 'taichinh_gd_last_view_v1';
 
 const localToday = () => {
   const d = new Date();
