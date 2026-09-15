@@ -23,13 +23,14 @@ async function loadExtras(month = state.month) {
   // recurring-expense reminders, a second card "overview" summary, and a
   // monthly FX-history table — all still intact in Supabase, just not part
   // of this pass's simplified screens, so they're not fetched here.)
-  const [ext, allocation, cardGet, cardInstallments, cardMonthRes, exceptional] = await Promise.all([
+  const [ext, allocation, cardGet, cardInstallments, cardMonthRes, exceptional, cardCategories] = await Promise.all([
     api.extension('get'),
     api.allocation('get_month', { month: monthDate(month) }),
     api.card('get'),
     api.card('list_installments'),
     api.cardMonth(month),
-    api.exceptional('list')
+    api.exceptional('list'),
+    api.cardCategory('list')
   ]);
   state.reporting = { show_vnd_conversion: false, jpy_vnd_rate: null, ...(ext?.reporting || {}) };
   state.loanTerms = ext?.loan_terms || [];
@@ -38,6 +39,7 @@ async function loadExtras(month = state.month) {
   state.cardInstallments = cardInstallments?.items || [];
   state.cardMonth = cardMonthRes?.items || [];
   state.exceptionalIds = exceptional?.ids || [];
+  state.cardCategories = cardCategories?.items || [];
 }
 
 async function boot() {

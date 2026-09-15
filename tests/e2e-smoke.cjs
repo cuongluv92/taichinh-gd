@@ -119,7 +119,8 @@ const RPC_HANDLERS = {
   taichinh_gd_bank_loan_api: () => ({ ok: true, id: 'x' }),
   taichinh_gd_budget_column_api: () => ({ ok: true }),
   taichinh_gd_investment_api: () => ({ ok: true, id: 'x' }),
-  taichinh_gd_credit_card_plan_api: () => ({ ok: true, id: 'x' })
+  taichinh_gd_credit_card_plan_api: () => ({ ok: true, id: 'x' }),
+  taichinh_gd_card_category_api: (action) => action === 'save_all' ? { ok: true, saved: 2 } : { items: [{ id: 'cc1', name: 'Mua sắm', color: '#8b93a1', sort_order: 10 }, { id: 'cc2', name: 'Nạp pay', color: '#8b93a1', sort_order: 20 }] }
 };
 
 (async () => {
@@ -368,14 +369,49 @@ const RPC_HANDLERS = {
   }
   const creditLine = await page.$('.money-column.credit .money-line');
   if (creditLine) { await creditLine.click(); await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK credit money-line (statement payment): modal opened - OK')).catch(() => results.push('CLICK credit money-line: modal did NOT open - FAIL')); await page.evaluate(() => document.getElementById('modal')?.close()); }
-  const creditQuickAdd = await page.$('.money-column.credit .money-line-wrap .mini-btn');
+  // ＋ on a card now opens the card's OWN expense entry (category chips
+  // from state.cardCategories, or none for a lump sum) — not the general
+  // Nhập nhanh, and it must never touch category_id/Chi biến động.
+  const creditQuickAdd = await page.$('.money-column.credit .money-line-wrap [aria-label^="Ghi chi tiêu"]');
   if (creditQuickAdd) {
     await creditQuickAdd.click();
-    await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK credit ＋ quick-add: quick-entry opened - OK')).catch(() => results.push('CLICK credit ＋ quick-add: modal did NOT open - FAIL'));
-    const accSelVal = await page.$eval('#qeAccountSelect', el => el.value).catch(() => null);
-    results.push(`CLICK credit ＋ quick-add pre-selects the card as account: ${accSelVal === 'card'}`);
-    await page.evaluate(() => document.getElementById('modal')?.close());
+    await page.waitForSelector('#ceAmount', { timeout: 1500 }).then(() => results.push('CLICK credit ＋ (openCardExpense): card-expense form opened - OK')).catch(() => results.push('CLICK credit ＋: card-expense form did NOT open - FAIL'));
+    const chipCount = await page.locator('#ceCatChips [data-cc]').count();
+    results.push(`  card-expense form shows card-category chips (Mua sắm/Nạp pay, not Chi tiêu categories): ${chipCount === 2}`);
+    await page.fill('#ceAmount', '5000');
+    await resetToast();
+    await page.click('#modalForm [type=submit]');
+    await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`SUBMIT card expense with no category chosen (lump sum): saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('SUBMIT card expense (lump sum): no toast - FAIL'));
   }
+  await page.waitForTimeout(50);
+
+  // 📋 opens this month's card transactions for edit/delete — including the
+  // fixture's Giải trí purchase, which still carries a Chi tiêu category_id
+  // from "before" this feature (must show as Chưa phân loại, and clicking
+  // it must reach the real edit form, not silently fail).
+  const cardListBtn = await page.$('.money-column.credit .money-line-wrap [aria-label^="Xem chi tiêu"]');
+  if (cardListBtn) {
+    await cardListBtn.click();
+    await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK credit 📋 (openCardTransactions): list opened - OK')).catch(() => results.push('CLICK credit 📋: list did NOT open - FAIL'));
+    const listText = await page.textContent('#modalBody');
+    results.push(`  card transaction list shows the legacy row as "Chưa phân loại": ${listText.includes('Chưa phân loại')}`);
+    const firstTxBtn = page.locator('#modalBody .tx-row-btn').first();
+    if (await firstTxBtn.count()) {
+      await firstTxBtn.click();
+      await page.waitForSelector('#etCardCat', { timeout: 1500 }).then(() => results.push('CLICK a card transaction from the list: edit form shows the card-category field - OK')).catch(() => results.push('CLICK a card transaction: edit form did NOT show card-category field - FAIL'));
+      const catFieldHidden = await page.isHidden('#etCatField');
+      results.push(`  edit form hides the regular Danh mục field for a card transaction: ${catFieldHidden}`);
+    }
+    await page.evaluate(() => document.getElementById('modal')?.close());
+    await page.waitForTimeout(50);
+  }
+
+  // ⚙ Danh mục thẻ inside the credit column manager
+  await page.click('.money-column.credit .column-settings');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 });
+  await page.click('button:has-text("Danh mục thẻ")');
+  await page.waitForSelector('#cardCatRows', { timeout: 1500 }).then(() => results.push('CLICK "⚙ Danh mục thẻ" inside manager (reopenAfterModal): card-category settings opened - OK')).catch(() => results.push('CLICK "⚙ Danh mục thẻ": card-category settings did NOT open - FAIL'));
+  await page.evaluate(() => document.getElementById('modal')?.close());
   await page.waitForTimeout(50);
 
   // "+ Thẻ tín dụng" and "+ Khoản trả góp" inside the credit column manager

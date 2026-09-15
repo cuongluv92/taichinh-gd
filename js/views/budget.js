@@ -82,7 +82,8 @@ function creditColumn() {
     // logging a purchase doesn't require hunting for the card in a dropdown.
     return `<div class="money-line-wrap">
       <button class="money-line" ${!s ? act('openCardSettings', card.id) : act('openStatementPayment', card.id)}><span class="line-label">${esc(card.name)}<small>${esc(note)}</small></span><span class="line-amount"><strong class="${amount > 0 ? '' : 'muted'}">${money(amount, card.currency)}</strong>${(card.currency || state.base) === state.base ? `<span class="pct">${pctText(amount, basis)}</span>` : '<span class="pct">ngoại tệ</span>'}</span></button>
-      <button class="mini-btn" type="button" aria-label="Ghi chi tiêu bằng ${esc(card.name)}" title="Ghi chi tiêu bằng ${esc(card.name)}" ${act('openQuickEntry', { transaction_type: 'expense', account_id: card.id })}>＋</button>
+      <button class="mini-btn" type="button" aria-label="Ghi chi tiêu bằng ${esc(card.name)}" title="Ghi chi tiêu bằng ${esc(card.name)}" ${act('openCardExpense', card.id)}>＋</button>
+      <button class="mini-btn" type="button" aria-label="Xem chi tiêu ${esc(card.name)}" title="Xem/sửa chi tiêu tháng này" ${act('openCardTransactions', card.id)}>📋</button>
     </div>`;
   });
   return moneyColumn({ title: 'Thẻ & trả góp', tone: 'credit', items, total: `${money(total)} <span class="pct">${pctText(total, basis)}</span>`, settingsAction: act('openCreditColumnManager'), emptyText: 'Chưa có thẻ tín dụng' });
@@ -113,9 +114,9 @@ function openCreditColumnManager() {
     const inst = (state.cardInstallments || []).filter(x => x.card_account_id === card.id);
     return `<div class="tx"><div class="tx-main"><strong>${esc(card.name)}</strong><span>${s ? `Chốt ngày ${esc(s.closing_day)} · trả ngày ${esc(s.payment_day)} · ${n(s.payment_month_offset || 1) === 1 ? 'tháng sau' : 'sau 2 tháng'}` : 'Chưa cài chu kỳ'}${inst.length ? ` · ${inst.length} khoản trả góp` : ''}</span></div><div class="tx-actions"><button class="btn sm" ${act('reopenAfterModal', 'openCardSettings', card.id)}>Sửa chu kỳ</button></div></div>`;
   }).join('');
-  infoModal('Cài đặt · Thẻ & trả góp', `<p class="note">Thanh toán thẻ không tính thành chi tiêu lần hai — chỉ chuyển tiền ngân hàng sang thẻ.</p>
+  infoModal('Cài đặt · Thẻ & trả góp', `<p class="note">Thanh toán thẻ không tính thành chi tiêu lần hai — chỉ chuyển tiền ngân hàng sang thẻ. Chi tiêu qua thẻ dùng danh mục riêng (Mua sắm, Nạp pay...), không tính vào Chi cố định/Chi biến động.</p>
     <div class="list">${rows || '<div class="empty compact">Chưa có thẻ tín dụng.</div>'}</div>
-    <div class="row mt-14"><button class="btn primary" ${act('reopenAfterModal', 'openCreditCard')}>＋ Thẻ tín dụng</button><button class="btn" ${cards.length ? '' : 'disabled'} ${act('reopenAfterModal', 'openInstallment')}>＋ Khoản trả góp</button></div>`);
+    <div class="row mt-14"><button class="btn primary" ${act('reopenAfterModal', 'openCreditCard')}>＋ Thẻ tín dụng</button><button class="btn" ${cards.length ? '' : 'disabled'} ${act('reopenAfterModal', 'openInstallment')}>＋ Khoản trả góp</button><button class="btn" ${act('reopenAfterModal', 'openCardCategorySettings')}>⚙ Danh mục thẻ</button></div>`);
 }
 async function deleteLoanFromManager(id) {
   if (await deleteLoan(id)) closeModal();

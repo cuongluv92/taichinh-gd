@@ -129,24 +129,39 @@ function openTransactionEdit(id) {
     <div class="field"><label>Loại</label><select name="transaction_type" id="etType"><option value="expense" ${type === 'expense' ? 'selected' : ''}>Chi tiêu</option><option value="income" ${type === 'income' ? 'selected' : ''}>Thu nhập</option><option value="transfer" ${type === 'transfer' ? 'selected' : ''}>Chuyển khoản</option></select></div>
     <div class="field"><label>Số tiền</label><input name="amount" type="number" min="1" step="1" value="${esc(t.amount)}" required></div>
     <div class="field"><label>Ngày</label><input name="transaction_date" type="date" value="${esc(t.transaction_date)}" required></div>
-    <div class="field"><label>Tài khoản</label><select name="account_id">${options(F.activeAccounts(), t.account_id, a => `${a.name} · ${a.currency}`)}</select></div>
+    <div class="field"><label>Tài khoản</label><select name="account_id" id="etAccount">${options(F.activeAccounts(), t.account_id, a => `${a.name} · ${a.currency}`)}</select></div>
     <div class="field" id="etCatField"><label>Danh mục</label><select name="category_id" id="etCat"></select></div>
+    <div class="field hidden" id="etCardCatField"><label>Danh mục thẻ</label><select name="card_category_id" id="etCardCat"></select></div>
     <div class="field hidden" id="etTgtField"><label>Chuyển đến</label><select name="transfer_account_id" id="etTgt"></select></div>
     <div class="field full"><label>Ghi chú</label><input name="note" value="${esc(t.note || '')}"></div>
     <div class="field full${type === 'expense' ? '' : ' hidden'}" id="etExceptionalField"><label class="checkbox-label"><input type="checkbox" id="etExceptional" ${F.isExceptional(t) ? 'checked' : ''}> Chi tiêu bất thường (không tính vào ngân sách Chi cố định/Chi biến động tháng này)</label></div>
   </div>`, async fd => {
-    await api.core('save_transaction', { ...fd, id, fx_rate: 1, currency: F.accountById(fd.account_id)?.currency || state.base, category_id: fd.transaction_type === 'transfer' ? null : fd.category_id, transfer_account_id: fd.transaction_type === 'transfer' ? fd.transfer_account_id : null });
-    if (fd.transaction_type === 'expense') await api.exceptional('set', { id, is_exceptional: $('#etExceptional').checked });
+    const isCard = fd.transaction_type === 'expense' && F.accountById(fd.account_id)?.account_type === 'credit';
+    await api.core('save_transaction', {
+      ...fd, id, fx_rate: 1, currency: F.accountById(fd.account_id)?.currency || state.base,
+      category_id: fd.transaction_type === 'transfer' || isCard ? null : fd.category_id,
+      card_category_id: isCard ? (fd.card_category_id || null) : null,
+      transfer_account_id: fd.transaction_type === 'transfer' ? fd.transfer_account_id : null
+    });
+    if (fd.transaction_type === 'expense' && !isCard) await api.exceptional('set', { id, is_exceptional: $('#etExceptional').checked });
   });
-  const typeEl = $('#etType'), catEl = $('#etCat'), tgtEl = $('#etTgt');
+  const typeEl = $('#etType'), catEl = $('#etCat'), tgtEl = $('#etTgt'), accEl = $('#etAccount'), cardCatEl = $('#etCardCat');
+  // A card account's spending uses the separate card-category list (Mua
+  // sắm/Nạp pay...) instead of Chi tiêu's categories, and doesn't have an
+  // "exceptional" flag — card money is already outside the budget buckets
+  // that flag exists to protect.
   const sync = () => {
     const tr = typeEl.value === 'transfer';
-    $('#etCatField').classList.toggle('hidden', tr); $('#etTgtField').classList.toggle('hidden', !tr);
-    $('#etExceptionalField').classList.toggle('hidden', typeEl.value !== 'expense');
-    if (!tr) catEl.innerHTML = options(F.activeCategories(typeEl.value), t.category_id);
-    else tgtEl.innerHTML = options(F.activeAccounts().filter(a => a.id !== t.account_id), t.transfer_account_id);
+    const isCard = !tr && typeEl.value === 'expense' && F.accountById(accEl.value)?.account_type === 'credit';
+    $('#etCatField').classList.toggle('hidden', tr || isCard);
+    $('#etCardCatField').classList.toggle('hidden', !isCard);
+    $('#etTgtField').classList.toggle('hidden', !tr);
+    $('#etExceptionalField').classList.toggle('hidden', typeEl.value !== 'expense' || isCard);
+    if (tr) tgtEl.innerHTML = options(F.activeAccounts().filter(a => a.id !== t.account_id), t.transfer_account_id);
+    else if (isCard) cardCatEl.innerHTML = '<option value="">— Chưa phân loại —</option>' + options(state.cardCategories || [], t.card_category_id);
+    else catEl.innerHTML = options(F.activeCategories(typeEl.value), t.category_id);
   };
-  typeEl.onchange = sync; sync();
+  typeEl.onchange = sync; accEl.onchange = sync; sync();
 }
 async function deleteTransaction(id) {
   if (!confirm('Xóa giao dịch này?')) return;
@@ -424,6 +439,137 @@ function openCardSettings(id) {
     <div class="field"><label>Trừ từ tài khoản</label><select name="payment_account_id">${paymentAccountOptions(card.currency || state.base, selected)}</select></div>
   </div>`, fd => api.card('save', { ...fd, account_id: id }), 'Lưu chu kỳ');
 }
+
+// ---------------- Card categories (separate from Chi tiêu's categories) ----------------
+// Quick, low-friction entry for a card purchase: pick one of the
+// household's own card-category chips (Mua sắm, Nạp pay...), or leave none
+// selected for a lump-sum entry with no breakdown — either way it's an
+// `expense` against the card account with category_id left null, so it
+// never counts toward Chi cố định/Chi biến động (see F.isCardExpense).
+function openCardExpense(cardId) {
+  const card = F.cardAccounts().find(a => a.id === cardId); if (!card) return toast('Không tìm thấy thẻ.', true);
+  let cardCategoryId = '';
+  const cats = state.cardCategories || [];
+  const dlg = $('#modal'), mb = $('#modalBody'), form = $('#modalForm');
+  mb.innerHTML = `<div class="modal-head"><h3>Chi tiêu · ${esc(card.name)}</h3><button class="mini-btn" type="button" aria-label="Đóng" ${act('closeModal')}>✕</button></div>
+  <div class="modal-content">
+    <div class="field"><label>Số tiền</label><input id="ceAmount" name="amount" type="number" min="1" step="1" required autofocus placeholder="0"></div>
+    <div><label class="mini-label">Mục (bỏ qua nếu chỉ muốn nhập tổng số tiền)</label><div class="chip-row" id="ceCatChips">${cats.map(c => `<button type="button" class="chip" data-cc="${esc(c.id)}">${esc(c.name)}</button>`).join('') || '<span class="muted text-sm">Chưa có mục nào — vào ⚙ Cài đặt · Thẻ & trả góp để thêm</span>'}</div></div>
+    <div class="form-grid mt-10">
+      <div class="field"><label>Ngày</label><input name="transaction_date" type="date" value="${localToday()}" required></div>
+      <div class="field full"><label>Ghi chú</label><input name="note" placeholder="Tùy chọn"></div>
+    </div>
+  </div>
+  <div class="modal-actions"><button class="btn" type="button" ${act('closeModal')}>Hủy</button><button class="btn primary" type="submit">Lưu</button></div>`;
+  $('#ceCatChips').addEventListener('click', e => {
+    const b = e.target.closest('[data-cc]'); if (!b) return;
+    cardCategoryId = cardCategoryId === b.dataset.cc ? '' : b.dataset.cc; // click again to unselect (lump sum)
+    $$('#ceCatChips .chip').forEach(x => x.classList.toggle('active', x.dataset.cc === cardCategoryId));
+  });
+  form.onsubmit = async e => {
+    e.preventDefault();
+    const fd = Object.fromEntries(new FormData(form).entries());
+    const submitBtn = form.querySelector('[type=submit]');
+    try {
+      submitBtn.disabled = true;
+      if (!n(fd.amount)) throw new Error('Hãy nhập số tiền.');
+      await api.core('save_transaction', {
+        transaction_type: 'expense', account_id: cardId, category_id: null, card_category_id: cardCategoryId || null,
+        amount: fd.amount, currency: card.currency || state.base, fx_rate: 1,
+        transaction_date: fd.transaction_date, note: fd.note || ''
+      });
+      dlg.close(); await window.refresh(); toast('Đã lưu');
+    } catch (err) { toast(err.message || 'Không lưu được', true); } finally { submitBtn.disabled = false; }
+  };
+  if (!dlg.open) dlg.showModal();
+  setTimeout(() => $('#ceAmount').focus(), 30);
+}
+function cardCategoryRowHtml(c = {}) {
+  return `<div class="settings-row" data-cc-row data-id="${esc(c.id || '')}" data-color="${esc(c.color || '#8b93a1')}">
+    <div class="settings-row-inputs"><input data-cc-name placeholder="Tên mục (VD: Mua sắm, Nạp pay)" value="${esc(c.name || '')}" required></div>
+    <div class="tx-actions">
+      <button type="button" class="mini-btn" data-cc-move="-1" title="Lên">↑</button>
+      <button type="button" class="mini-btn" data-cc-move="1" title="Xuống">↓</button>
+      <button type="button" class="mini-btn" data-cc-remove title="Xóa">×</button>
+    </div>
+  </div>`;
+}
+function refreshCardCategoryMoveButtons() {
+  const rows = $$('#cardCatRows [data-cc-row]');
+  rows.forEach((row, i) => { row.querySelector('[data-cc-move="-1"]').disabled = i === 0; row.querySelector('[data-cc-move="1"]').disabled = i === rows.length - 1; });
+}
+function openCardCategorySettings() {
+  const cats = state.cardCategories || [];
+  const dlg = $('#modal'), mb = $('#modalBody'), form = $('#modalForm');
+  mb.innerHTML = `<div class="modal-head"><h3>Danh mục thẻ</h3><button class="mini-btn" type="button" aria-label="Đóng" data-close>✕</button></div>
+  <div class="modal-content">
+    <p class="note">Danh mục riêng cho chi tiêu qua thẻ (Mua sắm, Nạp pay...) — tách biệt hoàn toàn với Chi cố định/Chi biến động, không tính vào ngân sách tháng.</p>
+    <div id="cardCatRows" class="stack mt-10">${cats.map(cardCategoryRowHtml).join('') || '<div class="empty compact">Chưa có mục nào.</div>'}</div>
+    <button type="button" class="btn mt-10" id="cardCatAddRow">＋ Thêm mục mới</button>
+  </div>
+  <div class="modal-actions"><button class="btn" type="button" data-close>Hủy</button><button class="btn primary" type="submit">Lưu</button></div>`;
+  refreshCardCategoryMoveButtons();
+  mb.querySelectorAll('[data-close]').forEach(b => b.onclick = () => dlg.close());
+  $('#cardCatAddRow').onclick = () => {
+    const box = $('#cardCatRows'); box.querySelector('.empty')?.remove();
+    box.insertAdjacentHTML('beforeend', cardCategoryRowHtml({}));
+    refreshCardCategoryMoveButtons(); box.lastElementChild.querySelector('[data-cc-name]').focus();
+  };
+  $('#cardCatRows').addEventListener('click', e => {
+    const move = e.target.closest('[data-cc-move]');
+    if (move) { const row = move.closest('[data-cc-row]'), delta = Number(move.dataset.ccMove);
+      if (delta < 0 && row.previousElementSibling) row.parentNode.insertBefore(row, row.previousElementSibling);
+      else if (delta > 0 && row.nextElementSibling) row.parentNode.insertBefore(row.nextElementSibling, row);
+      refreshCardCategoryMoveButtons(); return; }
+    const rm = e.target.closest('[data-cc-remove]');
+    if (rm) { const row = rm.closest('[data-cc-row]'); row.remove(); refreshCardCategoryMoveButtons(); }
+  });
+  form.onsubmit = async e => {
+    e.preventDefault();
+    const submitBtn = form.querySelector('[type=submit]');
+    try {
+      submitBtn.disabled = true;
+      const rows = $$('#cardCatRows [data-cc-row]').map(row => {
+        const name = row.querySelector('[data-cc-name]').value.trim();
+        if (!name) throw new Error('Tên mục không được để trống.');
+        return { id: row.dataset.id || null, name, color: row.dataset.color || '#8b93a1' };
+      });
+      await api.cardCategory('save_all', { rows });
+      dlg.close(); await window.refresh(); toast('Đã lưu');
+    } catch (err) { toast(err.message || 'Không lưu được', true); } finally { submitBtn.disabled = false; }
+  };
+  if (!dlg.open) dlg.showModal();
+}
+// This month's card purchases (lump-sum + categorized), listed for edit/
+// delete — the only reachable place to fix an old transaction that still
+// carries a regular category_id from before this feature existed (it shows
+// as "Chưa phân loại" since card_category_id is null on it).
+async function deleteTransactionFromCardList(id, cardId) {
+  if (!confirm('Xóa giao dịch này?')) return;
+  try {
+    await api.core('delete_transaction', { id });
+    await window.refresh();
+    toast('Đã xóa giao dịch');
+    openCardTransactions(cardId);
+  } catch (e) { toast(e.message, true); }
+}
+function openCardTransactions(cardId) {
+  const card = F.cardAccounts().find(a => a.id === cardId); if (!card) return toast('Không tìm thấy thẻ.', true);
+  const rows = (state.transactions || []).filter(t => t.transaction_type === 'expense' && t.account_id === cardId)
+    .sort((a, b) => String(b.transaction_date).localeCompare(String(a.transaction_date)));
+  const list = rows.map(t => {
+    const cc = (state.cardCategories || []).find(c => c.id === t.card_category_id);
+    return `<div class="tx"><button class="tx-row-btn" ${act('openTransactionEdit', t.id)}>
+      <div class="tx-main"><strong>${money(t.amount, t.currency)}</strong><span>${esc(cc?.name || 'Chưa phân loại')} · ${esc(String(t.transaction_date).slice(0, 10))}${t.note ? ` · ${esc(t.note)}` : ''}</span></div>
+      </button>
+      <div class="tx-actions"><button class="mini-btn" aria-label="Xóa" ${act('deleteTransactionFromCardList', t.id, cardId)}>×</button></div>
+    </div>`;
+  }).join('');
+  infoModal(`Chi tiêu · ${esc(card.name)} · Tháng ${fmtMonthKey(state.month)}`, `
+    <div class="list">${list || '<div class="empty compact">Chưa có giao dịch nào.</div>'}</div>
+    <button class="btn primary mt-14" ${act('reopenAfterModal', 'openCardExpense', cardId)}>＋ Thêm giao dịch</button>`);
+}
+
 function openInstallment() {
   const cards = F.configuredCards();
   // No card set up yet? Don't dead-end — open the "add card" form directly

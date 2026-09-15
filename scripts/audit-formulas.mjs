@@ -107,6 +107,32 @@ function tx(overrides) { return { id: overrides.id || Math.random().toString(36)
 }
 
 // ---------------------------------------------------------------------
+// B3. Any expense paid from a credit-card account is excluded from Chi cố
+//     định/Chi biến động by ACCOUNT, not by category — so it still works
+//     for a "legacy" card transaction that carries a regular category_id
+//     from before card_category_id existed, not just new card_category_id
+//     entries. It still counts in the household's overall "expense" total
+//     (cardSpend), just never in fixed/variable.
+// ---------------------------------------------------------------------
+{
+  resetState({
+    accounts: [acc('bank', 'bank', 'JPY', 500000), acc('card', 'credit', 'JPY', 0)],
+    categories: [{ id: 'shopping', direction: 'expense', cost_type: 'variable', name: 'Mua sắm', is_active: true }],
+  });
+  const cash = tx({ account_id: 'bank', category_id: 'shopping', transaction_type: 'expense', amount: 20000, transaction_date: '2026-09-05' });
+  const legacyCard = tx({ account_id: 'card', category_id: 'shopping', transaction_type: 'expense', amount: 142000, transaction_date: '2026-09-10' }); // no card_category_id — "old" style row
+  const newCard = tx({ account_id: 'card', card_category_id: 'cc1', transaction_type: 'expense', amount: 8000, transaction_date: '2026-09-12' });
+  sandbox.state.fullTransactions = [cash, legacyCard, newCard];
+  sandbox.state.transactions = [cash, legacyCard, newCard];
+  const stats = F.statsFor([cash, legacyCard, newCard]);
+  eq('B3. Chi biến động total only counts the cash-paid expense', stats.variable, 20000);
+  eq('B3. Card spend (legacy + new) tracked in its own bucket', stats.cardSpend, 150000);
+  eq('B3. Overall "expense" (Chi tiêu tháng) still includes card spend', stats.expense, 170000);
+  eq('B3. categoryActualBase excludes card-paid rows even though legacy row shares the category', F.categoryActualBase('shopping', 'expense'), 20000);
+  eq('B3. expenseByCategory (dashboard donut) excludes card-paid rows too', F.expenseByCategory([cash, legacyCard, newCard]).find(x => x.label === 'Mua sắm')?.value, 20000);
+}
+
+// ---------------------------------------------------------------------
 // C. Bank loan repayment 50,000 = 40,000 principal + 10,000 interest.
 //    Principal must NOT count as household expense; interest must.
 //    Net worth must fall by exactly the interest portion.
