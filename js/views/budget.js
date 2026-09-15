@@ -48,10 +48,7 @@ function incomeColumn() {
   const items = cats.map(c => {
     const actual = F.categoryActualBase(c.id, 'income');
     const line = amountLine('income', n(c.planned_amount), actual, null);
-    return `<div class="money-line-wrap">
-      <button class="money-line" ${categoryRowAction('income', actual, c.id, c.name)}><span class="line-label">${esc(c.name)}${line.sub}</span><strong class="${line.cls}">${money(line.shown)}</strong></button>
-      <button class="mini-btn" type="button" aria-label="Ghi thu thực tế cho ${esc(c.name)}" title="Ghi thu thực tế" ${act('openQuickEntry', { transaction_type: 'income', category_id: c.id })}>＋</button>
-    </div>`;
+    return `<button class="money-line" ${categoryRowAction('income', actual, c.id, c.name)}><span class="line-label">${esc(c.name)}${line.sub}</span><strong class="${line.cls}">${money(line.shown)}</strong></button>`;
   });
   return moneyColumn({ title: 'Thu nhập', tone: 'income', items, total: money(total), settingsAction: act('openColumnSettings', 'income'), settingsLabel: '⚙ Lập kế hoạch', emptyText: 'Chưa có mục thu nhập' });
 }
@@ -63,10 +60,7 @@ function expenseColumn(kind, title) {
     const actual = F.categoryActualBase(c.id, 'expense');
     const line = amountLine(kind, n(c.planned_amount), actual, basis);
     total += line.shown;
-    return `<div class="money-line-wrap">
-      <button class="money-line" ${categoryRowAction('expense', actual, c.id, c.name)}><span class="line-label">${esc(c.name)}${line.sub}</span><span class="line-amount"><strong class="${line.cls}">${money(line.shown)}</strong><span class="pct">${line.pct}</span></span></button>
-      <button class="mini-btn" type="button" aria-label="Ghi chi thực tế cho ${esc(c.name)}" title="Ghi chi thực tế" ${act('openQuickEntry', { transaction_type: 'expense', category_id: c.id })}>＋</button>
-    </div>`;
+    return `<button class="money-line" ${categoryRowAction('expense', actual, c.id, c.name)}><span class="line-label">${esc(c.name)}${line.sub}</span><span class="line-amount"><strong class="${line.cls}">${money(line.shown)}</strong><span class="pct">${line.pct}</span></span></button>`;
   });
   return moneyColumn({ title, tone: kind, items, total: `${money(total)} <span class="pct">${pctText(total, basis)}</span>`, settingsAction: act('openColumnSettings', kind), settingsLabel: '⚙ Lập kế hoạch', emptyText: kind === 'fixed' ? 'Chưa có chi cố định' : 'Chưa có chi biến động' });
 }

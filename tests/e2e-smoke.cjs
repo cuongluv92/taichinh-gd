@@ -262,6 +262,15 @@ const RPC_HANDLERS = {
   await page.waitForSelector('#app:not(.hidden)', { timeout: 8000 });
   results.push('BOOT: app shell visible after fixture bootstrap - OK');
 
+  // Every card in a given row of a grid (money-board columns, dashboard's
+  // two report columns) must render the same height — align-items:stretch
+  // should guarantee this regardless of how much content each one has.
+  async function rowHeightsEqual(selector) {
+    const heights = await page.$$eval(selector, els => els.map(el => Math.round(el.getBoundingClientRect().height)));
+    if (heights.length < 2) return { ok: true, heights };
+    return { ok: heights.every(h => Math.abs(h - heights[0]) <= 1), heights };
+  }
+
   // ---- Tổng quan: month-only, Nợ never appears anywhere ----
   const dashboardText = await page.textContent('#content');
   const kpiLabels = await page.locator('.kpi-grid .kpi .label').allTextContents();
@@ -272,6 +281,8 @@ const RPC_HANDLERS = {
   results.push(`  NISA / investment name never appears on Tổng quan: ${!dashboardText.includes('NISA')}`);
   results.push(`DASHBOARD shows month-over-month comparison text: ${dashboardText.includes('so với tháng trước') || dashboardText.includes('Bằng tháng trước')}`);
   results.push(`DASHBOARD shows "năm nay so với năm trước" section: ${dashboardText.includes('Năm nay so với năm trước')}`);
+  const dashColHeights = await rowHeightsEqual('#content .dash-col');
+  results.push(`DASHBOARD laid out as 2 equal-height columns (not one long stack): ${dashColHeights.ok} ${JSON.stringify(dashColHeights.heights)}`);
   await page.screenshot({ path: path.join(SHOT_DIR, 'shot-dashboard-1440.png'), fullPage: true });
 
   // ---- Chi tiêu: 4 columns now (Nợ removed) ----
@@ -282,6 +293,9 @@ const RPC_HANDLERS = {
   results.push(`  No ".money-column.debt" exists in Chi tiêu anymore: ${await page.locator('.money-column.debt').count() === 0}`);
   const budgetText = await page.textContent('#content');
   results.push(`  Thẻ & trả góp column shows the card expense (Rakuten), Chi biến động untouched: ${budgetText.includes('Rakuten')}`);
+  results.push(`  Per-row "Ghi thu/chi thực tế" ("+") buttons removed from Thu nhập/Chi tiêu rows (redundant now that quick-entry prefills): ${await page.locator('.money-column.income .mini-btn, .money-column.fixed .mini-btn, .money-column.variable .mini-btn').count() === 0}`);
+  const budgetColHeights = await rowHeightsEqual('.money-board .money-column');
+  results.push(`  All 4 Chi tiêu columns render the same height: ${budgetColHeights.ok} ${JSON.stringify(budgetColHeights.heights)}`);
   await page.screenshot({ path: path.join(SHOT_DIR, 'shot-budget-1440.png'), fullPage: true });
 
   // Wifi (fx2, kế hoạch 6,000) has no actual transaction this month, so its
@@ -299,6 +313,12 @@ const RPC_HANDLERS = {
     await page.waitForTimeout(150);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     results.push(`MOBILE ${w}px: horizontal overflow px = ${overflow} (expect 0)`);
+    await page.click('#mobileNav [data-view="dashboard"]');
+    await page.waitForTimeout(150);
+    const dashOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    results.push(`MOBILE ${w}px (Tổng quan, 2-column grid collapses to 1): horizontal overflow px = ${dashOverflow} (expect 0)`);
+    await page.click('#mobileNav [data-view="budget"]');
+    await page.waitForTimeout(150);
   }
   await page.setViewportSize({ width: 1440, height: 900 });
 
@@ -364,6 +384,8 @@ const RPC_HANDLERS = {
   results.push(`  Shows exactly 4 KPIs, no "Thanh khoản ròng" anywhere: ${assetKpiLabels.length === 4 && !assetKpiLabels.includes('Thanh khoản ròng')}`);
   const assetsCols = await page.$$('#content .money-column');
   results.push(`  4-column board present (Tiền mặt & ngân hàng / Đầu tư / Khoản phải thu / Nợ phải trả): ${assetsCols.length === 4}`);
+  const assetColHeights = await rowHeightsEqual('.money-board .money-column');
+  results.push(`  All 4 Tài sản columns render the same height: ${assetColHeights.ok} ${JSON.stringify(assetColHeights.heights)}`);
   const assetsText = await page.textContent('#content');
   results.push(`  Khoản vay cũ ¥1,250,000 (Vay mua xe) is visible in Nợ phải trả column: ${assetsText.includes('Vay mua xe') && assetsText.includes('1,250,000')}`);
   results.push(`  No "Chuyển tiền" button anywhere on Tài sản: ${!assetsText.includes('Chuyển tiền')}`);
@@ -427,6 +449,8 @@ const RPC_HANDLERS = {
   results.push(`  Savings card shows "Lãi thực nhận" distinct from principal: ${investText.includes('Lãi thực nhận')}`);
   const investCols = await page.$$('#content .money-column');
   results.push(`  Đầu tư laid out as a 4-column board (NISA / Chứng khoán / Tiết kiệm sinh lời / Khác), like Chi tiêu/Tài sản: ${investCols.length === 4}`);
+  const investColHeights = await rowHeightsEqual('.money-board .money-column');
+  results.push(`  All 4 Đầu tư columns render the same height: ${investColHeights.ok} ${JSON.stringify(investColHeights.heights)}`);
   const investBoardTracks = await page.evaluate(() => { const el = document.querySelector('#content .money-board'); return el ? getComputedStyle(el).gridTemplateColumns.trim().split(/\s+/).length : null; });
   results.push(`  Đầu tư board has exactly 4 grid tracks (no phantom empty column): ${investBoardTracks === 4}`);
   await page.screenshot({ path: path.join(SHOT_DIR, 'shot-investments-1440.png'), fullPage: true });

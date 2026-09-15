@@ -131,8 +131,9 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 .section-head h2,.view-head h2{margin:0;font-size:16px}
 .section-head p,.view-head p{margin:3px 0 0;color:var(--text-dim);font-size:12.5px}
 .grid{display:grid;gap:16px}
-.section-grid{grid-template-columns:1.4fr 1fr}
+.section-grid{grid-template-columns:1fr 1fr}
 .two-cols{grid-template-columns:1fr 1fr}
+.dash-col{display:flex;flex-direction:column;gap:16px}
 .empty{
   color:var(--text-faint);font-size:13px;padding:22px 10px;text-align:center;border:1px dashed var(--border);
   border-radius:var(--radius-md);
@@ -148,7 +149,7 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 .kpi.hero{grid-column:span 1}
 
 /* ---------- Budget board: 5 equal columns ---------- */
-.money-board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;align-items:start}
+.money-board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
 .money-column{display:flex;flex-direction:column;min-height:340px}
 .money-column-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
 .money-column-head h3{margin:0;font-size:13.5px;font-weight:700}

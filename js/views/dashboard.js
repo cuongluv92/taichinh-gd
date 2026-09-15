@@ -127,48 +127,47 @@ function renderDashboard() {
   </div>
   ${!hasAnyActivity ? '<div class="card empty mt-16">Chưa có giao dịch thực tế trong tháng này.</div>' : ''}
 
-  <section class="card mt-16">
-    <div class="section-head"><div><h2>Kế hoạch vs Thực tế · Tháng ${fmtMonthKey(state.month)}</h2></div></div>
-    <div class="compare-table">
-      <div class="compare-head"><span>Nhóm</span><span>Kế hoạch</span><span>Thực tế</span><span>Cùng kỳ năm trước</span></div>
-      <div class="compare-row"><div class="label"><b>Thu nhập</b></div><div>${money(incomePlan)}</div><div>${money(s.income)}</div><div>${yoy(s.income, prevYearStats.income)}</div></div>
-      <div class="compare-row"><div class="label"><b>Chi cố định</b></div><div>${money(fixedPlan)}</div><div>${money(s.fixed)}</div><div>${yoy(s.fixed, prevYearStats.fixed)}</div></div>
-      <div class="compare-row"><div class="label"><b>Chi biến động</b></div><div>${money(variablePlan)}</div><div>${money(s.variable)}</div><div>${yoy(s.variable, prevYearStats.variable)}</div></div>
-      <div class="compare-row"><div class="label"><b>Thẻ & trả góp</b></div><div>—</div><div>${money(s.card)}</div><div>${yoy(s.card, prevYearStats.card)}</div></div>
-    </div>
-  </section>
-
-  <section class="card section chart-card mt-16"><div class="section-head"><div><h2>Thu nhập vs Chi tiêu</h2><p>12 tháng gần nhất</p></div></div>${trendSvg()}</section>
-
   <div class="grid section-grid mt-16">
-    <section class="card section">
-      <div class="section-head"><div><h2>Từng tháng trong năm ${state.month.slice(0, 4)}</h2><p>Thu / chi theo từng tháng</p></div></div>
-      ${yearMonthlyHtml()}
-    </section>
-    <section class="card section">
-      <div class="section-head"><div><h2>Năm nay so với năm trước</h2><p>Lũy kế đến tháng ${fmtMonthKey(state.month)}</p></div></div>
-      ${yearOverYearHtml()}
-    </section>
-  </div>
-
-  <section class="card section mt-16">
-    <div class="section-head"><div><h2>Cơ cấu chi tiêu tháng</h2><p>${fmtMonthKey(state.month)}</p></div></div>
-    ${expenseComposition.length ? `<div class="donut-layout">${donutSvg(expenseComposition)}${legendHtml(expenseComposition, 'income', s.income)}</div>` : '<div class="empty">Chưa có giao dịch thực tế trong tháng này.</div>'}</section>
-
-  <section class="card section mt-16">
-    <div class="section-head"><div><h2>Danh mục tăng/giảm nhiều nhất</h2><p>So với tháng trước</p></div></div>
-    <div class="compare-table">${biggestMoverHtml()}</div>
-  </section>
-
-  <section class="card section mt-16">
-    <div class="section-head"><div><h2>Xu hướng theo danh mục</h2><p>5 danh mục chi nhiều nhất tháng này · 6 tháng gần nhất</p></div></div>
-    ${categoryTrendHtml()}
-  </section>
-
-  <section class="card section mt-16">
-    <div class="section-head"><div><h2>Giao dịch gần đây</h2><p>Tháng ${fmtMonthKey(state.month)}</p></div><button class="btn sm primary" ${act('openQuickEntry')}>＋ Nhập nhanh</button></div>
-    ${txListHtml(recent)}
-  </section>`;
+    <div class="dash-col">
+      <section class="card">
+        <div class="section-head"><div><h2>Kế hoạch vs Thực tế · Tháng ${fmtMonthKey(state.month)}</h2></div></div>
+        <div class="compare-table">
+          <div class="compare-head"><span>Nhóm</span><span>Kế hoạch</span><span>Thực tế</span><span>Cùng kỳ năm trước</span></div>
+          <div class="compare-row"><div class="label"><b>Thu nhập</b></div><div>${money(incomePlan)}</div><div>${money(s.income)}</div><div>${yoy(s.income, prevYearStats.income)}</div></div>
+          <div class="compare-row"><div class="label"><b>Chi cố định</b></div><div>${money(fixedPlan)}</div><div>${money(s.fixed)}</div><div>${yoy(s.fixed, prevYearStats.fixed)}</div></div>
+          <div class="compare-row"><div class="label"><b>Chi biến động</b></div><div>${money(variablePlan)}</div><div>${money(s.variable)}</div><div>${yoy(s.variable, prevYearStats.variable)}</div></div>
+          <div class="compare-row"><div class="label"><b>Thẻ & trả góp</b></div><div>—</div><div>${money(s.card)}</div><div>${yoy(s.card, prevYearStats.card)}</div></div>
+        </div>
+      </section>
+      <section class="card section chart-card"><div class="section-head"><div><h2>Thu nhập vs Chi tiêu</h2><p>12 tháng gần nhất</p></div></div>${trendSvg()}</section>
+      <section class="card section">
+        <div class="section-head"><div><h2>Từng tháng trong năm ${state.month.slice(0, 4)}</h2><p>Thu / chi theo từng tháng</p></div></div>
+        ${yearMonthlyHtml()}
+      </section>
+    </div>
+    <div class="dash-col">
+      <section class="card section">
+        <div class="section-head"><div><h2>Cơ cấu chi tiêu tháng</h2><p>${fmtMonthKey(state.month)}</p></div></div>
+        ${expenseComposition.length ? `<div class="donut-layout">${donutSvg(expenseComposition)}${legendHtml(expenseComposition, 'income', s.income)}</div>` : '<div class="empty">Chưa có giao dịch thực tế trong tháng này.</div>'}
+      </section>
+      <section class="card section">
+        <div class="section-head"><div><h2>Năm nay so với năm trước</h2><p>Lũy kế đến tháng ${fmtMonthKey(state.month)}</p></div></div>
+        ${yearOverYearHtml()}
+      </section>
+      <section class="card section">
+        <div class="section-head"><div><h2>Danh mục tăng/giảm nhiều nhất</h2><p>So với tháng trước</p></div></div>
+        <div class="compare-table">${biggestMoverHtml()}</div>
+      </section>
+      <section class="card section">
+        <div class="section-head"><div><h2>Xu hướng theo danh mục</h2><p>5 danh mục chi nhiều nhất tháng này · 6 tháng gần nhất</p></div></div>
+        ${categoryTrendHtml()}
+      </section>
+      <section class="card section">
+        <div class="section-head"><div><h2>Giao dịch gần đây</h2><p>Tháng ${fmtMonthKey(state.month)}</p></div><button class="btn sm primary" ${act('openQuickEntry')}>＋ Nhập nhanh</button></div>
+        ${txListHtml(recent)}
+      </section>
+    </div>
+  </div>`;
 }
 
 Object.assign(window, { renderDashboard, incomePlanTotal, txListHtml });
