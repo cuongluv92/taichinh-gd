@@ -276,6 +276,22 @@ const RPC_HANDLERS = {
   await page.waitForSelector('.money-board');
   await clickAndCheckModal('budget Thu-nhập column-settings', '.money-column.income .column-settings', '#columnRows');
   await page.evaluate(() => document.getElementById('modal')?.close());
+
+  // Reported bug: with enough rows, #modalBody grew past the dialog's
+  // 88vh/overflow:hidden bound and clipped the Lưu button out of reach —
+  // #modalBody wasn't itself a flex column, so modal-head/-content/-actions
+  // never split into fixed-head/scrolling-middle/fixed-actions.
+  await page.click('.money-column.variable .column-settings');
+  await page.waitForSelector('#columnRows', { timeout: 1500 });
+  for (let i = 0; i < 15; i++) await page.click('#columnAddRow');
+  const dialogBox = await page.locator('#modal').boundingBox();
+  const submitBox = await page.locator('#modalForm button[type=submit]').boundingBox();
+  const submitReachable = !!(dialogBox && submitBox && submitBox.y + submitBox.height <= dialogBox.y + dialogBox.height + 1);
+  results.push(`Chi biến động column-settings with 15+ rows: Lưu button stays inside the dialog (not clipped): ${submitReachable}`);
+  const contentScrollable = await page.evaluate(() => { const el = document.querySelector('#modalBody .stack, #columnRows')?.closest('.modal-content'); return el ? el.scrollHeight > el.clientHeight : false; });
+  results.push(`  modal-content actually scrolls internally once it overflows: ${contentScrollable}`);
+  await page.evaluate(() => document.getElementById('modal')?.close());
+  await page.waitForTimeout(50);
   await clickAndCheckModal('budget Thẻ&trả-góp column-settings', '.money-column.credit .column-settings');
   // Debt column settings opens an info modal with a nested "+ Thêm khoản nợ"
   // button that closes-then-reopens a different modal (reopenAfterModal) —

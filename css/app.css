@@ -285,10 +285,17 @@ dialog#modal{
 }
 dialog#modal::backdrop{background:rgba(0,0,0,.55);backdrop-filter:blur(2px)}
 .modal-card{display:flex;flex-direction:column;max-height:88vh}
-.modal-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--border)}
+/* #modalBody is the single child lib.js writes modal-head/modal-content/
+   modal-actions into — it has to be a flex column too (not a plain block),
+   or those three never actually split into fixed-head/scrolling-middle/
+   fixed-actions: the whole thing just grows past 88vh and dialog#modal's
+   overflow:hidden clips the Lưu button off the bottom with no way to reach
+   it once a list (e.g. many Chi biến động rows) gets tall. */
+#modalBody{display:flex;flex-direction:column;flex:1 1 auto;min-height:0}
+.modal-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--border);flex:none}
 .modal-head h3{margin:0;font-size:15px}
-.modal-content{padding:16px 18px;overflow-y:auto;flex:1 1 auto}
-.modal-actions{display:flex;justify-content:flex-end;gap:8px;padding:14px 18px;border-top:1px solid var(--border)}
+.modal-content{padding:16px 18px;overflow-y:auto;flex:1 1 auto;min-height:0}
+.modal-actions{display:flex;justify-content:flex-end;gap:8px;padding:14px 18px;border-top:1px solid var(--border);flex:none}
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .field{display:flex;flex-direction:column;gap:5px;min-width:0}
 .field.full{grid-column:1/-1}
