@@ -89,12 +89,20 @@ const INVESTMENTS = [
   { id: 'nisa1', name: 'NISA Rakuten', kind: 'nisa', currency: 'JPY', initial_capital: 400000, note: '', created_at: `${MONTH}-01T00:00:00Z`, start_date: '2026-01-01', broker_name: 'Rakuten Securities', nisa_frame: 'both', nisa_annual_limit: 3600000, monthly_amount: 30000, monthly_day: 5, plan_start_month: `${MONTH}-01`, plan_paused: false, expected_return_rate: 5, expected_return_period: 'annual', reinvest_mode: 'none', total_contributed: 100000, total_withdrawn: 0, latest_value: 550000, latest_value_date: `${MONTH}-10`, parent_investment_id: null },
   { id: 'fund1', name: 'eMAXIS Slim toàn cầu', kind: 'securities', currency: 'JPY', initial_capital: 0, note: '', created_at: `${MONTH}-03T00:00:00Z`, ticker: '2559', market: 'TSE', quantity: 10, avg_cost: 15000, current_price: 16500, realized_pl: 0, total_contributed: 150000, total_withdrawn: 0, total_dividends: 0, parent_investment_id: 'nisa1' },
   { id: 'sec1', name: 'Toyota', kind: 'securities', currency: 'JPY', initial_capital: 0, note: '', created_at: `${MONTH}-01T00:00:00Z`, broker_name: 'SBI', ticker: '7203', market: 'TSE', quantity: 100, avg_cost: 2000, current_price: 2200, realized_pl: 0, total_contributed: 200000, total_withdrawn: 0, total_dividends: 0, parent_investment_id: null },
-  { id: 'sav1', name: 'Tiết kiệm kỳ hạn SBI', kind: 'savings_interest', currency: 'JPY', initial_capital: 500000, note: '', created_at: `${MONTH}-01T00:00:00Z`, bank_name: 'SBI Sumishin', interest_rate_annual: 1, interest_payment_method: 'maturity', term_end_date: '2027-09-15', total_contributed: 0, total_withdrawn: 0, total_interest: 5000, parent_investment_id: null }
+  { id: 'sav1', name: 'Tiết kiệm kỳ hạn SBI', kind: 'savings_interest', currency: 'JPY', initial_capital: 500000, note: '', created_at: `${MONTH}-01T00:00:00Z`, bank_name: 'SBI Sumishin', interest_rate_annual: 1, interest_payment_method: 'maturity', term_end_date: '2027-09-15', total_contributed: 0, total_withdrawn: 0, total_interest: 5000, parent_investment_id: null },
+  // Simple-mode NISA (no quỹ/ETF holdings) with a prior "Cập nhật giá trị"
+  // — the exact user-reported scenario: giá trị hiện tại must NOT freeze at
+  // this snapshot once a later "Thêm vốn" is recorded.
+  { id: 'nisa2', name: 'NISA SBI', kind: 'nisa', currency: 'JPY', initial_capital: 0, note: '', created_at: `${MONTH}-01T00:00:00Z`, start_date: '2026-01-01', broker_name: 'SBI Securities', nisa_frame: 'tsumitate', nisa_annual_limit: null, monthly_amount: null, monthly_day: null, plan_start_month: null, plan_paused: false, expected_return_rate: null, expected_return_period: null, reinvest_mode: 'none', total_contributed: 200000, total_withdrawn: 0, latest_value: 220000, latest_value_date: `${MONTH}-10`, parent_investment_id: null }
 ];
 const INVESTMENT_EVENTS = {
   nisa1: [
     { id: 'ev1', event_type: 'contribution', amount: 100000, event_date: `${MONTH}-02`, note: '' },
     { id: 'ev2', event_type: 'valuation', amount: 550000, event_date: `${MONTH}-10`, note: '' }
+  ],
+  nisa2: [
+    { id: 'ev7', event_type: 'contribution', amount: 200000, event_date: `${MONTH}-01`, note: '' },
+    { id: 'ev8', event_type: 'valuation', amount: 220000, event_date: `${MONTH}-10`, note: '' }
   ],
   fund1: [
     { id: 'ev6', event_type: 'buy', quantity: 10, price: 15000, amount: 150000, event_date: `${MONTH}-03`, note: '' }
@@ -499,6 +507,20 @@ const RPC_HANDLERS = {
   } else {
     results.push('NISA plan already confirmed for this month in fixture — "Xác nhận đã góp" button not shown (expected once confirmed) - OK');
   }
+
+  // BUG FIX regression check: a simple-mode NISA (no quỹ/ETF) with a prior
+  // "Cập nhật giá trị" (220,000) must actually move when "Thêm vốn" is
+  // used — it must NOT freeze at the old snapshot (user-reported bug).
+  const nisa2Card = page.locator('.item-card', { hasText: 'NISA SBI' });
+  results.push(`  NISA SBI shows its valuation snapshot before any new "Thêm vốn" (220,000): ${(await nisa2Card.textContent()).includes('220,000')}`);
+  await nisa2Card.locator('button:has-text("Thêm vốn")').click();
+  await page.waitForSelector('[name="amount"]', { timeout: 1500 });
+  await page.fill('[name="amount"]', '50000');
+  await resetToast();
+  await page.click('#modalForm [type=submit]');
+  await page.waitForSelector('#toast.show', { timeout: 1500 });
+  const nisa2AfterText = await page.locator('.item-card', { hasText: 'NISA SBI' }).textContent();
+  results.push(`  BUGFIX regression: after "Thêm vốn" +50,000, giá trị hiện tại updates to 270,000 (not stuck at 220,000): ${nisa2AfterText.includes('270,000') && !nisa2AfterText.includes('220,000')}`);
 
   // Securities: Mua/Bán.
   const secCard = page.locator('.item-card', { hasText: 'Toyota' });

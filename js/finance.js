@@ -109,14 +109,14 @@ F.investmentCurrentValue = inv => {
     const holdings = F.nisaHoldings(inv.id);
     if (holdings.length) return holdings.reduce((s, h) => s + F.investmentCurrentValue(h), 0);
   }
-  if (inv.latest_value !== null && inv.latest_value !== undefined) return n(inv.latest_value);
-  // Interest actually received (kind='savings_interest') is real money that
-  // grew the balance — it counts toward "giá trị hiện tại" even with no
-  // explicit "cập nhật số dư" override, so lãi/lỗ thực tế = total_interest
-  // exactly (spec §9: "chỉ tăng giá trị thực tế khi ghi nhận lãi thực nhận
-  // hoặc cập nhật số dư").
-  const interest = inv.kind === 'savings_interest' ? n(inv.total_interest) : 0;
-  return Math.max(0, F.investmentNetCapital(inv) + interest);
+  // Delegate to the same event-replay formula used for the history chart
+  // (F.investmentValueAt with no end-date cutoff) instead of trusting the
+  // server's pre-aggregated latest_value directly — a "Cập nhật giá trị" is
+  // a snapshot at its own date, not a permanent override, so any
+  // contribution/withdrawal/lãi recorded AFTER it must still move the
+  // value (otherwise "Thêm vốn"/"Nhận lãi" silently stop doing anything
+  // the moment a valuation has ever been entered once).
+  return F.investmentValueAt(inv, (state.investmentEvents || {})[inv.id], '9999-12-31');
 };
 F.investmentPL = inv => {
   if (inv.kind === 'securities') return n(inv.realized_pl) + (F.investmentCurrentValue(inv) - F.investmentNetCapital(inv));
@@ -143,12 +143,17 @@ F.investmentValueAt = (inv, events, endDate) => {
     const priceRow = rows.filter(e => e.event_type === 'valuation' && e.price !== null && e.price !== undefined).sort((a, b) => String(b.event_date).localeCompare(String(a.event_date)))[0];
     return Math.max(0, qty) * n(priceRow ? priceRow.price : avg);
   }
+  // A "Cập nhật giá trị" is a snapshot at its own date, not a permanent
+  // override — any contribution/withdrawal/interest recorded AFTER it must
+  // still move the value, or "Thêm vốn" would silently stop doing anything
+  // the moment a valuation had ever been entered once.
   const val = rows.filter(e => e.event_type === 'valuation').sort((a, b) => String(b.event_date).localeCompare(String(a.event_date)) || String(b.created_at || '').localeCompare(String(a.created_at || '')))[0];
-  if (val) return n(val.amount);
-  const netCap = n(inv.initial_capital)
-    + rows.filter(e => e.event_type === 'contribution' || e.event_type === 'buy').reduce((s, e) => s + n(e.amount), 0)
-    - rows.filter(e => e.event_type === 'withdrawal' || e.event_type === 'sell').reduce((s, e) => s + n(e.amount), 0);
-  return Math.max(0, netCap);
+  const after = e => !val || String(e.event_date) > String(val.event_date)
+    || (String(e.event_date) === String(val.event_date) && String(e.created_at || '') > String(val.created_at || ''));
+  const baseline = val ? n(val.amount) : n(inv.initial_capital);
+  const netSinceValuation = rows.filter(e => after(e) && (e.event_type === 'contribution' || e.event_type === 'buy' || e.event_type === 'interest')).reduce((s, e) => s + n(e.amount), 0)
+    - rows.filter(e => after(e) && (e.event_type === 'withdrawal' || e.event_type === 'sell')).reduce((s, e) => s + n(e.amount), 0);
+  return Math.max(0, baseline + netSinceValuation);
 };
 F.investmentTotalValueAt = endDate => F.investments().filter(inv => (inv.currency || state.base) === state.base && !inv.parent_investment_id)
   .reduce((s, inv) => s + F.investmentValueAt(inv, (state.investmentEvents || {})[inv.id], endDate), 0);

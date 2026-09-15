@@ -211,11 +211,51 @@ function debtAdj(id, debtId, direction, amount, date) { return { id, debt_id: de
 // không phải một lỗi hiển thị — NISA vẫn dùng đúng công thức % như Khác.
 // ---------------------------------------------------------------------
 {
-  resetState({ investments: [] }); // no leftover holdings from the previous block to collide with an id-less fixture
-  const freshNisa = { kind: 'nisa', currency: 'JPY', initial_capital: 0, total_contributed: 0, total_withdrawn: 0, latest_value: null };
+  const freshNisa = { id: 'nisaFresh', kind: 'nisa', currency: 'JPY', initial_capital: 0, total_contributed: 0, total_withdrawn: 0, latest_value: null };
+  resetState({ investments: [freshNisa], investmentEvents: { nisaFresh: [] } });
   eq('NISA %. Vốn ròng = 0 thì % là null (chưa có gì để tính %, không phải lỗi)', F.investmentPLPercent(freshNisa), null);
-  const fundedNisa = { ...freshNisa, total_contributed: 100000, latest_value: 110000 };
+
+  const fundedNisa = { id: 'nisaFunded', kind: 'nisa', currency: 'JPY', initial_capital: 0, total_contributed: 100000, total_withdrawn: 0, latest_value: 110000 };
+  const fundedEvents = [
+    { id: 'f1', event_type: 'contribution', amount: 100000, event_date: '2026-08-01', created_at: '2026-08-01T00:00:00Z' },
+    { id: 'f2', event_type: 'valuation', amount: 110000, event_date: '2026-09-01', created_at: '2026-09-01T00:00:00Z' }
+  ];
+  resetState({ investments: [fundedNisa], investmentEvents: { nisaFunded: fundedEvents } });
   eq('NISA %. Có vốn ròng > 0 thì % hiển thị đúng như Khác/Chứng khoán', F.investmentPLPercent(fundedNisa), 10, 1e-9);
+}
+
+// ---------------------------------------------------------------------
+// BUG FIX: "Cập nhật giá trị" is a snapshot at its own date, not a
+// permanent override — a Thêm vốn/Rút vốn/Nhận lãi recorded AFTER it must
+// still move "giá trị hiện tại", or the value silently freezes the moment
+// a valuation has ever been entered once (user-reported: "nhấn thêm vốn
+// sao mà vốn mới không cập nhật").
+// ---------------------------------------------------------------------
+{
+  const nisa = { id: 'nisaFreeze', kind: 'nisa', currency: 'JPY', initial_capital: 0, total_contributed: 130000, total_withdrawn: 0, latest_value: 550000, latest_value_date: '2026-09-10' };
+  const eventsAfter = [
+    { id: 'e1', event_type: 'contribution', amount: 100000, event_date: '2026-09-02', created_at: '2026-09-02T00:00:00Z' },
+    { id: 'e2', event_type: 'valuation', amount: 550000, event_date: '2026-09-10', created_at: '2026-09-10T00:00:00Z' },
+    { id: 'e3', event_type: 'contribution', amount: 30000, event_date: '2026-09-20', created_at: '2026-09-20T00:00:00Z' }
+  ];
+  resetState({ investments: [nisa], investmentEvents: { nisaFreeze: eventsAfter } });
+  eq('BUGFIX. Giá trị hiện tại cộng thêm khoản Thêm vốn SAU lần Cập nhật giá trị gần nhất (550,000 + 30,000)', F.investmentCurrentValue(nisa), 580000);
+  eq('BUGFIX. Vốn ròng vẫn tính đúng theo tổng đã góp (130,000)', F.investmentNetCapital(nisa), 130000);
+  eq('BUGFIX. Lãi/lỗ = giá trị hiện tại mới − vốn ròng mới (580,000 − 130,000)', F.investmentPL(nisa), 450000);
+
+  const nisaNoFollowUp = { ...nisa, total_contributed: 100000 };
+  const eventsBefore = eventsAfter.slice(0, 2);
+  resetState({ investments: [nisaNoFollowUp], investmentEvents: { nisaFreeze: eventsBefore } });
+  eq('BUGFIX. Không có khoản góp nào sau lần Cập nhật giá trị thì giá trị hiện tại giữ đúng số đã cập nhật (550,000)', F.investmentCurrentValue(nisaNoFollowUp), 550000);
+
+  // Same class of bug for Tiết kiệm sinh lời's "Nhận lãi" after a valuation.
+  const sav = { id: 'savFreeze', kind: 'savings_interest', currency: 'JPY', initial_capital: 500000, total_contributed: 0, total_withdrawn: 0, total_interest: 0, latest_value: 500000, latest_value_date: '2026-08-01' };
+  const savEvents = [
+    { id: 's1', event_type: 'valuation', amount: 500000, event_date: '2026-08-01', created_at: '2026-08-01T00:00:00Z' },
+    { id: 's2', event_type: 'interest', amount: 4000, event_date: '2026-09-01', created_at: '2026-09-01T00:00:00Z' }
+  ];
+  resetState({ investments: [sav], investmentEvents: { savFreeze: savEvents } });
+  eq('BUGFIX. Tiết kiệm: Nhận lãi SAU lần Cập nhật giá trị vẫn cộng vào giá trị hiện tại (500,000 + 4,000)', F.investmentCurrentValue(sav), 504000);
 }
 
 // ---------------------------------------------------------------------
@@ -240,17 +280,20 @@ function debtAdj(id, debtId, direction, amount, date) { return { id, debt_id: de
 // là mô phỏng riêng, không tự coi là tài sản thực.
 // ---------------------------------------------------------------------
 {
-  const sav = { kind: 'savings_interest', currency: 'JPY', initial_capital: 500000, total_contributed: 0, total_withdrawn: 0, total_interest: 0, latest_value: null };
+  const sav = { id: 'savPlain', kind: 'savings_interest', currency: 'JPY', initial_capital: 500000, total_contributed: 0, total_withdrawn: 0, total_interest: 0, latest_value: null };
+  resetState({ investments: [sav], investmentEvents: { savPlain: [] } });
   eq('TK. Chưa nhận lãi: giá trị hiện tại = tiền gốc (500,000)', F.investmentCurrentValue(sav), 500000);
   eq('TK. Chưa nhận lãi: lãi/lỗ thực tế = 0', F.investmentPL(sav), 0);
 
-  const savWithInterest = { ...sav, total_interest: 5000 };
+  const savWithInterest = { id: 'savInterest', kind: 'savings_interest', currency: 'JPY', initial_capital: 500000, total_contributed: 0, total_withdrawn: 0, total_interest: 5000, latest_value: null };
+  resetState({ investments: [savWithInterest], investmentEvents: { savInterest: [{ id: 'i1', event_type: 'interest', amount: 5000, event_date: '2026-09-05', created_at: '2026-09-05T00:00:00Z' }] } });
   eq('TK. Sau khi ghi nhận lãi thực nhận 5,000: giá trị hiện tại = 505,000', F.investmentCurrentValue(savWithInterest), 505000);
   eq('TK. Lãi thực nhận thể hiện đúng bằng total_interest (5,000), không lẫn với lãi dự kiến', F.investmentPL(savWithInterest), 5000);
 
   // Chỉ tăng khi ghi nhận lãi thực nhận hoặc cập nhật số dư — một khoản gửi
   // thêm (contribution) không được tự động cộng thêm "lãi".
-  const savWithDeposit = { ...sav, total_contributed: 20000 };
+  const savWithDeposit = { id: 'savDeposit', kind: 'savings_interest', currency: 'JPY', initial_capital: 500000, total_contributed: 20000, total_withdrawn: 0, total_interest: 0, latest_value: null };
+  resetState({ investments: [savWithDeposit], investmentEvents: { savDeposit: [{ id: 'd1', event_type: 'contribution', amount: 20000, event_date: '2026-09-05', created_at: '2026-09-05T00:00:00Z' }] } });
   eq('TK. Gửi thêm 20,000 chỉ tăng vốn ròng, không tạo ra lãi', F.investmentPL(savWithDeposit), 0);
 }
 
