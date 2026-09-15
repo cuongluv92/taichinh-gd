@@ -1,11 +1,23 @@
 (() => {
   'use strict';
   const V=window.__V3||{};
+  const CARD_MONTH_RPC=`${SUPABASE_URL}/rest/v1/rpc/taichinh_gd_credit_card_month_api`;
   const el=(tag,cls,text)=>{const x=document.createElement(tag);if(cls)x.className=cls;if(text!==undefined)x.textContent=text;return x};
   const moneyFmt=(v,c=state.base)=>typeof window.money==='function'?window.money(v,c):`${Math.round(Number(v||0)).toLocaleString()} ${c}`;
   const activeIncome=()=>typeof activeCategories==='function'?activeCategories('income'):[];
   const activeExpense=()=>typeof activeCategories==='function'?activeCategories('expense'):[];
   const pad=n=>String(n).padStart(2,'0');
+  state.cardMonthOverview=state.cardMonthOverview||[];
+  let cardMonthLoaded='';
+
+  async function loadCardMonthOverview(force=false){
+    if(!state.key||!state.month)return [];
+    if(!force&&cardMonthLoaded===state.month)return state.cardMonthOverview||[];
+    const res=await fetch(CARD_MONTH_RPC,{method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY},body:JSON.stringify({p_key:state.key,p_month:`${state.month}-01`})});
+    const text=await res.text();let data;try{data=text?JSON.parse(text):null}catch{data=text}
+    if(!res.ok)throw new Error(data?.message||String(data||`HTTP ${res.status}`));
+    state.cardMonthOverview=data?.items||[];cardMonthLoaded=state.month;return state.cardMonthOverview;
+  }
 
   function salaryCategory(){
     const rows=activeIncome();
@@ -40,6 +52,21 @@
     if(!strong||strong.querySelector('.ux-income-pct'))return;
     const s=el('small','ux-income-pct',pctText(amount,base));s.title=base>0?'Tỷ lệ so với thu nhập tháng':'Chưa có thu nhập/lương dự kiến';strong.append(s);
   }
+  function patchCreditMonthColumn(board,basis){
+    const credit=board.querySelector('.ux-credit-col');if(!credit)return;
+    const cards=typeof activeAccounts==='function'?activeAccounts().filter(a=>a.account_type==='credit'):[],monthMap=new Map((state.cardMonthOverview||[]).map(x=>[x.account_id,x]));let total=0;
+    credit.querySelectorAll('.v3-money-list>button').forEach((b,i)=>{
+      const card=cards[i],o=monthMap.get(card?.id),amount=Number(o?.expected_amount||0);total+=amount;
+      const strong=b.querySelector(':scope > strong')||b.querySelector('strong');if(strong)strong.textContent=amount>0?moneyFmt(amount,o?.currency||card?.currency||state.base):'—';
+      const note=b.querySelector('.ux-money-label small');
+      if(note){
+        const inst=Number(o?.installment_principal||0)+Number(o?.installment_fee||0),regular=Number(o?.regular_amount||0);
+        note.textContent=amount>0?`${o?.paid?'Đã trả':'Cần trả'} ${String(o?.payment_date||'').slice(0,10)}${inst>0?` · trả góp ${moneyFmt(inst,o?.currency||state.base)}`:''}${regular>0&&inst>0?` · chi thường ${moneyFmt(regular,o?.currency||state.base)}`:''}`:'Không có khoản phải trả tháng này';
+      }
+      appendRatio(strong,amount,basis);
+    });
+    const foot=credit.querySelector('.v3-money-total>strong');if(foot){foot.textContent=moneyFmt(total);appendRatio(foot,total,basis)}
+  }
   function patchSpendingRatios(){
     const board=document.querySelector('#content .v3-budget-board');if(!board)return;
     board.querySelector('.v3-money-col.debt')?.remove();
@@ -54,12 +81,7 @@
       });
       appendRatio(col.querySelector('.v3-money-total>strong'),total,basis);
     });
-    const credit=board.querySelector('.ux-credit-col');
-    if(credit){
-      const cards=typeof activeAccounts==='function'?activeAccounts().filter(a=>a.account_type==='credit'):[],due=new Map((state.cardOverview||[]).filter(x=>String(x.next_payment_month||'').slice(0,7)===state.month).map(x=>[x.account_id,Number(x.expected_amount||0)]));let total=0;
-      credit.querySelectorAll('.v3-money-list>button').forEach((b,i)=>{const amount=due.get(cards[i]?.id)||0;total+=amount;appendRatio(b.querySelector(':scope > strong')||b.querySelector('strong'),amount,basis)});
-      appendRatio(credit.querySelector('.v3-money-total>strong'),total,basis);
-    }
+    patchCreditMonthColumn(board,basis);
   }
 
   function loanAction(l){return typeof V.isBankLoan==='function'&&V.isBankLoan(l)&&typeof window.openBankPayment==='function'?'bank-pay-v3':'loan-pay-v3'}
@@ -125,6 +147,10 @@
   if(typeof navBefore==='function'&&!navBefore.__ux3Wrapped){const w=function(v,...rest){return navBefore.call(this,v==='goals'?'accounts':v,...rest)};Object.defineProperty(w,'__ux3Wrapped',{value:true});window.navigate=w}
   const moreBefore=window.openMoreMenu;
   if(typeof moreBefore==='function'&&!moreBefore.__ux3Wrapped){const w=function(...args){const out=moreBefore.apply(this,args);queueMicrotask(removeGoalNavigation);return out};Object.defineProperty(w,'__ux3Wrapped',{value:true});window.openMoreMenu=w}
+  const loadMonthBefore=window.loadMonth;
+  if(typeof loadMonthBefore==='function'&&!loadMonthBefore.__ux3Wrapped){const w=async function(...args){const out=await loadMonthBefore.apply(this,args);try{await loadCardMonthOverview(true)}catch(err){console.error('Card month overview failed',err)}if(state.household)render();return out};Object.defineProperty(w,'__ux3Wrapped',{value:true});window.loadMonth=w}
+  const refreshBefore=window.refresh;
+  if(typeof refreshBefore==='function'&&!refreshBefore.__ux3Wrapped){const w=async function(...args){const out=await refreshBefore.apply(this,args);try{await loadCardMonthOverview(true)}catch(err){console.error('Card month overview refresh failed',err)}if(state.household)render();return out};Object.defineProperty(w,'__ux3Wrapped',{value:true});window.refresh=w}
   const renderBefore=window.render;
   if(typeof renderBefore==='function'&&!renderBefore.__ux3Wrapped){const w=function(...args){const out=renderBefore.apply(this,args);afterRender();return out};Object.defineProperty(w,'__ux3Wrapped',{value:true});window.render=w}
 
@@ -137,5 +163,6 @@
   },true);
 
   window.openNewCreditCard=openNewCreditCard;
+  let bootTries=0;const bootTimer=setInterval(async()=>{bootTries++;if(state.key&&state.household){clearInterval(bootTimer);try{await loadCardMonthOverview(true);render()}catch(err){console.error('Initial card month overview failed',err)}}else if(bootTries>40)clearInterval(bootTimer)},250);
   afterRender();
 })();
