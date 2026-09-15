@@ -126,13 +126,18 @@ function renderDashboard() {
   // asset position — net worth/liquid-cash/asset-mix now live on Tài sản,
   // where "as of right now" actually makes sense (they're not month-scoped).
   const budgetPlan = fixedPlan + variablePlan, budgetActual = s.fixed + s.variable;
-  const budgetRemaining = budgetPlan - budgetActual;
+  // Remaining budget can't exceed money you've actually earned this month —
+  // capping the plan at real income means spending with zero income logged
+  // shows as a real deficit (negative) instead of "still ¥X left" against a
+  // plan you have no income to back yet.
+  const budgetAvailable = Math.min(budgetPlan, s.income);
+  const budgetRemaining = budgetAvailable - budgetActual;
   const hasAnyActivity = (state.transactions || []).some(t => ['income', 'expense'].includes(t.transaction_type));
   return `
   <div class="grid kpi-grid">
     ${kpiCard('Thu nhập tháng', money(s.income), `Kế hoạch ${money(incomePlan)}${momText(s.income, prevStats.income)}`, 'green')}
     ${kpiCard('Chi tiêu tháng', money(s.expense), `Ngân sách ${money(budgetPlan)} · ${pctText(s.expense, incomePlan)} thu nhập${momText(s.expense, prevStats.expense)}`, '')}
-    ${kpiCard('Ngân sách còn lại', money(budgetRemaining), `${money(budgetActual)} đã chi / ${money(budgetPlan)} ngân sách`, budgetRemaining < 0 ? 'red' : 'green')}
+    ${kpiCard('Ngân sách còn lại', money(budgetRemaining), `${money(budgetActual)} đã chi / ${money(budgetAvailable)} (giới hạn theo thu nhập thực nhận)`, budgetRemaining < 0 ? 'red' : 'green')}
     ${kpiCard('Dòng tiền tháng', money(s.cashFlow), 'Tiền thực thu − tiền thực chi ra khỏi tài khoản', s.cashFlow < 0 ? 'red' : 'green')}
   </div>
   ${!hasAnyActivity ? '<div class="card empty mt-16">Chưa có giao dịch thực tế trong tháng này.</div>' : ''}

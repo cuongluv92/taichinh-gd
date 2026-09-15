@@ -10,13 +10,11 @@ function incomePlanTotal() { return F.orderedCategories('income').reduce((s, c) 
 
 function amountLine(kind, planned, actual, basis) {
   const shown = actual > 0 ? actual : planned;
-  // Dim styling is reserved for a genuinely empty row (nothing planned, nothing
-  // spent) — a planned-only amount is still real information the household
-  // set up on purpose, so it reads at full brightness like actual spend does.
-  const cls = shown > 0 ? '' : 'muted';
-  // Always show both figures explicitly (Kế hoạch vs Thực tế), never just
-  // one or the other — that ambiguity is exactly what made a plan look like
-  // it had already been spent.
+  // Back to dimming a plan-only row (no actual money yet) — now that every
+  // row always spells out "Kế hoạch ¥X · Đã chi ¥Y" in the sub-label too,
+  // the dim/bright contrast is a second, reinforcing signal for kế hoạch
+  // vs thực tế instead of the only one, so it's safe to use again.
+  const cls = actual > 0 ? '' : 'muted';
   const actualLabel = kind === 'income' ? 'Đã thu' : 'Đã chi';
   const sub = planned > 0
     ? `<small>Kế hoạch ${money(planned)} · ${actualLabel} ${money(actual)}</small>`
