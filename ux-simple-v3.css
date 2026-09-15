@@ -6,7 +6,7 @@ body.ui-2026 .v3-budget-board{grid-template-columns:repeat(4,minmax(0,1fr))!impo
 body.ui-2026 .v3-money-col.debt{display:none!important}
 body.ui-2026 .v3-money-list>button>strong,
 body.ui-2026 .v3-money-total>strong{display:inline-flex;align-items:baseline;justify-content:flex-end;gap:6px;flex-wrap:wrap}
-body.ui-2026 .ux-income-pct{display:inline!important;font-size:9px!important;line-height:1!important;font-weight:800!important;color:var(--nkt-faint)!important;white-space:nowrap}
+body.ui-2026 .ux-income-pct{display:inline!important;font-size:9px!important;line-height:1!important;font-weight:800!important;color:var(--nkt-dim)!important;white-space:nowrap}
 body.ui-2026 .v3-money-col.fixed .v3-plan-money,
 body.ui-2026 .v3-money-col.fixed strong.ux-planned,
 body.ui-2026 .v3-money-col.fixed .v3-money-list strong{color:var(--nkt-ink)!important;font-weight:800!important}
@@ -31,6 +31,14 @@ body.ui-2026 .ux-debt-actions button{min-height:30px}
 /* Dedicated credit card setup. */
 body.ui-2026 .ux-card-intro{margin-bottom:12px;padding:10px 11px;border:1px solid var(--nkt-border);border-radius:10px;background:var(--nkt-panel2);color:var(--nkt-dim);font-size:10.5px;line-height:1.45}
 body.ui-2026 .ux-card-intro b{color:var(--nkt-ink)}
+body.ui-2026 .ux-card-current-due{padding:11px;border:1px solid rgba(245,166,35,.35);border-radius:11px;background:rgba(245,166,35,.06)}
+body.ui-2026 .ux-credit-choice{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:4px 0}
+body.ui-2026 .ux-credit-choice>button{min-height:112px;padding:16px;text-align:left;border:1px solid var(--nkt-border);border-radius:13px;background:var(--nkt-panel2);color:var(--nkt-ink);display:grid;align-content:center;gap:7px}
+body.ui-2026 .ux-credit-choice>button:hover:not(:disabled){border-color:var(--nkt-accent);background:var(--nkt-panel3)}
+body.ui-2026 .ux-credit-choice>button b{font-size:14px}
+body.ui-2026 .ux-credit-choice>button span{font-size:10px;line-height:1.45;color:var(--nkt-dim)}
+body.ui-2026 .ux-credit-choice>button:disabled{opacity:.45;cursor:not-allowed}
+body.ui-2026 .ux-credit-choice>small{grid-column:1/-1;color:var(--nkt-dim);font-size:10px}
 
 @media(max-width:1100px){body.ui-2026 .v3-budget-board{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
-@media(max-width:760px){body.ui-2026 .v3-budget-board,body.ui-2026 .ux-debt-grid,body.ui-2026 .ux-debt-summary{grid-template-columns:1fr!important}}
+@media(max-width:760px){body.ui-2026 .v3-budget-board,body.ui-2026 .ux-debt-grid,body.ui-2026 .ux-debt-summary,body.ui-2026 .ux-credit-choice{grid-template-columns:1fr!important}}
