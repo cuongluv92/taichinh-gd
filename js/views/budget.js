@@ -12,12 +12,15 @@ function amountLine(kind, planned, actual, basis) {
   const shown = actual > 0 ? actual : planned;
   // Dim styling is reserved for a genuinely empty row (nothing planned, nothing
   // spent) — a planned-only amount is still real information the household
-  // set up on purpose, so it reads at full brightness like actual spend does,
-  // with a small "Kế hoạch" tag (instead of color alone) marking it as not-yet-actual.
+  // set up on purpose, so it reads at full brightness like actual spend does.
   const cls = shown > 0 ? '' : 'muted';
-  const sub = actual > 0 && planned > 0 ? `<small>Kế hoạch ${money(planned)}</small>`
-    : planned <= 0 ? '<small>Chưa đặt kế hoạch</small>'
-    : '<small>Kế hoạch — chưa có thực tế</small>';
+  // Always show both figures explicitly (Kế hoạch vs Thực tế), never just
+  // one or the other — that ambiguity is exactly what made a plan look like
+  // it had already been spent.
+  const actualLabel = kind === 'income' ? 'Đã thu' : 'Đã chi';
+  const sub = planned > 0
+    ? `<small>Kế hoạch ${money(planned)} · ${actualLabel} ${money(actual)}</small>`
+    : `<small>Chưa đặt kế hoạch · ${actualLabel} ${money(actual)}</small>`;
   return { shown, cls, sub, pct: pctText(shown, basis) };
 }
 
@@ -59,9 +62,12 @@ function incomeColumn() {
   const items = cats.map(c => {
     const actual = F.categoryActualBase(c.id, 'income');
     const line = amountLine('income', n(c.planned_amount), actual, null);
-    return `<button class="money-line" ${categoryRowAction('income', actual, c.id, c.name)}><span class="line-label">${esc(c.name)}${line.sub}</span><strong class="${line.cls}">${money(line.shown)}</strong></button>`;
+    return `<div class="money-line-wrap">
+      <button class="money-line" ${categoryRowAction('income', actual, c.id, c.name)}><span class="line-label">${esc(c.name)}${line.sub}</span><strong class="${line.cls}">${money(line.shown)}</strong></button>
+      <button class="mini-btn" type="button" aria-label="Ghi thu thực tế cho ${esc(c.name)}" title="Ghi thu thực tế" ${act('openQuickEntry', { transaction_type: 'income', category_id: c.id })}>＋</button>
+    </div>`;
   });
-  return moneyColumn({ title: 'Thu nhập', tone: 'income', items, total: money(total), settingsAction: act('openColumnSettings', 'income'), emptyText: 'Chưa có mục thu nhập' });
+  return moneyColumn({ title: 'Thu nhập', tone: 'income', items, total: money(total), settingsAction: act('openColumnSettings', 'income'), settingsLabel: '⚙ Lập kế hoạch', emptyText: 'Chưa có mục thu nhập' });
 }
 function expenseColumn(kind, title) {
   const cats = F.orderedCategories('expense').filter(c => (kind === 'fixed' ? c.cost_type === 'fixed' : c.cost_type !== 'fixed'));
@@ -71,23 +77,38 @@ function expenseColumn(kind, title) {
     const actual = F.categoryActualBase(c.id, 'expense');
     const line = amountLine(kind, n(c.planned_amount), actual, basis);
     total += line.shown;
-    return `<button class="money-line" ${categoryRowAction('expense', actual, c.id, c.name)}><span class="line-label">${esc(c.name)}${line.sub}</span><span class="line-amount"><strong class="${line.cls}">${money(line.shown)}</strong><span class="pct">${line.pct}</span></span></button>`;
+    return `<div class="money-line-wrap">
+      <button class="money-line" ${categoryRowAction('expense', actual, c.id, c.name)}><span class="line-label">${esc(c.name)}${line.sub}</span><span class="line-amount"><strong class="${line.cls}">${money(line.shown)}</strong><span class="pct">${line.pct}</span></span></button>
+      <button class="mini-btn" type="button" aria-label="Ghi chi thực tế cho ${esc(c.name)}" title="Ghi chi thực tế" ${act('openQuickEntry', { transaction_type: 'expense', category_id: c.id })}>＋</button>
+    </div>`;
   });
-  return moneyColumn({ title, tone: kind, items, total: `${money(total)} <span class="pct">${pctText(total, basis)}</span>`, settingsAction: act('openColumnSettings', kind), emptyText: kind === 'fixed' ? 'Chưa có chi cố định' : 'Chưa có chi biến động' });
+  return moneyColumn({ title, tone: kind, items, total: `${money(total)} <span class="pct">${pctText(total, basis)}</span>`, settingsAction: act('openColumnSettings', kind), settingsLabel: '⚙ Lập kế hoạch', emptyText: kind === 'fixed' ? 'Chưa có chi cố định' : 'Chưa có chi biến động' });
 }
 function creditColumn() {
   const cards = F.cardAccounts(), basis = incomePlanTotal();
   let total = 0;
   const items = cards.map(card => {
     const cm = F.cardMonthFor(card.id), s = F.settingFor(card.id);
-    const amount = n(cm?.expected_amount || 0);
-    if ((card.currency || state.base) === state.base) total += amount;
-    const note = !s ? 'Chưa thiết lập chu kỳ' : amount > 0 ? `${cm.paid ? 'Đã trả' : 'Cần trả'} · ${String(cm.payment_date || '').slice(0, 10)}` : 'Không có kỳ phải trả tháng này';
+    const due = n(cm?.expected_amount || 0);
+    // Two distinct numbers per spec: what was actually spent on the card
+    // THIS month (accrual, feeds Chi cố định/Chi biến động by category) vs
+    // what statement amount is due this month (can be ¥0 even with real
+    // spend, if the statement hasn't closed yet).
+    const spend = F.periodTransactions(state.month)
+      .filter(t => t.transaction_type === 'expense' && t.account_id === card.id && F.baseTx(t))
+      .reduce((sum, t) => sum + F.baseAmount(t), 0);
+    if ((card.currency || state.base) === state.base) total += due;
+    // Row's headline number always equals `due` — the same figure the
+    // column TỔNG sums — so row and total never disagree (this bit us
+    // before on the Nợ column). `spend` — real money out this month,
+    // regardless of statement cycle — shows only in the subtitle.
+    const dueNote = !s ? 'Chưa thiết lập chu kỳ' : due > 0 ? `${cm.paid ? 'Đã trả' : 'Cần trả'} · ${String(cm.payment_date || '').slice(0, 10)}` : 'Chưa đến kỳ phải trả';
+    const note = `Phát sinh tháng này ${money(spend, card.currency)} · ${dueNote}`;
     // Main button opens cycle setup / statement payment; the separate ＋
     // button is a shortcut into Nhập nhanh with this card pre-selected, so
     // logging a purchase doesn't require hunting for the card in a dropdown.
     return `<div class="money-line-wrap">
-      <button class="money-line" ${!s ? act('openCardSettings', card.id) : act('openStatementPayment', card.id)}><span class="line-label">${esc(card.name)}<small>${esc(note)}</small></span><span class="line-amount"><strong class="${amount > 0 ? '' : 'muted'}">${money(amount, card.currency)}</strong>${(card.currency || state.base) === state.base ? `<span class="pct">${pctText(amount, basis)}</span>` : '<span class="pct">ngoại tệ</span>'}</span></button>
+      <button class="money-line" ${!s ? act('openCardSettings', card.id) : act('openStatementPayment', card.id)}><span class="line-label">${esc(card.name)}<small>${esc(note)}</small></span><span class="line-amount"><strong class="${due > 0 ? '' : 'muted'}">${money(due, card.currency)}</strong>${(card.currency || state.base) === state.base ? `<span class="pct">${pctText(due, basis)}</span>` : '<span class="pct">ngoại tệ</span>'}</span></button>
       <button class="mini-btn" type="button" aria-label="Ghi chi tiêu bằng ${esc(card.name)}" title="Ghi chi tiêu bằng ${esc(card.name)}" ${act('openCardExpense', card.id)}>＋</button>
       <button class="mini-btn" type="button" aria-label="Xem chi tiêu ${esc(card.name)}" title="Xem/sửa chi tiêu tháng này" ${act('openCardTransactions', card.id)}>📋</button>
     </div>`;
@@ -110,9 +131,9 @@ function debtColumn() {
   });
   return moneyColumn({ title: 'Nợ phải trả', tone: 'debt', items, total: loans.length ? `${money(total)} <span class="pct">${pctText(total, basis)}</span>` : money(0), settingsAction: act('openDebtColumnManager'), emptyText: 'Chưa có khoản nợ' });
 }
-function moneyColumn({ title, tone, items, total, settingsAction, emptyText }) {
+function moneyColumn({ title, tone, items, total, settingsAction, settingsLabel = '⚙ Cài đặt', emptyText }) {
   return `<section class="card money-column ${tone}">
-    <div class="money-column-head"><h3>${esc(title)}</h3><button class="column-settings" type="button" ${settingsAction} aria-label="Cài đặt ${esc(title)}">⚙ Cài đặt</button></div>
+    <div class="money-column-head"><h3>${esc(title)}</h3><button class="column-settings" type="button" ${settingsAction} aria-label="${esc(settingsLabel)} ${esc(title)}">${esc(settingsLabel)}</button></div>
     <div class="money-items">${items.length ? items.join('') : `<div class="money-empty">${esc(emptyText)}</div>`}</div>
     <div class="money-total"><span>Tổng</span><strong>${total}</strong></div>
   </section>`;
@@ -125,9 +146,9 @@ function openCreditColumnManager() {
     const inst = (state.cardInstallments || []).filter(x => x.card_account_id === card.id);
     return `<div class="tx"><div class="tx-main"><strong>${esc(card.name)}</strong><span>${s ? `Chốt ngày ${esc(s.closing_day)} · trả ngày ${esc(s.payment_day)} · ${n(s.payment_month_offset || 1) === 1 ? 'tháng sau' : 'sau 2 tháng'}` : 'Chưa cài chu kỳ'}${inst.length ? ` · ${inst.length} khoản trả góp` : ''}</span></div><div class="tx-actions"><button class="btn sm" ${act('reopenAfterModal', 'openCardSettings', card.id)}>Sửa chu kỳ</button></div></div>`;
   }).join('');
-  infoModal('Cài đặt · Thẻ & trả góp', `<p class="note">Thanh toán thẻ không tính thành chi tiêu lần hai — chỉ chuyển tiền ngân hàng sang thẻ. Chi tiêu qua thẻ dùng danh mục riêng (Mua sắm, Nạp pay...), không tính vào Chi cố định/Chi biến động.</p>
+  infoModal('Cài đặt · Thẻ & trả góp', `<p class="note">Mua bằng thẻ tính chi tiêu ngay theo danh mục thật (như Ăn uống, Mua sắm...) tại ngày mua, và tăng dư nợ thẻ. Thanh toán sao kê chỉ là chuyển tiền ngân hàng sang thẻ để trả nợ — không tính thêm một lần chi tiêu nữa.</p>
     <div class="list">${rows || '<div class="empty compact">Chưa có thẻ tín dụng.</div>'}</div>
-    <div class="row mt-14"><button class="btn primary" ${act('reopenAfterModal', 'openCreditCard')}>＋ Thẻ tín dụng</button><button class="btn" ${cards.length ? '' : 'disabled'} ${act('reopenAfterModal', 'openInstallment')}>＋ Khoản trả góp</button><button class="btn" ${act('reopenAfterModal', 'openCardCategorySettings')}>⚙ Danh mục thẻ</button></div>`);
+    <div class="row mt-14"><button class="btn primary" ${act('reopenAfterModal', 'openCreditCard')}>＋ Thẻ tín dụng</button><button class="btn" ${cards.length ? '' : 'disabled'} ${act('reopenAfterModal', 'openInstallment')}>＋ Khoản trả góp</button></div>`);
 }
 async function deleteLoanFromManager(id) {
   if (await deleteLoan(id)) closeModal();

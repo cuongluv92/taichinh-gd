@@ -24,7 +24,7 @@ function txLabel(t) {
 }
 function txTone(t) { return F.POSITIVE_TYPES.has(t.transaction_type) ? 'positive' : (F.TRANSFER_TYPES.has(t.transaction_type) ? 'transfer' : 'negative'); }
 function txListHtml(rows) {
-  if (!rows.length) return '<div class="empty">Chưa có giao dịch trong tháng này.</div>';
+  if (!rows.length) return '<div class="empty">Chưa có giao dịch thực tế trong tháng này.</div>';
   const editable = new Set(['income', 'expense', 'transfer']);
   return `<div class="list">${rows.map(t => {
     const tone = txTone(t), sign = tone === 'positive' ? '+' : tone === 'negative' ? '−' : '';
@@ -68,7 +68,7 @@ const yoyText = (cur, prev) => compareText(cur, prev, 'cùng kỳ năm trước'
 
 function categoryTrendHtml() {
   const rows = F.categoryTrendData(5, 6);
-  if (!rows.length) return '<div class="empty">Chưa có dữ liệu chi tiêu để so sánh xu hướng.</div>';
+  if (!rows.length) return '<div class="empty">Chưa có giao dịch thực tế trong tháng này.</div>';
   const sharedMax = Math.max(1, ...rows.flatMap(r => r.series.map(x => x.value)));
   return `<div class="list">${rows.map(r => {
     const cur = r.series[r.series.length - 1].value, prev = r.series[r.series.length - 2]?.value || 0;
@@ -96,7 +96,6 @@ function upcomingDueHtml(items) {
 
 function renderDashboard() {
   const s = F.statsFor(F.periodTransactions(state.month));
-  const pos = F.financialPosition(endOfMonthDate(state.month));
   const incomePlan = incomePlanTotal();
   const fixedPlan = F.orderedCategories('expense').filter(c => c.cost_type === 'fixed').reduce((a, c) => a + n(c.planned_amount), 0);
   const variablePlan = F.orderedCategories('expense').filter(c => c.cost_type !== 'fixed').reduce((a, c) => a + n(c.planned_amount), 0);
@@ -106,10 +105,6 @@ function renderDashboard() {
   const debtTarget = F.debtMonthTotalBase(), debtActual = s.debtPay + s.loanInterest;
   const recent = [...state.transactions].sort((a, b) => String(b.transaction_date).localeCompare(String(a.transaction_date))).slice(0, 8);
   const expenseComposition = F.expenseByCategory(F.periodTransactions(state.month));
-  const assets = F.assetComposition(endOfMonthDate(state.month));
-  const nw = F.netWorthSeries(12);
-  const vnd = state.reporting?.show_vnd_conversion ? F.positionInVND(pos) : null;
-  const netWorthSub = vnd ? `Tổng nợ ${money(pos.totalLiabilities)} · ≈ ${money(vnd.netWorth, 'VND')}` : `Tổng nợ ${money(pos.totalLiabilities)}`;
   const prevStats = F.statsFor(F.periodTransactions(addMonths(state.month, -1)));
   const prevYearStats = F.statsFor(F.periodTransactions(addMonths(state.month, -12)));
   const upcoming = F.upcomingDue(state.month);
@@ -127,13 +122,20 @@ function renderDashboard() {
     paceNote = `${ahead > 5 ? '⚠ ' : ''}Đã dùng ${spendPct.toFixed(0)}% ngân sách chi biến động · đã qua ${dayPct.toFixed(0)}% số ngày trong tháng.`;
   }
 
+  // Tổng quan reports the month's cash-flow result, not the household's
+  // asset position — net worth/liquid-cash/asset-mix now live on Tài sản,
+  // where "as of right now" actually makes sense (they're not month-scoped).
+  const budgetPlan = fixedPlan + variablePlan, budgetActual = s.fixed + s.variable;
+  const budgetRemaining = budgetPlan - budgetActual;
+  const hasAnyActivity = (state.transactions || []).some(t => ['income', 'expense'].includes(t.transaction_type));
   return `
   <div class="grid kpi-grid">
-    ${kpiCard('Tài sản ròng', money(pos.netWorth), netWorthSub, pos.netWorth < 0 ? 'red' : '')}
-    ${kpiCard('Tiền khả dụng', money(pos.liquidNet), 'Tiền mặt · ngân hàng · tiết kiệm, đã trừ nợ vay', pos.liquidNet < 0 ? 'red' : '')}
     ${kpiCard('Thu nhập tháng', money(s.income), `Kế hoạch ${money(incomePlan)}${momText(s.income, prevStats.income)}`, 'green')}
-    ${kpiCard('Chi tiêu tháng', money(s.expense), `Kế hoạch ${money(fixedPlan + variablePlan)} · ${pctText(s.expense, incomePlan)} thu nhập${momText(s.expense, prevStats.expense)}`, '')}
+    ${kpiCard('Chi tiêu tháng', money(s.expense), `Ngân sách ${money(budgetPlan)} · ${pctText(s.expense, incomePlan)} thu nhập${momText(s.expense, prevStats.expense)}`, '')}
+    ${kpiCard('Ngân sách còn lại', money(budgetRemaining), `${money(budgetActual)} đã chi / ${money(budgetPlan)} ngân sách`, budgetRemaining < 0 ? 'red' : 'green')}
+    ${kpiCard('Dòng tiền tháng', money(s.cashFlow), 'Tiền thực thu − tiền thực chi ra khỏi tài khoản', s.cashFlow < 0 ? 'red' : 'green')}
   </div>
+  ${!hasAnyActivity ? '<div class="card empty mt-16">Chưa có giao dịch thực tế trong tháng này.</div>' : ''}
 
   <section class="card mt-16">
     <div class="section-head"><div><h2>Kế hoạch tháng ${fmtMonthKey(state.month)}</h2><p class="${paceCls === 'bad' ? 'red' : paceCls === 'warn' ? 'amber' : ''}">${esc(paceNote)}</p></div></div>
@@ -145,17 +147,10 @@ function renderDashboard() {
     </div>
   </section>
 
-  <div class="grid section-grid mt-16">
-    <section class="card section chart-card"><div class="section-head"><div><h2>Thu nhập vs Chi tiêu</h2><p>12 tháng gần nhất</p></div></div>${trendSvg()}</section>
-    <section class="card section chart-card"><div class="section-head"><div><h2>Tài sản ròng</h2><p>12 tháng gần nhất</p></div></div>${netWorthLine(nw)}</section>
-  </div>
+  <section class="card section chart-card mt-16"><div class="section-head"><div><h2>Thu nhập vs Chi tiêu</h2><p>12 tháng gần nhất · theo ngày phát sinh giao dịch</p></div></div>${trendSvg()}</section>
 
-  <div class="grid section-grid mt-16">
-    <section class="card section"><div class="section-head"><div><h2>Cơ cấu chi tiêu tháng</h2><p>${fmtMonthKey(state.month)}</p></div></div>
-      <div class="donut-layout">${donutSvg(expenseComposition)}${legendHtml(expenseComposition, 'income', s.income)}</div></section>
-    <section class="card section"><div class="section-head"><div><h2>Tiền đang nằm ở đâu</h2><p>Không tính nợ</p></div></div>
-      <div class="donut-layout">${donutSvg(assets)}${legendHtml(assets)}</div></section>
-  </div>
+  <section class="card section mt-16"><div class="section-head"><div><h2>Cơ cấu chi tiêu tháng</h2><p>${fmtMonthKey(state.month)}</p></div></div>
+    ${expenseComposition.length ? `<div class="donut-layout">${donutSvg(expenseComposition)}${legendHtml(expenseComposition, 'income', s.income)}</div>` : '<div class="empty">Chưa có giao dịch thực tế trong tháng này.</div>'}</section>
 
   <section class="card section mt-16">
     <div class="section-head"><div><h2>Xu hướng theo danh mục</h2><p>5 danh mục chi nhiều nhất tháng này · 6 tháng gần nhất</p></div></div>

@@ -66,7 +66,8 @@ const ACCOUNTS = [
   { id: 'sav', name: 'Tiết kiệm', account_type: 'savings', currency: 'JPY', opening_balance: 200000, is_active: true },
   { id: 'inv', name: 'NISA', account_type: 'investment', currency: 'JPY', opening_balance: 100000, is_active: true },
   { id: 'card', name: 'Rakuten Card', account_type: 'credit', currency: 'JPY', opening_balance: 0, is_active: true },
-  { id: 'vnbank', name: 'Vietcombank', account_type: 'bank', currency: 'VND', opening_balance: 5000000, is_active: true }
+  { id: 'vnbank', name: 'Vietcombank', account_type: 'bank', currency: 'VND', opening_balance: 5000000, is_active: true },
+  { id: 'oldwallet', name: 'Ví cũ', account_type: 'cash', currency: 'JPY', opening_balance: 0, is_active: false }
 ];
 const LOANS = [
   { id: 'loan1', counterparty: 'Vay mua xe', loan_type: 'borrowed', currency: 'JPY', principal: 1000000, remaining_amount: 850000, start_date: '2026-01-10', due_date: '2028-01-10' },
@@ -121,8 +122,7 @@ const RPC_HANDLERS = {
   taichinh_gd_bank_loan_api: () => ({ ok: true, id: 'x' }),
   taichinh_gd_budget_column_api: () => ({ ok: true }),
   taichinh_gd_investment_api: () => ({ ok: true, id: 'x' }),
-  taichinh_gd_credit_card_plan_api: () => ({ ok: true, id: 'x' }),
-  taichinh_gd_card_category_api: (action) => action === 'save_all' ? { ok: true, saved: 2 } : { items: [{ id: 'cc1', name: 'Mua sắm', color: '#8b93a1', sort_order: 10 }, { id: 'cc2', name: 'Nạp pay', color: '#8b93a1', sort_order: 20 }] }
+  taichinh_gd_credit_card_plan_api: () => ({ ok: true, id: 'x' })
 };
 
 (async () => {
@@ -238,6 +238,11 @@ const RPC_HANDLERS = {
   }
 
   await page.click('[data-view="dashboard"]');
+  // Tổng quan reports the month's cash-flow result now — net worth/liquid
+  // cash moved to Tài sản. Verify by label text, not just element count.
+  const kpiLabels = await page.locator('.kpi-grid .kpi .label').allTextContents();
+  results.push(`DASHBOARD kpi-grid shows the 4 month-result KPIs (Thu nhập/Chi tiêu/Ngân sách còn lại/Dòng tiền): ${JSON.stringify(kpiLabels)}`);
+  results.push(`  Tài sản ròng / Tiền khả dụng removed from Tổng quan: ${!kpiLabels.some(l => /Tài sản ròng|Tiền khả dụng/.test(l))}`);
   await clickAndCheckModal('#quickAdd (Nhập nhanh)', '#quickAdd', '#qeAmount');
   await clickAndCheckModal('dashboard "Sửa chỉ tiêu %"', 'button:has-text("Sửa chỉ tiêu %")', '#allocTotal');
   const recentTx = await page.$('.tx-row-btn:not([disabled])');
@@ -371,50 +376,41 @@ const RPC_HANDLERS = {
   }
   const creditLine = await page.$('.money-column.credit .money-line');
   if (creditLine) { await creditLine.click(); await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK credit money-line (statement payment): modal opened - OK')).catch(() => results.push('CLICK credit money-line: modal did NOT open - FAIL')); await page.evaluate(() => document.getElementById('modal')?.close()); }
-  // ＋ on a card now opens the card's OWN expense entry (category chips
-  // from state.cardCategories, or none for a lump sum) — not the general
-  // Nhập nhanh, and it must never touch category_id/Chi biến động.
+  // ＋ on a card now opens the SAME Nhập nhanh as any other account, just
+  // pre-scoped to that card — a card purchase needs a real Chi tiêu
+  // category, exactly like cash or bank (card is a payment account, not a
+  // category of its own).
   const creditQuickAdd = await page.$('.money-column.credit .money-line-wrap [aria-label^="Ghi chi tiêu"]');
   if (creditQuickAdd) {
     await creditQuickAdd.click();
-    await page.waitForSelector('#ceAmount', { timeout: 1500 }).then(() => results.push('CLICK credit ＋ (openCardExpense): card-expense form opened - OK')).catch(() => results.push('CLICK credit ＋: card-expense form did NOT open - FAIL'));
-    const chipCount = await page.locator('#ceCatChips [data-cc]').count();
-    results.push(`  card-expense form shows card-category chips (Mua sắm/Nạp pay, not Chi tiêu categories): ${chipCount === 2}`);
-    await page.fill('#ceAmount', '5000');
+    await page.waitForSelector('#qeAmount', { timeout: 1500 }).then(() => results.push('CLICK credit ＋ (openCardExpense -> Nhập nhanh): form opened - OK')).catch(() => results.push('CLICK credit ＋: form did NOT open - FAIL'));
+    const catChipCount = await page.locator('#qeCategoryChips .chip').count();
+    results.push(`  card expense form shows real Chi tiêu category chips: ${catChipCount > 0}`);
+    await page.fill('#qeAmount', '5000');
     await resetToast();
     await page.click('#modalForm [type=submit]');
-    await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`SUBMIT card expense with no category chosen (lump sum): saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('SUBMIT card expense (lump sum): no toast - FAIL'));
+    await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`SUBMIT card expense with a real category: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('SUBMIT card expense: no toast - FAIL'));
   }
   await page.waitForTimeout(50);
 
-  // 📋 opens this month's card transactions for edit/delete — including the
-  // fixture's Giải trí purchase, which still carries a Chi tiêu category_id
-  // from "before" this feature (must show as Chưa phân loại, and clicking
-  // it must reach the real edit form, not silently fail).
+  // 📋 opens this month's card transactions for edit/delete, listed by
+  // their real category name (not a card-only tag).
   const cardListBtn = await page.$('.money-column.credit .money-line-wrap [aria-label^="Xem chi tiêu"]');
   if (cardListBtn) {
     await cardListBtn.click();
     await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK credit 📋 (openCardTransactions): list opened - OK')).catch(() => results.push('CLICK credit 📋: list did NOT open - FAIL'));
     const listText = await page.textContent('#modalBody');
-    results.push(`  card transaction list shows the legacy row as "Chưa phân loại": ${listText.includes('Chưa phân loại')}`);
+    results.push(`  card transaction list shows the purchase's real category (Giải trí): ${listText.includes('Giải trí')}`);
     const firstTxBtn = page.locator('#modalBody .tx-row-btn').first();
     if (await firstTxBtn.count()) {
       await firstTxBtn.click();
-      await page.waitForSelector('#etCardCat', { timeout: 1500 }).then(() => results.push('CLICK a card transaction from the list: edit form shows the card-category field - OK')).catch(() => results.push('CLICK a card transaction: edit form did NOT show card-category field - FAIL'));
-      const catFieldHidden = await page.isHidden('#etCatField');
-      results.push(`  edit form hides the regular Danh mục field for a card transaction: ${catFieldHidden}`);
+      await page.waitForSelector('#etCat', { timeout: 1500 }).then(() => results.push('CLICK a card transaction from the list: edit form opens with the normal category field - OK')).catch(() => results.push('CLICK a card transaction: edit form did NOT open - FAIL'));
+      const catFieldVisible = !(await page.isHidden('#etCatField'));
+      results.push(`  edit form shows the regular Danh mục field for a card transaction (no separate card-category field): ${catFieldVisible}`);
     }
     await page.evaluate(() => document.getElementById('modal')?.close());
     await page.waitForTimeout(50);
   }
-
-  // ⚙ Danh mục thẻ inside the credit column manager
-  await page.click('.money-column.credit .column-settings');
-  await page.waitForSelector('#modal[open]', { timeout: 1500 });
-  await page.click('button:has-text("Danh mục thẻ")');
-  await page.waitForSelector('#cardCatRows', { timeout: 1500 }).then(() => results.push('CLICK "⚙ Danh mục thẻ" inside manager (reopenAfterModal): card-category settings opened - OK')).catch(() => results.push('CLICK "⚙ Danh mục thẻ": card-category settings did NOT open - FAIL'));
-  await page.evaluate(() => document.getElementById('modal')?.close());
-  await page.waitForTimeout(50);
 
   // "+ Thẻ tín dụng" and "+ Khoản trả góp" inside the credit column manager
   // — never actually clicked before this round, unlike the debt column's
@@ -453,6 +449,12 @@ const RPC_HANDLERS = {
   await page.waitForTimeout(50);
 
   await page.click('[data-view="accounts"]');
+  // Net worth / liquid-cash KPIs and the net-worth chart now live here
+  // (moved off Tổng quan), and a hidden VND account must be visible, not
+  // silently filtered out just because it's a different currency.
+  const assetKpiLabels = await page.locator('.kpi-grid .kpi .label').allTextContents();
+  results.push(`ASSETS kpi-grid shows liquidity/net-worth KPIs: ${JSON.stringify(assetKpiLabels)}`);
+  results.push(`  Net worth chart present on Tài sản: ${await page.locator('.chart-card', { hasText: 'Tài sản ròng' }).count() > 0}`);
   await clickAndCheckModal('accounts "+ Tài khoản"', 'button:has-text("＋ Tài khoản")', '[name="name"]');
   await clickAndCheckModal('accounts "Chuyển tiền"', 'button:has-text("Chuyển tiền")');
   const acctEditBtn = await page.$('.item-card .mini-btn');
@@ -490,6 +492,41 @@ const RPC_HANDLERS = {
   }
   const foreignSection = page.locator('.section', { hasText: 'Tài khoản VND' });
   results.push(`Foreign-currency account (VND) shows up on Tài sản instead of vanishing: ${await foreignSection.count() > 0}`);
+  const hiddenSection = page.locator('.section', { hasText: 'Tài khoản đã ẩn' });
+  results.push(`Hidden account (Ví cũ) listed under "Tài khoản đã ẩn": ${await hiddenSection.count() > 0}`);
+  const restoreBtn = hiddenSection.locator('button:has-text("Khôi phục")');
+  if (await restoreBtn.count()) {
+    await resetToast();
+    await restoreBtn.click();
+    await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`CLICK "Khôi phục" on hidden account: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('CLICK "Khôi phục": no toast - FAIL'));
+  } else { results.push('CLICK "Khôi phục": button not found - FAIL'); }
+
+  // Giao dịch — the standalone transactions screen with filters and
+  // always-visible Sửa/Xóa buttons (section 7's main ask).
+  await page.click('[data-view="transactions"]');
+  await page.waitForSelector('#txfType', { timeout: 1500 }).then(() => results.push('NAV "Giao dịch": filter bar rendered - OK')).catch(() => results.push('NAV "Giao dịch": did NOT render - FAIL'));
+  const txRowCount = await page.locator('#content .tx .btn:has-text("Sửa")').count();
+  results.push(`GIAO DỊCH list shows labeled Sửa/Xóa buttons (not just ×): ${txRowCount > 0}`);
+  await page.selectOption('#txfType', 'expense');
+  await page.waitForTimeout(50);
+  const afterFilterTypes = await page.locator('#content .tx-main strong').allTextContents();
+  results.push(`GIAO DỊCH filter by loại=Chi narrows the list: ${afterFilterTypes.length > 0 && afterFilterTypes.every(t => t.includes('Chi'))}`);
+  await page.click('#txfReset');
+  await page.waitForTimeout(50);
+  const editBtn = page.locator('#content .tx .btn:has-text("Sửa")').first();
+  if (await editBtn.count()) {
+    await editBtn.click();
+    await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK "Sửa" on a Giao dịch row: edit form opened - OK')).catch(() => results.push('CLICK "Sửa": edit form did NOT open - FAIL'));
+    await page.evaluate(() => document.getElementById('modal')?.close());
+  }
+  const delBtn = page.locator('#content .tx .btn:has-text("Xóa")').first();
+  if (await delBtn.count()) {
+    await page.evaluate(() => { window.confirm = () => true; });
+    await resetToast();
+    await delBtn.click();
+    await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`CLICK "Xóa" on a Giao dịch row: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('CLICK "Xóa": no toast - FAIL'));
+    await page.evaluate(() => { window.confirm = () => false; });
+  }
 
   await page.click('[data-view="settings"]');
   // Actual form submits (save_household / save_reporting), not just that

@@ -107,12 +107,11 @@ function tx(overrides) { return { id: overrides.id || Math.random().toString(36)
 }
 
 // ---------------------------------------------------------------------
-// B3. Any expense paid from a credit-card account is excluded from Chi cố
-//     định/Chi biến động by ACCOUNT, not by category — so it still works
-//     for a "legacy" card transaction that carries a regular category_id
-//     from before card_category_id existed, not just new card_category_id
-//     entries. It still counts in the household's overall "expense" total
-//     (cardSpend), just never in fixed/variable.
+// B3 (acceptance case C). A card is a PAYMENT ACCOUNT, not a category — a
+// Rakuten purchase for Mua sắm counts in Chi biến động exactly like a cash
+// purchase in the same category, on the purchase date, and simultaneously
+// shows up as informational "cardSpend". Paying the statement later must
+// never double-count as a second expense.
 // ---------------------------------------------------------------------
 {
   resetState({
@@ -120,16 +119,25 @@ function tx(overrides) { return { id: overrides.id || Math.random().toString(36)
     categories: [{ id: 'shopping', direction: 'expense', cost_type: 'variable', name: 'Mua sắm', is_active: true }],
   });
   const cash = tx({ account_id: 'bank', category_id: 'shopping', transaction_type: 'expense', amount: 20000, transaction_date: '2026-09-05' });
-  const legacyCard = tx({ account_id: 'card', category_id: 'shopping', transaction_type: 'expense', amount: 142000, transaction_date: '2026-09-10' }); // no card_category_id — "old" style row
-  const newCard = tx({ account_id: 'card', card_category_id: 'cc1', transaction_type: 'expense', amount: 8000, transaction_date: '2026-09-12' });
-  sandbox.state.fullTransactions = [cash, legacyCard, newCard];
-  sandbox.state.transactions = [cash, legacyCard, newCard];
-  const stats = F.statsFor([cash, legacyCard, newCard]);
-  eq('B3. Chi biến động total only counts the cash-paid expense', stats.variable, 20000);
-  eq('B3. Card spend (legacy + new) tracked in its own bucket', stats.cardSpend, 150000);
-  eq('B3. Overall "expense" (Chi tiêu tháng) still includes card spend', stats.expense, 170000);
-  eq('B3. categoryActualBase excludes card-paid rows even though legacy row shares the category', F.categoryActualBase('shopping', 'expense'), 20000);
-  eq('B3. expenseByCategory (dashboard donut) excludes card-paid rows too', F.expenseByCategory([cash, legacyCard, newCard]).find(x => x.label === 'Mua sắm')?.value, 20000);
+  const card1000 = tx({ account_id: 'card', category_id: 'shopping', transaction_type: 'expense', amount: 1000, transaction_date: '2026-09-15' });
+  sandbox.state.fullTransactions = [cash, card1000];
+  sandbox.state.transactions = [cash, card1000];
+  const stats = F.statsFor([cash, card1000]);
+  eq('C. Chi biến động counts the card purchase too, same as cash, by category', stats.variable, 21000);
+  eq('C. cardSpend is informational (how much of that ran through a card)', stats.cardSpend, 1000);
+  eq('C. Overall "expense" (Chi tiêu tháng) = cash + card, no double count', stats.expense, 21000);
+  eq('C. categoryActualBase includes the card-paid row under its real category', F.categoryActualBase('shopping', 'expense'), 21000);
+  eq('C. expenseByCategory (dashboard donut) includes the card-paid row too', F.expenseByCategory([cash, card1000]).find(x => x.label === 'Mua sắm')?.value, 21000);
+  // A card purchase doesn't move real cash out of a bank/cash account yet —
+  // only the statement payment does — so it must be excluded from cashFlow
+  // outflow even though it's already recognized as expense.
+  eq('C. Dòng tiền tháng excludes the card purchase (no real cash left an account yet)', stats.cashFlow, -20000);
+
+  const statementPayment = tx({ account_id: 'bank', transfer_account_id: 'card', transaction_type: 'transfer', amount: 1000, transaction_date: '2026-10-27' });
+  sandbox.state.fullTransactions = [cash, card1000, statementPayment];
+  const octStats = F.statsFor([statementPayment]);
+  eq('C. Statement payment next month is not counted as expense a second time', octStats.expense, 0);
+  eq('C. Statement payment IS real cash out that month (dòng tiền)', octStats.cashFlow, -1000);
 }
 
 // ---------------------------------------------------------------------

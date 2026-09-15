@@ -33,8 +33,7 @@ const state = {
   cardSettings: [],
   cardInstallments: [],
   cardMonth: [],
-  exceptionalIds: [],
-  cardCategories: []
+  exceptionalIds: []
 };
 
 const $ = (s, root = document) => root.querySelector(s);

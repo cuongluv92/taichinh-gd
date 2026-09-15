@@ -23,7 +23,6 @@ const api = {
   cardPlan: (action, payload = {}) => { needKey(); return callRpc('taichinh_gd_credit_card_plan_api', { p_key: state.key, p_action: action, p_payload: payload }); },
   cardMonth: month => { needKey(); return callRpc('taichinh_gd_credit_card_month_api', { p_key: state.key, p_month: monthDate(month) }); },
   exceptional: (action, payload = {}) => { needKey(); return callRpc('taichinh_gd_exceptional_api', { p_key: state.key, p_action: action, p_payload: payload }); },
-  cardCategory: (action, payload = {}) => { needKey(); return callRpc('taichinh_gd_card_category_api', { p_key: state.key, p_action: action, p_payload: payload }); },
   backup: () => { needKey(); return callRpc('taichinh_gd_backup_api', { p_key: state.key }); },
   budgetColumn: (kind, effectiveMonth, rows) => { needKey(); return callRpc('taichinh_gd_budget_column_api', { p_key: state.key, p_kind: kind, p_effective_month: monthDate(effectiveMonth), p_rows: rows }); }
 };

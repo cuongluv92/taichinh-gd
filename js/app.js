@@ -23,14 +23,13 @@ async function loadExtras(month = state.month) {
   // recurring-expense reminders, a second card "overview" summary, and a
   // monthly FX-history table — all still intact in Supabase, just not part
   // of this pass's simplified screens, so they're not fetched here.)
-  const [ext, allocation, cardGet, cardInstallments, cardMonthRes, exceptional, cardCategories] = await Promise.all([
+  const [ext, allocation, cardGet, cardInstallments, cardMonthRes, exceptional] = await Promise.all([
     api.extension('get'),
     api.allocation('get_month', { month: monthDate(month) }),
     api.card('get'),
     api.card('list_installments'),
     api.cardMonth(month),
-    api.exceptional('list'),
-    api.cardCategory('list')
+    api.exceptional('list')
   ]);
   state.reporting = { show_vnd_conversion: false, jpy_vnd_rate: null, ...(ext?.reporting || {}) };
   state.loanTerms = ext?.loan_terms || [];
@@ -39,7 +38,6 @@ async function loadExtras(month = state.month) {
   state.cardInstallments = cardInstallments?.items || [];
   state.cardMonth = cardMonthRes?.items || [];
   state.exceptionalIds = exceptional?.ids || [];
-  state.cardCategories = cardCategories?.items || [];
 }
 
 async function boot() {
@@ -100,6 +98,7 @@ async function changeMonth(delta) {
 const VIEW_META = {
   dashboard: ['Tổng quan', 'Kế hoạch tháng và phân tích tài chính'],
   budget: ['Chi tiêu', 'Thu nhập, chi cố định, chi biến động, thẻ và nợ trong tháng'],
+  transactions: ['Giao dịch', 'Toàn bộ thu, chi, chuyển khoản — lọc, sửa, xóa'],
   accounts: ['Tài sản', 'Tiền mặt, ngân hàng, tiết kiệm và đầu tư'],
   settings: ['Cài đặt', 'Gia đình, tiền tệ và sao lưu dữ liệu']
 };
@@ -112,10 +111,11 @@ function navigate(v) {
 }
 function render() {
   if (!state.household) return;
-  const views = { dashboard: window.renderDashboard, budget: window.renderBudget, accounts: window.renderAccounts, settings: window.renderSettings };
+  const views = { dashboard: window.renderDashboard, budget: window.renderBudget, transactions: window.renderTransactions, accounts: window.renderAccounts, settings: window.renderSettings };
   const fn = views[state.view] || views.dashboard;
   $('#content').innerHTML = fn();
   if (state.view === 'settings') window.wireSettingsView?.();
+  if (state.view === 'transactions') window.wireTransactionsView?.();
 }
 
 $('#unlockForm').addEventListener('submit', e => {

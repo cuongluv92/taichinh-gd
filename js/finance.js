@@ -30,13 +30,11 @@ F.isDebtTransaction = t => F.DEBT_TYPES.has(t?.transaction_type);
 F.isGoalTransaction = t => ['goal_save', 'goal_withdraw'].includes(t?.transaction_type);
 F.isInvestmentAdjustment = t => ['investment_gain', 'investment_loss'].includes(t?.transaction_type);
 F.isExceptional = t => t?.transaction_type === 'expense' && (state.exceptionalIds || []).includes(t.id);
-// Any expense paid from a credit-card account — excluded from Chi cố
-// định/Chi biến động entirely (by account, not by category, so this also
-// catches old transactions recorded before card_category_id existed, and
-// installment purchases, which post their full price as a normal expense
-// against the card account). Card spend still counts in the household's
-// total "Chi tiêu tháng" — see F.statsFor — it just doesn't land in a
-// fixed/variable budget bucket; it's tracked in the Thẻ & trả góp column.
+// A card purchase is a normal expense against a real category (Ăn uống,
+// Mua sắm...) — it counts in Chi cố định/Chi biến động exactly like cash or
+// bank spending. The only thing special about it is the account it's paid
+// from: F.isCardExpense flags that for display purposes (e.g. showing which
+// category rows include card spend), it does NOT exclude anything anymore.
 F.isCardExpense = t => t?.transaction_type === 'expense' && F.accountById(t.account_id)?.account_type === 'credit';
 F.baseTx = t => (t.currency || state.base) === state.base;
 F.baseAmount = t => F.baseTx(t) ? n(t.amount) : 0;
@@ -189,7 +187,7 @@ F.expenseKind = t => F.categoryVersionAt(t.category_id, t.transaction_date)?.cos
 F.categoryActualBase = (id, dir = 'expense') => {
   const rows = (state.transactions || []).filter(t => t.transaction_type === dir && t.category_id === id && F.baseTx(t));
   if (dir !== 'expense') return rows.reduce((s, t) => s + F.baseAmount(t), 0);
-  return rows.filter(t => !F.isExceptional(t) && !F.isCardExpense(t)).reduce((s, t) => s + F.baseAmount(t), 0);
+  return rows.filter(t => !F.isExceptional(t)).reduce((s, t) => s + F.baseAmount(t), 0);
 };
 // ---------------- Period transactions & stats ----------------
 F.periodTransactions = (month = state.month) => (state.fullTransactions || []).filter(t => monthKey(t.transaction_date) === month);
@@ -207,34 +205,46 @@ F.operatingFlowTo = (type, txs) => {
 };
 F.statsFor = txs => {
   const rows = (txs || []).filter(F.baseTx);
+  // cardSpend is informational only now (how much of this month's expense
+  // ran through a credit card) — it's included in fixed/variable below via
+  // each transaction's own category cost_type, exactly like cash/bank
+  // spending. It is NOT subtracted from anything.
   let income = 0, fixed = 0, variable = 0, exceptional = 0, cardSpend = 0, debtPay = 0, loanInterest = 0;
+  let cashIn = 0, cashOut = 0;
   rows.forEach(t => {
     const amt = F.baseAmount(t);
-    if (t.transaction_type === 'income') income += amt;
+    const isCard = F.isCardExpense(t);
+    if (t.transaction_type === 'income') { income += amt; cashIn += amt; }
     else if (t.transaction_type === 'expense') {
-      if (F.isCardExpense(t)) cardSpend += amt;
-      else if (F.isExceptional(t)) exceptional += amt;
+      if (isCard) cardSpend += amt;
+      if (F.isExceptional(t)) exceptional += amt;
       else (F.expenseKind(t) === 'fixed' ? fixed += amt : variable += amt);
+      // A card purchase doesn't move real money out of a cash/bank account
+      // yet — only the eventual statement payment does (below) — so it's
+      // excluded from cashOut even though it counts as expense immediately.
+      if (!isCard) cashOut += amt;
     } else if (t.transaction_type === 'loan_pay') debtPay += amt;
-    else if (t.transaction_type === 'loan_interest') loanInterest += amt;
+    else if (t.transaction_type === 'loan_interest') { loanInterest += amt; cashOut += amt; }
+    else if (t.transaction_type === 'transfer' && F.accountById(t.transfer_account_id)?.account_type === 'credit') {
+      // Paying off a card statement: real cash leaves the paying account,
+      // but it must never be recognized as expense a second time.
+      cashOut += amt;
+    }
   });
   const saving = Math.max(0, F.operatingFlowTo('savings', rows));
   const investment = Math.max(0, F.operatingFlowTo('investment', rows));
-  // cardSpend counts toward the household's overall expense/cash-flow (it's
-  // real money out) but never toward fixed/variable — those are Chi tiêu's
-  // per-category budget buckets, and card spend lives only in Thẻ & trả góp.
-  const expense = fixed + variable + loanInterest + cardSpend;
+  const expense = fixed + variable + loanInterest;
   const allocated = expense + saving + investment + debtPay;
   return {
     income, fixed, variable, exceptional, cardSpend, loanInterest, debtPay, saving, investment,
     expense, allocated, remaining: Math.max(0, income - allocated), overspend: Math.max(0, allocated - income),
-    cashFlow: income - expense
+    cashFlow: cashIn - cashOut
   };
 };
 F.expenseByCategory = txs => {
   const map = new Map();
   (txs || []).filter(F.baseTx).forEach(t => {
-    if (t.transaction_type === 'expense' && !F.isExceptional(t) && !F.isCardExpense(t)) {
+    if (t.transaction_type === 'expense' && !F.isExceptional(t)) {
       const c = F.categoryVersionAt(t.category_id, t.transaction_date);
       const name = c.name || t.category_name || 'Khác';
       map.set(name, (map.get(name) || 0) + F.baseAmount(t));
@@ -254,7 +264,7 @@ F.categoryTrendData = (count = 5, months = 6, month = state.month) => {
   const keys = Array.from({ length: months }, (_, i) => addMonths(month, i - (months - 1)));
   const byId = new Map();
   keys.forEach((k, idx) => {
-    F.periodTransactions(k).filter(t => F.baseTx(t) && t.transaction_type === 'expense' && !F.isExceptional(t) && !F.isCardExpense(t)).forEach(t => {
+    F.periodTransactions(k).filter(t => F.baseTx(t) && t.transaction_type === 'expense' && !F.isExceptional(t)).forEach(t => {
       const c = F.categoryVersionAt(t.category_id, t.transaction_date);
       const id = t.category_id || `_${c.name || t.category_name || 'Khác'}`;
       if (!byId.has(id)) byId.set(id, { name: c.name || t.category_name || 'Khác', values: Array(months).fill(0) });
