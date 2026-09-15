@@ -2,7 +2,7 @@
   'use strict';
 
   const monthKey=v=>String(v||'').slice(0,7);
-  const monthLabel=()=>String(state.month||'').replace('-','/');
+  const monthLabel=v=>String(v||state.month||'').slice(0,7).replace('-','/');
 
   function firstEffectiveMonth(categoryId){
     const rows=(state.categoryVersions||[]).filter(v=>v.category_id===categoryId&&v.effective_month);
@@ -54,10 +54,9 @@
 
       if(content&&!content.querySelector('[data-budget-version-note]')){
         const note=document.createElement('div');
-        note.className='budget-version-note';
-        note.dataset.budgetVersionNote='1';
-        note.innerHTML=`<b>Áp dụng từ ${monthLabel()}</b><span>Giá trị mới tự tiếp tục sang các tháng sau. Các tháng trước giữ nguyên.</span>`;
-        content.prepend(note);
+        note.className='budget-version-note';note.dataset.budgetVersionNote='1';
+        const syncNote=()=>{note.innerHTML=`<b>Áp dụng từ ${monthLabel(effective?.value)}</b><span>Giá trị mới tự tiếp tục sang các tháng sau. Các tháng trước giữ nguyên.</span>`};
+        syncNote();content.prepend(note);effective?.addEventListener('change',syncNote);
       }
     });
   }
@@ -101,7 +100,7 @@
     decorateColumn('income','.v3-money-col.income');
     decorateColumn('fixed','.v3-money-col.fixed');
     decorateColumn('variable','.v3-money-col.variable');
-    if(!board.querySelector('.budget-month-rule')){
+    if(!document.querySelector('#content .budget-month-rule')){
       const rule=document.createElement('div');
       rule.className='budget-month-rule';
       rule.innerHTML=`<b>Thiết lập theo tháng</b><span>Sửa hoặc thêm ở ${monthLabel()} → áp dụng từ tháng này về sau; dữ liệu các tháng trước không đổi.</span>`;
