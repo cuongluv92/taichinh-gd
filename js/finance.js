@@ -417,17 +417,21 @@ function trendSvg() {
 function barChartSvg(items, w = 720, h = 190) {
   const clean = items.filter(x => n(x.value) !== 0);
   if (!clean.length) return '<div class="empty compact">Chưa có dữ liệu</div>';
-  const pad = 34, max = Math.max(1, ...items.map(x => n(x.value))), min = Math.min(0, ...items.map(x => n(x.value)));
+  // Bottom padding is taller than a typical chart's because the group names
+  // (e.g. "Tiết kiệm sinh lời") are too long to sit flat under a narrow bar
+  // without crowding/clipping each other — angled labels read clearly at
+  // any chart width instead.
+  const padTop = 20, padBottom = 54, max = Math.max(1, ...items.map(x => n(x.value))), min = Math.min(0, ...items.map(x => n(x.value)));
   const span = Math.max(1, max - min);
-  const zeroY = pad + (h - pad * 2) * max / span;
-  const slot = (w - pad * 2) / items.length, bw = Math.max(6, slot * 0.55);
+  const zeroY = padTop + (h - padTop - padBottom) * max / span;
+  const slot = (w - 40) / items.length, bw = Math.max(6, slot * 0.55);
   const bars = items.map((x, i) => {
-    const val = n(x.value), barH = Math.abs(val) / span * (h - pad * 2);
-    const cx = pad + slot * i + slot / 2;
+    const val = n(x.value), barH = Math.abs(val) / span * (h - padTop - padBottom);
+    const cx = 20 + slot * i + slot / 2;
     const y = val >= 0 ? zeroY - barH : zeroY;
-    return `<g><rect x="${(cx - bw / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1, barH).toFixed(1)}" rx="3" fill="${val >= 0 ? CHART_COLORS[i % CHART_COLORS.length] : 'var(--negative, #f25c66)'}"><title>${esc(x.label)}: ${money(val)}</title></rect><text class="axis-label" x="${cx}" y="${h - 6}" text-anchor="middle">${esc(x.label)}</text></g>`;
+    return `<g><rect x="${(cx - bw / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1, barH).toFixed(1)}" rx="3" fill="${val >= 0 ? CHART_COLORS[i % CHART_COLORS.length] : 'var(--negative, #f25c66)'}"><title>${esc(x.label)}: ${money(val)}</title></rect><text class="axis-label" x="${cx}" y="${h - padBottom + 14}" text-anchor="end" transform="rotate(-40 ${cx} ${h - padBottom + 14})">${esc(x.label)}</text></g>`;
   }).join('');
-  return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Cơ cấu tài sản"><line class="v-gridline" x1="${pad}" y1="${zeroY}" x2="${w - pad}" y2="${zeroY}"/>${bars}</svg>`;
+  return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Cơ cấu tài sản"><line class="v-gridline" x1="20" y1="${zeroY}" x2="${w - 20}" y2="${zeroY}"/>${bars}</svg>`;
 }
 // Multi-line chart — Tài sản's monthly history (§11): Tổng tài sản, Tổng nợ,
 // Tài sản ròng, Tổng vốn đầu tư, Tổng giá trị đầu tư hiện tại.

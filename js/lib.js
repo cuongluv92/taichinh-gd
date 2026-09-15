@@ -228,7 +228,10 @@ const ERROR_MAP = [
   [/category_order_stale_refresh/i, 'Danh mục vừa thay đổi. Hãy tải lại rồi thử lại.'],
   [/invalid_category_order/i, 'Thứ tự danh mục không hợp lệ.'],
   [/category_name_required/i, 'Tên mục không được để trống.'],
-  [/planned_amount_negative/i, 'Số tiền không được âm.']
+  [/planned_amount_negative/i, 'Số tiền không được âm.'],
+  [/account_has_history/i, 'Không xóa được — tài khoản này đã có lịch sử +/− tiền.'],
+  [/debt_has_history/i, 'Không xóa được — khoản này đã có lịch sử điều chỉnh.'],
+  [/account_not_found/i, 'Không tìm thấy tài khoản.']
 ];
 function translateApiError(raw) {
   for (const [re, msg] of ERROR_MAP) if (re.test(raw)) return msg;

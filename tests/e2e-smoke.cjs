@@ -120,10 +120,21 @@ let seq = 0;
 function newId(prefix) { return `${prefix}${++seq}`; }
 
 const RPC_HANDLERS = {
-  taichinh_gd_api: (action) => {
+  taichinh_gd_api: (action, body) => {
+    const p = body?.p_payload || {};
     if (action === 'bootstrap' || action === 'month') return { household: { name: 'Nguyễn Gia', base_currency: 'JPY' }, accounts: ACCOUNTS, categories: CATEGORIES, category_versions: [], transactions: MONTH_TX };
     if (action === 'export') return { transactions: FULL_TX };
-    if (action === 'save_account') return { ok: true, id: 'newacct1' };
+    if (action === 'save_account') {
+      if (p.id) { const row = ACCOUNTS.find(x => x.id === p.id); if (row) Object.assign(row, p); return { ok: true, id: p.id }; }
+      const id = newId('acct');
+      ACCOUNTS.push({ id, name: p.name, account_type: p.account_type || 'cash', currency: p.currency || 'JPY', opening_balance: Number(p.opening_balance || 0), is_active: true });
+      return { ok: true, id };
+    }
+    if (action === 'delete_account') {
+      if (ADJUSTMENTS.some(a => a.account_id === p.id)) return { error: true, __status: 400, message: 'account_has_history' };
+      const i = ACCOUNTS.findIndex(x => x.id === p.id); if (i >= 0) ACCOUNTS.splice(i, 1);
+      return { ok: true };
+    }
     return { ok: true, id: 'x' };
   },
   taichinh_gd_extension_api: (action) => {
@@ -258,7 +269,8 @@ const RPC_HANDLERS = {
       try { body = JSON.parse(route.request().postData() || '{}'); } catch {}
       const handler = RPC_HANDLERS[fn];
       const json = handler ? handler(body.p_action, body) : {};
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(json) });
+      const { __status, ...jsonBody } = json || {};
+      await route.fulfill({ status: __status || 200, contentType: 'application/json', body: JSON.stringify(jsonBody) });
     });
     await page.addInitScript(() => { localStorage.setItem('taichinh_gd_key_v1', 'x'.repeat(40)); });
     return page;
@@ -415,7 +427,7 @@ const RPC_HANDLERS = {
   await page.waitForTimeout(50);
   await clickAndCheckModal('account "＋ Thêm" (Tiền mặt & ngân hàng column)', '.money-column.income .column-settings', '[name="name"]');
   await clickAndCheckModal('account row "Sửa" mini-btn (UFJ)', '.money-column.income .mini-btn[title="Sửa"]', '[name="name"]');
-  results.push(`  Account row also has an "Ẩn" mini-btn (was add-only before): ${await page.locator('.money-column.income .mini-btn[title="Ẩn"]').count() > 0}`);
+  results.push(`  Account row also has an "Xóa" mini-btn (real delete, not add-only, not archive): ${await page.locator('.money-column.income .mini-btn[title="Xóa"]').count() > 0}`);
 
   // Nợ phải trả: view, adjust, add.
   await page.click('.money-column.debt .money-line:has-text("Vay mua xe")');
@@ -424,7 +436,7 @@ const RPC_HANDLERS = {
   await page.waitForTimeout(50);
   await clickAndCheckModal('Nợ inline "Tăng" button', '.money-column.debt .mini-btn[title="Tăng"]', '[name="amount"]');
   await clickAndCheckModal('Nợ row "Sửa" mini-btn', '.money-column.debt .mini-btn[title="Sửa"]', '[name="name"]');
-  results.push(`  Nợ row also has an "Ẩn" mini-btn (was add-only before): ${await page.locator('.money-column.debt .mini-btn[title="Ẩn"]').count() > 0}`);
+  results.push(`  Nợ row also has an "Xóa" mini-btn (real delete, not add-only, not archive): ${await page.locator('.money-column.debt .mini-btn[title="Xóa"]').count() > 0}`);
   results.push(`  Đầu tư row (Tài sản page) has a "Xóa" mini-btn (was Sửa-only before): ${await page.locator('.money-column.credit .mini-btn[title^="Xóa"]').count() > 0}`);
   await clickAndCheckModal('Nợ column "＋ Thêm"', '.money-column.debt .column-settings', '[name="name"]');
   await page.click('.money-column.debt .column-settings');
@@ -445,8 +457,26 @@ const RPC_HANDLERS = {
 
   const foreignSection = page.locator('.section', { hasText: 'Tài khoản ngoại tệ' });
   results.push(`Foreign-currency account (VND) shows up on Tài sản instead of vanishing: ${await foreignSection.count() > 0}`);
-  const hiddenSection = page.locator('.section', { hasText: 'Tài khoản đã ẩn' });
-  results.push(`Hidden account (Ví cũ) listed under "Tài khoản đã ẩn": ${await hiddenSection.count() > 0}`);
+  results.push(`"Tài khoản đã ẩn" section no longer exists anywhere (🗑 is a real delete now, not archive): ${await page.locator('.section', { hasText: 'Tài khoản đã ẩn' }).count() === 0}`);
+
+  // Xóa: an account with no adjustment history deletes for real and
+  // disappears; one WITH history is refused with a clear message instead
+  // of silently archiving. window.confirm() is stubbed false for this whole
+  // "real clicks" phase, so flip it true just for these two confirm()-gated
+  // deletes and put it back after.
+  await page.evaluate(() => { window.confirm = () => true; });
+  await resetToast();
+  await page.locator('.money-column.income .mini-btn[title="Xóa"]').nth(1).click(); // "Tiền mặt" — 2nd row, no adjustment history
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`CLICK Xóa "Tiền mặt": saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('CLICK Xóa "Tiền mặt": no toast - FAIL'));
+  const incomeRowCount = await page.locator('.money-column.income .money-line').count();
+  results.push(`  Xóa "Tiền mặt" (no history): row actually removed (1 row left — UFJ only, not 2): ${incomeRowCount === 1}`);
+  await resetToast();
+  await page.click('.money-column.income .mini-btn[title="Xóa"]'); // "UFJ" — has adjustment history in the fixture
+  await page.waitForSelector('#toast.show', { timeout: 1500 });
+  const blockedToast = await page.textContent('#toast');
+  results.push(`  Xóa "UFJ" (has history): blocked with a clear message, not silently archived: ${blockedToast.includes('đã có lịch sử')} (toast: "${blockedToast}")`);
+  results.push(`  UFJ is still there after the blocked delete: ${(await page.textContent('.money-column.income')).includes('UFJ')}`);
+  await page.evaluate(() => { window.confirm = () => false; });
 
   // ---- Đầu tư: NISA plan, securities trade, savings interest ----
   await page.click('[data-view="investments"]');

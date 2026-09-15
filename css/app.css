@@ -265,7 +265,7 @@ progress.bad::-webkit-progress-value{background:var(--negative)}
 /* ---------- Charts ---------- */
 .chart-card svg{width:100%;height:auto;display:block}
 .chart-grid line,.v-gridline{stroke:var(--border)}
-.axis-label,.chart-axis{fill:var(--text-faint);font-size:9px}
+.axis-label,.chart-axis{fill:var(--text-dim);font-size:10.5px}
 .bar-income{fill:var(--positive)}
 .bar-expense{fill:var(--negative)}
 .legend{display:flex;gap:14px;margin-top:8px;font-size:11.5px;color:var(--text-dim)}

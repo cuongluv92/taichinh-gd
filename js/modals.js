@@ -215,12 +215,9 @@ function openAccount(id = '') {
   const sync = () => $('#acLiquidField').classList.toggle('hidden', typeEl.value !== 'savings');
   typeEl.onchange = sync; sync();
 }
-async function archiveAccount(id) {
-  if (!confirm('Ẩn tài khoản này?')) return;
-  try { await api.core('archive_account', { id }); await window.refresh(); toast('Đã ẩn tài khoản'); } catch (e) { toast(e.message, true); }
-}
-async function unarchiveAccount(id) {
-  try { await api.core('unarchive_account', { id }); await window.refresh(); toast('Đã khôi phục tài khoản'); } catch (e) { toast(e.message, true); }
+async function deleteAccount(id) {
+  if (!confirm('Xóa tài khoản này? Chỉ xóa được khi chưa có lịch sử +/− tiền.')) return;
+  try { await api.core('delete_account', { id }); await window.refresh(); toast('Đã xóa tài khoản'); } catch (e) { toast(e.message, true); }
 }
 
 // ---------------- Tài sản: manual +Tiền / −Tiền adjustments ----------------
@@ -499,10 +496,6 @@ function openDebt(id = '', direction = 'payable') {
     <div class="field full"><label>Ghi chú</label><input name="note" value="${esc(d?.note || '')}" placeholder="Tùy chọn"></div>
   </div>`, fd => api.debtLedger('save', { ...fd, id: id || null }), id ? 'Lưu' : 'Tạo');
 }
-async function archiveDebt(id) {
-  if (!confirm('Ẩn khoản nợ này? Dữ liệu vẫn được giữ lại.')) return;
-  try { await api.debtLedger('archive', { id }); await window.refresh(); toast('Đã ẩn khoản nợ'); } catch (e) { toast(e.message, true); }
-}
 async function deleteDebt(id) {
   if (!confirm('Xóa khoản nợ này? Chỉ xóa được khi chưa có lịch sử điều chỉnh.')) return;
   try { await api.debtLedger('delete', { id }); await window.refresh(); toast('Đã xóa khoản nợ'); } catch (e) { toast(e.message, true); }
@@ -664,9 +657,9 @@ async function toggleInstallmentPaid(scheduleRowId, cardId) {
 }
 
 Object.assign(window, {
-  openQuickEntry, openTransactionEdit, deleteTransaction, openColumnSettings, openAccount, archiveAccount, unarchiveAccount,
+  openQuickEntry, openTransactionEdit, deleteTransaction, openColumnSettings, openAccount, deleteAccount,
   openAccountAdjustment, deleteAccountAdjustment, openAccountAdjustmentHistory,
-  openDebt, archiveDebt, deleteDebt, openDebtAdjustment, deleteDebtAdjustment, openDebtAdjustmentHistory,
+  openDebt, deleteDebt, openDebtAdjustment, deleteDebtAdjustment, openDebtAdjustmentHistory,
   openInvestmentNew, deleteInvestment, openNisaHolding, openInvestmentEvent, deleteInvestmentEvent, openInvestmentEventHistory,
   openSecurityTrade, openInvestmentPlanConfirm, skipInvestmentPlan,
   openCreditCard, openCardLedger, openCardExpenseForm, deleteCardExpense,

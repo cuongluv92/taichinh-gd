@@ -15,7 +15,7 @@ function assetAccountRow(a) {
     <button class="mini-btn" type="button" aria-label="Tăng tiền ${esc(a.name)}" title="＋ Tiền" ${act('openAccountAdjustment', a.id, 'increase')}>＋</button>
     <button class="mini-btn" type="button" aria-label="Giảm tiền ${esc(a.name)}" title="− Tiền" ${act('openAccountAdjustment', a.id, 'decrease')}>−</button>
     <button class="mini-btn" type="button" aria-label="Sửa ${esc(a.name)}" title="Sửa" ${act('openAccount', a.id)}>✎</button>
-    <button class="mini-btn" type="button" aria-label="Ẩn ${esc(a.name)}" title="Ẩn" ${act('archiveAccount', a.id)}>🗑</button>
+    <button class="mini-btn" type="button" aria-label="Xóa ${esc(a.name)}" title="Xóa" ${act('deleteAccount', a.id)}>🗑</button>
   </div>`;
 }
 function investmentRow(inv) {
@@ -33,7 +33,7 @@ function receivableRow(d) {
     <button class="mini-btn" type="button" aria-label="Tăng ${esc(d.name)}" title="Tăng" ${act('openDebtAdjustment', d.id, 'increase')}>＋</button>
     <button class="mini-btn" type="button" aria-label="Giảm ${esc(d.name)}" title="Giảm" ${act('openDebtAdjustment', d.id, 'decrease')}>−</button>
     <button class="mini-btn" type="button" aria-label="Sửa ${esc(d.name)}" title="Sửa" ${act('openDebt', d.id, d.direction)}>✎</button>
-    <button class="mini-btn" type="button" aria-label="Ẩn ${esc(d.name)}" title="Ẩn" ${act('archiveDebt', d.id)}>🗑</button>
+    <button class="mini-btn" type="button" aria-label="Xóa ${esc(d.name)}" title="Xóa" ${act('deleteDebt', d.id)}>🗑</button>
   </div>`;
 }
 function payableRow(d) {
@@ -43,12 +43,8 @@ function payableRow(d) {
     <button class="mini-btn" type="button" aria-label="Tăng ${esc(d.name)}" title="Tăng" ${act('openDebtAdjustment', d.id, 'increase')}>＋</button>
     <button class="mini-btn" type="button" aria-label="Giảm ${esc(d.name)}" title="Giảm" ${act('openDebtAdjustment', d.id, 'decrease')}>−</button>
     <button class="mini-btn" type="button" aria-label="Sửa ${esc(d.name)}" title="Sửa" ${act('openDebt', d.id, d.direction)}>✎</button>
-    <button class="mini-btn" type="button" aria-label="Ẩn ${esc(d.name)}" title="Ẩn" ${act('archiveDebt', d.id)}>🗑</button>
+    <button class="mini-btn" type="button" aria-label="Xóa ${esc(d.name)}" title="Xóa" ${act('deleteDebt', d.id)}>🗑</button>
   </div>`;
-}
-function hiddenAccountRow(a) {
-  return `<div class="tx"><div class="tx-main"><strong>${esc(a.name)}</strong><span>${esc(ACCOUNT_TYPE_LABEL[a.account_type] || a.account_type)} · ${esc(a.currency || state.base)}</span></div>
-    <div class="tx-actions"><button class="btn sm" ${act('unarchiveAccount', a.id)}>Khôi phục</button></div></div>`;
 }
 
 function assetColumn() {
@@ -94,8 +90,6 @@ function renderAccounts() {
     const list = foreign.filter(a => a.currency === cur);
     return `<section class="card section mt-16"><div class="section-head"><h2>Tài khoản ngoại tệ · ${esc(cur)}</h2><span class="count-tag">${list.length} tài khoản</span></div><p class="note">${esc(note)}</p><div class="money-items">${list.map(assetAccountRow).join('')}</div></section>`;
   }).join('');
-  const hidden = (state.accounts || []).filter(a => a.is_active === false && ['cash', 'bank', 'savings'].includes(a.account_type));
-
   const investByKind = kind => F.investmentsByKind(kind).filter(inv => (inv.currency || state.base) === state.base).reduce((s, inv) => s + F.investmentCurrentValue(inv), 0);
   const composition = [
     { label: 'Tiền mặt & NH', value: pos.liquid },
@@ -126,7 +120,6 @@ function renderAccounts() {
   <div class="money-board mt-16">${assetColumn()}${investmentColumn()}${receivablesColumn()}${payablesColumn()}</div>
 
   ${foreign.length ? foreignGroups : ''}
-  ${hidden.length ? `<section class="card section mt-16"><div class="section-head"><h2>Tài khoản đã ẩn</h2><span class="count-tag">${hidden.length} tài khoản</span></div><div class="list">${hidden.map(hiddenAccountRow).join('')}</div></section>` : ''}
 
   <div class="grid section-grid mt-16">
     <section class="card section chart-card"><div class="section-head"><div><h2>Cơ cấu tài sản</h2><p>Số dư hiện tại theo nhóm</p></div></div>${barChartSvg(composition)}</section>
