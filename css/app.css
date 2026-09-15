@@ -343,7 +343,6 @@ input[type=color]{padding:3px;height:36px}
 .card.item-card{position:relative;padding:14px}
 .item-menu{position:absolute;top:10px;right:10px;display:flex;gap:6px}
 .big{font-size:18px;font-weight:700;margin:6px 0}
-.account-grid{grid-template-columns:1fr}
 .account-dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:6px}
 .account-dot.cash{background:#8fd15e}.account-dot.bank{background:#5aa9e6}
 .account-dot.savings{background:#c67af0}.account-dot.investment{background:#f5a623}

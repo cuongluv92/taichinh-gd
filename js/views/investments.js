@@ -136,9 +136,14 @@ function investmentCard(inv) {
     ${inv.note ? `<small class="muted">${esc(inv.note)}</small>` : ''}
   </article>`;
 }
-function investmentSection(title, kind, list) {
-  if (!list.length) return '';
-  return `<section class="card section mt-16"><div class="section-head"><h2>${esc(title)}</h2><span class="count-tag">${list.length} khoản</span></div><div class="grid account-grid">${list.map(investmentCard).join('')}</div></section>`;
+// A column per kind, laid out side-by-side in a 4-column board — same
+// pattern as Chi tiêu/Tài sản (moneyColumn: title + "＋ Thêm" header,
+// stacked items, a total footer) — just hosting full investment cards
+// instead of slim money-lines. Always renders all 4 (even empty) so the
+// board stays evenly 4-wide instead of leaving a phantom empty track.
+function investmentKindColumn(title, kind, list, emptyText) {
+  const total = list.filter(inv => (inv.currency || state.base) === state.base).reduce((s, inv) => s + F.investmentCurrentValue(inv), 0);
+  return moneyColumn({ title, tone: kind, items: list.map(investmentCard), total: money(total), settingsAction: act('openInvestmentNew'), settingsLabel: '＋ Thêm', emptyText });
 }
 
 function renderInvestments() {
@@ -156,11 +161,12 @@ function renderInvestments() {
     ${kpiCard('Tổng vốn ròng', money(totalCap), 'Vốn ban đầu + đã thêm − đã rút')}
     ${kpiCard('Tổng lãi/lỗ thực tế', signedMoney(totalPL), totalCap > 0 ? pctText(totalPL, totalCap) : '—', totalPL >= 0 ? 'green' : 'red')}
   </div>
-  ${investmentSection('NISA', 'nisa', F.investmentsByKind('nisa'))}
-  ${investmentSection('Chứng khoán', 'securities', F.investmentsByKind('securities'))}
-  ${investmentSection('Tiết kiệm sinh lời', 'savings_interest', F.investmentsByKind('savings_interest'))}
-  ${investmentSection('Khác', 'other', F.investmentsByKind('other'))}
-  ${!list.length ? '<div class="card empty mt-16">Chưa có khoản đầu tư nào. Nhấn "＋ Đầu tư mới" để bắt đầu.</div>' : ''}`;
+  <div class="money-board mt-16">
+    ${investmentKindColumn('NISA', 'nisa', F.investmentsByKind('nisa'), 'Chưa có NISA')}
+    ${investmentKindColumn('Chứng khoán', 'securities', F.investmentsByKind('securities'), 'Chưa có chứng khoán')}
+    ${investmentKindColumn('Tiết kiệm sinh lời', 'savings_interest', F.investmentsByKind('savings_interest'), 'Chưa có tiết kiệm sinh lời')}
+    ${investmentKindColumn('Khác', 'other', F.investmentsByKind('other'), 'Chưa có khoản khác')}
+  </div>`;
 }
 
 Object.assign(window, { renderInvestments });

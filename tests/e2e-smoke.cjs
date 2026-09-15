@@ -415,8 +415,10 @@ const RPC_HANDLERS = {
   results.push(`  NISA card shows simulated growth separate from real value: ${investText.includes('mô phỏng')}`);
   results.push(`  Securities card shows quantity × price and vốn/giá vốn TB: ${investText.includes('Giá vốn TB')}`);
   results.push(`  Savings card shows "Lãi thực nhận" distinct from principal: ${investText.includes('Lãi thực nhận')}`);
-  const gridCols = await page.evaluate(() => { const el = document.querySelector('.account-grid'); return el ? getComputedStyle(el).gridTemplateColumns.trim().split(/\s+/).length : null; });
-  results.push(`  Investment cards stack in a single vertical column (account-grid has exactly 1 track): ${gridCols === 1}`);
+  const investCols = await page.$$('#content .money-column');
+  results.push(`  Đầu tư laid out as a 4-column board (NISA / Chứng khoán / Tiết kiệm sinh lời / Khác), like Chi tiêu/Tài sản: ${investCols.length === 4}`);
+  const investBoardTracks = await page.evaluate(() => { const el = document.querySelector('#content .money-board'); return el ? getComputedStyle(el).gridTemplateColumns.trim().split(/\s+/).length : null; });
+  results.push(`  Đầu tư board has exactly 4 grid tracks (no phantom empty column): ${investBoardTracks === 4}`);
   await page.screenshot({ path: path.join(SHOT_DIR, 'shot-investments-1440.png'), fullPage: true });
 
   await clickAndCheckModal('investments "+ Đầu tư mới"', 'button:has-text("＋ Đầu tư mới")', '[name="name"]');
