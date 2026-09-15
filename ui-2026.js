@@ -1,8 +1,8 @@
 (() => {
   'use strict';
 
-  const BODY_CLASS = 'ui-2026';
-  const palette = ['slate','blue','emerald','amber','rose','violet','cyan','orange'];
+  const BODY_CLASS='ui-2026';
+  const palette=['slate','blue','emerald','amber','rose','violet','cyan','orange'];
 
   function hashColor(value=''){
     let h=0;
@@ -71,7 +71,7 @@
     });
   }
 
-  function applySafeAttrs(el, styleText){
+  function applySafeAttrs(el,styleText){
     const attrs=styleToSafeAttrs(styleText);
     if(attrs){
       const holder=document.createElement('span');
@@ -147,8 +147,7 @@
       else if(txt==='×'){
         const action=btn.getAttribute('onclick')||'';
         btn.setAttribute('aria-label',/delete|archive/i.test(action)?'Xóa':'Đóng');
-      }
-      else if(txt==='✎') btn.setAttribute('aria-label','Sửa');
+      } else if(txt==='✎') btn.setAttribute('aria-label','Sửa');
     });
   }
 
@@ -157,9 +156,28 @@
     if(app && window.state?.view) app.dataset.view=window.state.view;
   }
 
+  function cleanupUi(){
+    document.querySelectorAll('.nav-label,.side-note').forEach(el=>el.remove());
+
+    document.querySelectorAll('.v7-dashboard .v3-card').forEach(card=>{
+      const title=card.querySelector('h2')?.textContent?.trim().toLowerCase()||'';
+      if(title==='góc nhìn nhanh') card.remove();
+    });
+
+    document.querySelectorAll('#content .v3-two').forEach(grid=>{
+      if(!grid.children.length) grid.remove();
+    });
+
+    document.querySelectorAll('#content :is(.v3-card,.card,.pro-card,.settings-panel)').forEach(card=>{
+      const text=(card.textContent||'').replace(/\s+/g,'').trim();
+      if(!text && !card.querySelector('input,select,textarea,button,svg,canvas')) card.remove();
+    });
+  }
+
   function afterRender(){
     document.body.classList.add(BODY_CLASS);
     sanitizeDom(document);
+    cleanupUi();
     markView();
     enhanceA11y();
   }
