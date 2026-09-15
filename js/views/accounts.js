@@ -116,6 +116,11 @@ function renderAccounts() {
     ${kpiCard('Tài sản ròng', money(pos.netWorth), vnd ? `≈ ${money(vnd.netWorth, 'VND')}` : 'Thanh khoản + Đầu tư + Phải thu − Tổng nợ', pos.netWorth >= 0 ? 'green' : 'red')}
   </div>
 
+  <div class="money-board mt-16">${assetColumn()}${investmentColumn()}${receivablesColumn()}${payablesColumn()}</div>
+
+  ${foreign.length ? foreignGroups : ''}
+  ${hidden.length ? `<section class="card section mt-16"><div class="section-head"><h2>Tài khoản đã ẩn</h2><span class="count-tag">${hidden.length} tài khoản</span></div><div class="list">${hidden.map(hiddenAccountRow).join('')}</div></section>` : ''}
+
   <section class="card section chart-card mt-16"><div class="section-head"><div><h2>Cơ cấu tài sản</h2><p>Số dư hiện tại theo nhóm</p></div></div>${barChartSvg(composition)}</section>
 
   <section class="card section chart-card mt-16">
@@ -127,12 +132,7 @@ function renderAccounts() {
       </div>
     </div>
     ${multiLineSvg(historyRows, historySeries)}
-  </section>
-
-  <div class="money-board mt-16">${assetColumn()}${investmentColumn()}${receivablesColumn()}${payablesColumn()}</div>
-
-  ${foreign.length ? foreignGroups : ''}
-  ${hidden.length ? `<section class="card section mt-16"><div class="section-head"><h2>Tài khoản đã ẩn</h2><span class="count-tag">${hidden.length} tài khoản</span></div><div class="list">${hidden.map(hiddenAccountRow).join('')}</div></section>` : ''}`;
+  </section>`;
 }
 
 Object.assign(window, { renderAccounts, setAssetChartMode });
