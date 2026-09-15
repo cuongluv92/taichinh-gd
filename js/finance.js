@@ -1,47 +1,32 @@
 // ==========================================================================
 // Finance calculation engine — the single source of truth for every number
-// shown in the app. Consolidates what used to be spread across and patched
-// by core.js / v3-core.js / finance-v4..v7.js / exceptional.js / fx-history.js.
+// shown in the app.
 //
-// Accounting rules encoded here (see AUDIT.md for the verification cases):
-//  - Credit card purchases post as `expense` at purchase date; paying the
-//    statement is a `transfer` (bank -> card), never counted as spend again.
-//  - Loan/debt principal repayment is `loan_pay` (reduces liabilities, is
-//    NOT consumption expense); interest/fees are `loan_interest` (IS expense).
-//  - Savings/investment contributions are `transfer`/`goal_save`/`goal_withdraw`
-//    between real accounts — asset reallocation, never household expense.
-//  - Net worth = (assets in accounts, base currency) + (receivables)
-//                - (liabilities in accounts, incl. negative/credit balances)
-//                - (loans payable).
-//  - Foreign currency is never summed 1:1; a VND total only appears when the
-//    user turns it on in Settings and enters a JPY->VND rate, and even then
-//    only as a display-only conversion of today's numbers.
+// Architecture (see the handoff notes for the full rationale): three fully
+// independent systems, with exactly one automatic link between them.
+//  - Chi tiêu (Thu nhập / Chi cố định / Chi biến động / Thẻ & trả góp / Nợ)
+//    is a monthly cash-flow REPORT built from `transactions` (income/expense
+//    only now — no transfers) plus the card_expenses/installment-schedule
+//    ledger plus loans. None of it ever touches an account balance.
+//  - Tài sản (accounts) holds a balance that is ONLY ever
+//    opening_balance ± manual account_adjustments rows. Nothing in Chi tiêu
+//    can change it.
+//  - Đầu tư (investments/investment_events) is its own ledger. Its current
+//    total value is the ONLY number that flows automatically into Tài sản
+//    (the "Đang đầu tư" line) — the one deliberate exception.
 // ==========================================================================
 'use strict';
 
 const F = window.F = {};
 
-F.TRANSFER_TYPES = new Set(['transfer', 'goal_save', 'goal_withdraw']);
-F.POSITIVE_TYPES = new Set(['income', 'loan_borrow', 'loan_collect', 'loan_repayment', 'investment_gain']);
-F.NEGATIVE_TYPES = new Set(['expense', 'transfer', 'loan_lend', 'loan_out', 'loan_pay', 'goal_save', 'goal_withdraw', 'investment_loss', 'loan_interest']);
-F.DEBT_TYPES = new Set(['loan_borrow', 'loan_lend', 'loan_pay', 'loan_collect', 'loan_out', 'loan_repayment', 'loan_interest']);
-
-F.isDebtTransaction = t => F.DEBT_TYPES.has(t?.transaction_type);
-F.isGoalTransaction = t => ['goal_save', 'goal_withdraw'].includes(t?.transaction_type);
-F.isInvestmentAdjustment = t => ['investment_gain', 'investment_loss'].includes(t?.transaction_type);
-F.isExceptional = t => t?.transaction_type === 'expense' && (state.exceptionalIds || []).includes(t.id);
-// A card purchase is a normal expense against a real category (Ăn uống,
-// Mua sắm...) — it counts in Chi cố định/Chi biến động exactly like cash or
-// bank spending. The only thing special about it is the account it's paid
-// from: F.isCardExpense flags that for display purposes (e.g. showing which
-// category rows include card spend), it does NOT exclude anything anymore.
-F.isCardExpense = t => t?.transaction_type === 'expense' && F.accountById(t.account_id)?.account_type === 'credit';
 F.baseTx = t => (t.currency || state.base) === state.base;
 F.baseAmount = t => F.baseTx(t) ? n(t.amount) : 0;
 
 F.accountById = id => (state.accounts || []).find(a => a.id === id);
 F.activeAccounts = () => (state.accounts || []).filter(a => a.is_active !== false);
+F.baseAccounts = () => F.activeAccounts().filter(a => (a.currency || state.base) === state.base);
 F.activeCategories = dir => (state.categories || []).filter(c => c && c.is_active !== false && (!dir || c.direction === dir));
+F.isExceptional = t => t?.transaction_type === 'expense' && (state.exceptionalIds || []).includes(t.id);
 
 F.categoryOrderValue = c => {
   const raw = c?.sort_order;
@@ -55,38 +40,93 @@ F.orderedCategories = direction => (state.categories || [])
   .sort((a, b) => F.categoryOrderValue(a.c) - F.categoryOrderValue(b.c) || a.i - b.i)
   .map(x => x.c);
 
-F.defaultMoneyAccountId = () => {
-  const ac = F.activeAccounts();
-  return (ac.find(a => a.account_type === 'bank') || ac.find(a => a.account_type === 'cash') || ac.find(a => a.account_type === 'savings') || ac[0] || {}).id || '';
-};
-
-// ---------------- Account balances ----------------
-F.accountStartDate = a => {
-  const dates = (state.fullTransactions || [])
-    .filter(t => t.account_id === a.id || t.transfer_account_id === a.id)
-    .map(t => String(t.transaction_date || '')).filter(Boolean).sort();
-  return dates[0] || localToday();
-};
-F.txDeltaForAccount = (t, accountId) => {
-  let delta = 0;
-  if (t.account_id === accountId) {
-    if (F.POSITIVE_TYPES.has(t.transaction_type)) delta += n(t.amount);
-    if (F.NEGATIVE_TYPES.has(t.transaction_type)) delta -= n(t.amount);
-  }
-  if (F.TRANSFER_TYPES.has(t.transaction_type) && t.transfer_account_id === accountId) delta += n(t.amount);
-  return delta;
-};
+// ---------------- Account balances (Tài sản) ----------------
+// Balance = opening_balance + manual increases − manual decreases. Nothing
+// else — no transaction of any kind (income/expense/loan/...) ever counts
+// here. `endDate` support exists only for the Tài sản net-worth history
+// chart, which needs a point-in-time balance.
+F.adjustmentsFor = a => (state.accountAdjustments || []).filter(x => x.account_id === a.id);
 F.accountBalanceAt = (a, endDate = '9999-12-31') => {
-  if (endDate < F.accountStartDate(a)) return 0;
   let bal = n(a.opening_balance);
-  (state.fullTransactions || []).forEach(t => {
-    if (String(t.transaction_date || '') <= endDate) bal += F.txDeltaForAccount(t, a.id);
+  F.adjustmentsFor(a).forEach(x => {
+    if (String(x.adjustment_date || '') > endDate) return;
+    bal += x.direction === 'increase' ? n(x.amount) : -n(x.amount);
   });
   return bal;
 };
 F.accountBalance = a => F.accountBalanceAt(a);
 
-// ---------------- Loans ----------------
+// ---------------- Investments (Đầu tư) ----------------
+// state.investments items already carry the server-computed
+// total_contributed / total_withdrawn / latest_value / latest_value_date
+// (see taichinh_gd_investment_api 'list'). state.investmentEvents[id] holds
+// each investment's raw event history, fetched separately, used only for
+// the historical net-worth chart below (a point-in-time value needs the
+// event list, not just today's totals).
+F.investments = () => (state.investments || []);
+F.investmentNetCapital = inv => n(inv.initial_capital) + n(inv.total_contributed) - n(inv.total_withdrawn);
+F.investmentCurrentValue = inv => inv.latest_value !== null && inv.latest_value !== undefined ? n(inv.latest_value) : Math.max(0, F.investmentNetCapital(inv));
+F.investmentPL = inv => F.investmentCurrentValue(inv) - F.investmentNetCapital(inv);
+F.investmentPLPercent = inv => { const cap = F.investmentNetCapital(inv); return cap > 0 ? F.investmentPL(inv) / cap * 100 : null; };
+F.investmentTotalValue = () => F.investments().filter(inv => (inv.currency || state.base) === state.base).reduce((s, inv) => s + F.investmentCurrentValue(inv), 0);
+F.investmentValueAt = (inv, events, endDate) => {
+  const rows = (events || []).filter(e => String(e.event_date || '') <= endDate);
+  const val = rows.filter(e => e.event_type === 'valuation').sort((a, b) => String(b.event_date).localeCompare(String(a.event_date)) || String(b.created_at || '').localeCompare(String(a.created_at || '')))[0];
+  if (val) return n(val.amount);
+  const netCap = n(inv.initial_capital)
+    + rows.filter(e => e.event_type === 'contribution').reduce((s, e) => s + n(e.amount), 0)
+    - rows.filter(e => e.event_type === 'withdrawal').reduce((s, e) => s + n(e.amount), 0);
+  return Math.max(0, netCap);
+};
+F.investmentTotalValueAt = endDate => F.investments().filter(inv => (inv.currency || state.base) === state.base)
+  .reduce((s, inv) => s + F.investmentValueAt(inv, (state.investmentEvents || {})[inv.id], endDate), 0);
+
+// ---------------- Net worth / financial position (Tài sản) ----------------
+// Only cash/bank/savings carry a manual balance here — credit accounts are
+// just a card identity (Thẻ & trả góp), never a Tài sản balance, and
+// investment accounts don't exist anymore (investments live in F.investments()).
+F.assetAccounts = () => F.baseAccounts().filter(a => ['cash', 'bank', 'savings'].includes(a.account_type));
+F.financialPosition = (endDate = '9999-12-31') => {
+  let accountAssets = 0, accountLiabilities = 0, liquid = 0;
+  F.assetAccounts().forEach(a => {
+    const bal = F.accountBalanceAt(a, endDate);
+    if (bal >= 0) accountAssets += bal; else accountLiabilities += -bal;
+    const countsAsLiquid = a.account_type === 'cash' || a.account_type === 'bank' || (a.account_type === 'savings' && a.is_liquid !== false);
+    if (countsAsLiquid) liquid += Math.max(0, bal);
+  });
+  const receivables = (state.loans || []).filter(l => l.loan_type === 'lent' && (l.currency || state.base) === state.base).reduce((s, l) => s + F.historicalLoanRemaining(l, endDate), 0);
+  const borrowed = (state.loans || []).filter(l => l.loan_type === 'borrowed' && (l.currency || state.base) === state.base).reduce((s, l) => s + F.historicalLoanRemaining(l, endDate), 0);
+  // "Today" uses the same precomputed total the Đầu tư tab shows (the one
+  // deliberate automatic link — spec requires them to always agree);
+  // a past endDate reconstructs the value from raw events instead, since
+  // there is no "latest_value as of that date" field to read.
+  const invested = endDate === '9999-12-31' ? F.investmentTotalValue() : F.investmentTotalValueAt(endDate);
+  const totalAssets = accountAssets + receivables + invested;
+  const totalLiabilities = accountLiabilities + borrowed;
+  // liquidNet excludes invested on purpose — Đầu tư counts in Tài sản ròng
+  // but never in Tiền thanh khoản (spec section 7).
+  const liquidNet = liquid - borrowed;
+  return { accountAssets, accountLiabilities, receivables, borrowed, totalAssets, totalLiabilities, netWorth: totalAssets - totalLiabilities, liquid, liquidNet, invested };
+};
+F.dataStartMonth = () => {
+  const dates = [
+    ...(state.accountAdjustments || []).map(x => monthKey(x.adjustment_date)),
+    ...(state.transactions || []).map(t => monthKey(t.transaction_date))
+  ].filter(Boolean).sort();
+  return dates[0] || localMonth();
+};
+F.netWorthSeries = (count = 12) => {
+  const end = new Date(`${state.month}-01T00:00:00`), rows = [], start = F.dataStartMonth();
+  for (let i = count - 1; i >= 0; i--) {
+    const d = new Date(end); d.setMonth(d.getMonth() - i);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    if (key < start) continue;
+    rows.push({ month: key, value: F.financialPosition(endOfMonthDate(key)).netWorth });
+  }
+  return rows;
+};
+
+// ---------------- Loans (unchanged — informational only, no account link) ----------------
 F.historicalLoanRemaining = (l, endDate) => {
   if (l.start_date && String(l.start_date).slice(0, 10) > endDate) return 0;
   const paymentType = l.loan_type === 'borrowed' ? 'loan_pay' : 'loan_collect';
@@ -128,61 +168,34 @@ F.bankEstimate = (l, date = localToday()) => {
   }
   return { principal, interest, total, remainingMonths };
 };
-
-// ---------------- Net worth / financial position ----------------
-F.baseAccounts = () => F.activeAccounts().filter(a => (a.currency || state.base) === state.base);
-F.financialPosition = (endDate = '9999-12-31') => {
-  const ac = F.baseAccounts();
-  let accountAssets = 0, accountLiabilities = 0, liquid = 0, invested = 0;
-  ac.forEach(a => {
-    const bal = F.accountBalanceAt(a, endDate);
-    if (bal >= 0) accountAssets += bal; else accountLiabilities += -bal;
-    // A savings account marked "dài hạn" (is_liquid=false) still counts as
-    // an asset (accountAssets above, so it's part of netWorth) but is
-    // excluded from "tiền thanh khoản" — it's not money you can spend
-    // today without breaking a term deposit. cash/bank/credit-adjacent
-    // types have no such concept and stay liquid=true implicitly.
-    const countsAsLiquid = a.account_type === 'cash' || a.account_type === 'bank' || (a.account_type === 'savings' && a.is_liquid !== false);
-    if (countsAsLiquid) liquid += Math.max(0, bal);
-    if (a.account_type === 'investment') invested += Math.max(0, bal);
-  });
-  const receivables = (state.loans || []).filter(l => l.loan_type === 'lent' && (l.currency || state.base) === state.base).reduce((s, l) => s + F.historicalLoanRemaining(l, endDate), 0);
-  const borrowed = (state.loans || []).filter(l => l.loan_type === 'borrowed' && (l.currency || state.base) === state.base).reduce((s, l) => s + F.historicalLoanRemaining(l, endDate), 0);
-  const totalAssets = accountAssets + receivables;
-  const totalLiabilities = accountLiabilities + borrowed;
-  // liquidNet: cash on hand minus what's currently owed on borrowed loans
-  // (personal + bank). A fresh disbursement deposits real cash into an
-  // account (liquid goes up) but is simultaneously owed back in full, so
-  // without this the "Tiền khả dụng" card would look like borrowing money
-  // makes you richer. Net worth already nets assets against liabilities
-  // correctly on its own — this mirrors that same logic for the "what can
-  // I actually spend" figure specifically.
-  const liquidNet = liquid - borrowed;
-  return { accountAssets, accountLiabilities, receivables, borrowed, totalAssets, totalLiabilities, netWorth: totalAssets - totalLiabilities, liquid, liquidNet, invested };
-};
-F.assetComposition = (endDate = '9999-12-31') => {
-  const groups = [['Tiền mặt', 'cash'], ['Ngân hàng', 'bank'], ['Tiết kiệm', 'savings'], ['Đầu tư', 'investment']]
-    .map(([label, type]) => ({ label, value: F.baseAccounts().filter(a => a.account_type === type).reduce((s, a) => s + Math.max(0, F.accountBalanceAt(a, endDate)), 0) }));
-  const rec = F.financialPosition(endDate).receivables;
-  if (rec > 0) groups.push({ label: 'Phải thu', value: rec });
-  return groups;
-};
-F.dataStartMonth = () => {
-  const dates = (state.fullTransactions || []).map(t => monthKey(t.transaction_date)).filter(Boolean).sort();
-  return dates[0] || localMonth();
-};
-F.netWorthSeries = (count = 12) => {
-  const end = new Date(`${state.month}-01T00:00:00`), rows = [], start = F.dataStartMonth();
-  for (let i = count - 1; i >= 0; i--) {
-    const d = new Date(end); d.setMonth(d.getMonth() - i);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    if (key < start) continue;
-    rows.push({ month: key, value: F.financialPosition(endOfMonthDate(key)).netWorth });
+F.loanMonthDue = (l, month = state.month) => {
+  const rows = (state.fullTransactions || []).filter(t => t.loan_id === l.id && monthKey(t.transaction_date) === month);
+  const principal = rows.filter(t => t.transaction_type === 'loan_pay').reduce((s, t) => s + n(t.amount), 0);
+  const interest = rows.filter(t => t.transaction_type === 'loan_interest').reduce((s, t) => s + n(t.amount), 0);
+  const paidAmount = principal + interest;
+  if (paidAmount > 0) return { amount: paidAmount, note: 'Đã trả tháng này', paid: true };
+  if (monthKey(l.due_date) === month) return { amount: n(l.remaining_amount), note: 'Đến hạn trong tháng này', paid: false };
+  if (F.isBankLoan(l)) {
+    const est = F.bankEstimate(l, endOfMonthDate(month));
+    if (n(est.total) > 0) return { amount: n(est.total), note: 'Dự kiến kỳ này', paid: false };
   }
-  return rows;
+  return { amount: 0, note: `Dư nợ ${money(l.remaining_amount, l.currency || state.base)}`, paid: false };
+};
+F.debtMonthTotalBase = (month = state.month) => (state.loans || [])
+  .filter(l => l.loan_type === 'borrowed' && n(l.remaining_amount) > 0 && (l.currency || state.base) === state.base)
+  .reduce((s, l) => s + n(F.loanMonthDue(l, month).amount), 0);
+F.upcomingDue = (month = state.month) => {
+  const items = [];
+  (state.loans || []).filter(l => l.loan_type === 'borrowed' && n(l.remaining_amount) > 0).forEach(l => {
+    const due = F.loanMonthDue(l, month);
+    if (n(due.amount) > 0 && !due.paid) {
+      items.push({ kind: 'loan', id: l.id, label: l.counterparty, amount: due.amount, currency: l.currency || state.base, note: due.note, date: monthKey(l.due_date) === month ? l.due_date : null });
+    }
+  });
+  return items.sort((a, b) => String(a.date || '9999-99-99').localeCompare(String(b.date || '9999-99-99')));
 };
 
-// ---------------- Category history ----------------
+// ---------------- Category history (Chi cố định / Chi biến động) ----------------
 F.categoryVersionAt = (categoryId, date) => {
   const m = `${monthKey(date)}-01`;
   const versions = (state.categoryVersions || []).filter(v => v.category_id === categoryId && String(v.effective_month).slice(0, 10) <= m)
@@ -195,58 +208,7 @@ F.categoryActualBase = (id, dir = 'expense') => {
   if (dir !== 'expense') return rows.reduce((s, t) => s + F.baseAmount(t), 0);
   return rows.filter(t => !F.isExceptional(t)).reduce((s, t) => s + F.baseAmount(t), 0);
 };
-// ---------------- Period transactions & stats ----------------
 F.periodTransactions = (month = state.month) => (state.fullTransactions || []).filter(t => monthKey(t.transaction_date) === month);
-F.operatingFlowTo = (type, txs) => {
-  let total = 0;
-  txs.forEach(t => {
-    if (!F.TRANSFER_TYPES.has(t.transaction_type) || !F.baseTx(t)) return;
-    const from = F.accountById(t.account_id), to = F.accountById(t.transfer_account_id);
-    if (!from || !to) return;
-    const amt = F.baseAmount(t);
-    if (to.account_type === type && ['cash', 'bank'].includes(from.account_type)) total += amt;
-    if (from.account_type === type && ['cash', 'bank'].includes(to.account_type)) total -= amt;
-  });
-  return total;
-};
-F.statsFor = txs => {
-  const rows = (txs || []).filter(F.baseTx);
-  // cardSpend is informational only now (how much of this month's expense
-  // ran through a credit card) — it's included in fixed/variable below via
-  // each transaction's own category cost_type, exactly like cash/bank
-  // spending. It is NOT subtracted from anything.
-  let income = 0, fixed = 0, variable = 0, exceptional = 0, cardSpend = 0, debtPay = 0, loanInterest = 0;
-  let cashIn = 0, cashOut = 0;
-  rows.forEach(t => {
-    const amt = F.baseAmount(t);
-    const isCard = F.isCardExpense(t);
-    if (t.transaction_type === 'income') { income += amt; cashIn += amt; }
-    else if (t.transaction_type === 'expense') {
-      if (isCard) cardSpend += amt;
-      if (F.isExceptional(t)) exceptional += amt;
-      else (F.expenseKind(t) === 'fixed' ? fixed += amt : variable += amt);
-      // A card purchase doesn't move real money out of a cash/bank account
-      // yet — only the eventual statement payment does (below) — so it's
-      // excluded from cashOut even though it counts as expense immediately.
-      if (!isCard) cashOut += amt;
-    } else if (t.transaction_type === 'loan_pay') debtPay += amt;
-    else if (t.transaction_type === 'loan_interest') { loanInterest += amt; cashOut += amt; }
-    else if (t.transaction_type === 'transfer' && F.accountById(t.transfer_account_id)?.account_type === 'credit') {
-      // Paying off a card statement: real cash leaves the paying account,
-      // but it must never be recognized as expense a second time.
-      cashOut += amt;
-    }
-  });
-  const saving = Math.max(0, F.operatingFlowTo('savings', rows));
-  const investment = Math.max(0, F.operatingFlowTo('investment', rows));
-  const expense = fixed + variable + loanInterest;
-  const allocated = expense + saving + investment + debtPay;
-  return {
-    income, fixed, variable, exceptional, cardSpend, loanInterest, debtPay, saving, investment,
-    expense, allocated, remaining: Math.max(0, income - allocated), overspend: Math.max(0, allocated - income),
-    cashFlow: cashIn - cashOut
-  };
-};
 F.expenseByCategory = txs => {
   const map = new Map();
   (txs || []).filter(F.baseTx).forEach(t => {
@@ -260,12 +222,6 @@ F.expenseByCategory = txs => {
   });
   return [...map.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
 };
-// Per-category monthly series for the last `months` months, for the N
-// categories with the highest TOTAL spend over that whole window (not just
-// the month being viewed — otherwise the row set would reshuffle every
-// month and you could never watch one category's trend across a tab).
-// Grouped by category_id, not name: a renamed category keeps its history
-// instead of the old-name months silently reading as zero.
 F.categoryTrendData = (count = 5, months = 6, month = state.month) => {
   const keys = Array.from({ length: months }, (_, i) => addMonths(month, i - (months - 1)));
   const byId = new Map();
@@ -276,7 +232,7 @@ F.categoryTrendData = (count = 5, months = 6, month = state.month) => {
       if (!byId.has(id)) byId.set(id, { name: c.name || t.category_name || 'Khác', values: Array(months).fill(0) });
       const entry = byId.get(id);
       entry.values[idx] += F.baseAmount(t);
-      entry.name = c.name || t.category_name || entry.name; // keep the most recently seen name for display
+      entry.name = c.name || t.category_name || entry.name;
     });
   });
   return [...byId.entries()]
@@ -284,19 +240,27 @@ F.categoryTrendData = (count = 5, months = 6, month = state.month) => {
     .sort((a, b) => b.total - a.total)
     .slice(0, count);
 };
+// Which category moved the most between two months, up or down (for the
+// "nhóm/danh mục nào tăng/giảm nhiều nhất" analytic).
+F.biggestCategoryMover = (month = state.month, prevMonth = addMonths(month, -1)) => {
+  const cur = new Map(F.expenseByCategory(F.periodTransactions(month)).map(x => [x.label, x.value]));
+  const prev = new Map(F.expenseByCategory(F.periodTransactions(prevMonth)).map(x => [x.label, x.value]));
+  const names = new Set([...cur.keys(), ...prev.keys()]);
+  let best = null;
+  names.forEach(name => {
+    const diff = (cur.get(name) || 0) - (prev.get(name) || 0);
+    if (!best || Math.abs(diff) > Math.abs(best.diff)) best = { name, diff, current: cur.get(name) || 0, previous: prev.get(name) || 0 };
+  });
+  return best;
+};
+
 // ---------------- FX (JPY -> VND, manual current rate only) ----------------
-// Settings only lets the user set a single "current" rate (reporting_settings),
-// not a month-by-month history, so conversion is always today's rate — the
-// display is explicitly a snapshot, never a claim about past-month accuracy.
 F.fxRate = () => { const r = n(state.reporting?.jpy_vnd_rate); return r > 0 ? r : null; };
 F.toVND = (amount, currency) => {
   if (currency === 'VND') return n(amount);
   if (currency === 'JPY') { const r = F.fxRate(); return r ? n(amount) * r : null; }
   return null;
 };
-// Converts an already-computed base-currency financialPosition() snapshot to
-// VND display figures. Returns null if base currency has no rate to convert
-// from (only ever called when the user opted in via Settings anyway).
 F.positionInVND = pos => {
   if (state.base === 'VND') return pos;
   const r = F.fxRate();
@@ -307,62 +271,37 @@ F.positionInVND = pos => {
   };
 };
 
-// ---------------- Monthly obligations (Budget board "Nợ" / card columns) ----------------
-// A loan's *monthly due* is deliberately NOT its full remaining balance —
-// showing the whole principal in the Chi tiêu page would misrepresent this
-// month's cash need (spec: "cột Chi tiêu phải hiện SỐ PHẢI TRẢ TRONG THÁNG").
-F.loanMonthDue = (l, month = state.month) => {
-  const rows = F.periodTransactions(month).filter(t => t.loan_id === l.id);
-  const principal = rows.filter(t => t.transaction_type === 'loan_pay').reduce((s, t) => s + n(t.amount), 0);
-  const interest = rows.filter(t => t.transaction_type === 'loan_interest').reduce((s, t) => s + n(t.amount), 0);
-  const paidAmount = principal + interest;
-  // `paid` is the field callers should branch on — the `note` text is
-  // display copy only and must never be pattern-matched for logic.
-  if (paidAmount > 0) return { amount: paidAmount, note: 'Đã trả tháng này', paid: true };
-  if (monthKey(l.due_date) === month) return { amount: n(l.remaining_amount), note: 'Đến hạn trong tháng này', paid: false };
-  if (F.isBankLoan(l)) {
-    const est = F.bankEstimate(l, endOfMonthDate(month));
-    if (n(est.total) > 0) return { amount: n(est.total), note: 'Dự kiến kỳ này', paid: false };
-  }
-  return { amount: 0, note: `Dư nợ ${money(l.remaining_amount, l.currency || state.base)}`, paid: false };
-};
-F.debtMonthTotalBase = (month = state.month) => (state.loans || [])
-  .filter(l => l.loan_type === 'borrowed' && n(l.remaining_amount) > 0 && (l.currency || state.base) === state.base)
-  .reduce((s, l) => s + n(F.loanMonthDue(l, month).amount), 0);
-F.cardMonthTotalBase = () => (state.cardMonth || []).filter(x => (x.currency || state.base) === state.base).reduce((s, x) => s + n(x.expected_amount), 0);
-// Loans still owing this month (not yet paid) + unpaid card statements, for a
-// "sắp đến hạn" reminder list — sorted soonest first, undated items last.
-F.upcomingDue = (month = state.month) => {
-  const items = [];
-  (state.loans || []).filter(l => l.loan_type === 'borrowed' && n(l.remaining_amount) > 0).forEach(l => {
-    const due = F.loanMonthDue(l, month);
-    if (n(due.amount) > 0 && !due.paid) {
-      items.push({ kind: 'loan', id: l.id, label: l.counterparty, amount: due.amount, currency: l.currency || state.base, note: due.note, date: monthKey(l.due_date) === month ? l.due_date : null });
+// ---------------- Credit cards / Thẻ & trả góp (own ledger, no accounts link) ----------------
+F.cardAccounts = () => F.activeAccounts().filter(a => a.account_type === 'credit');
+F.cardExpensesFor = cardId => (state.cardExpenses || []).filter(x => x.card_account_id === cardId);
+F.installmentsFor = cardId => (state.installments || []).filter(x => x.card_account_id === cardId);
+F.cardExpenseMonthTotal = (cardId, month = state.month) => F.cardExpensesFor(cardId)
+  .filter(x => monthKey(x.expense_date) === month).reduce((s, x) => s + n(x.amount), 0);
+F.installmentMonthDue = (cardId, month = state.month) => F.installmentsFor(cardId)
+  .reduce((s, inst) => s + (inst.schedule || []).filter(row => monthKey(row.payment_month) === month).reduce((s2, row) => s2 + n(row.principal_amount) + n(row.fee_amount), 0), 0);
+F.cardColumnMonthTotal = (cardId, month = state.month) => F.cardExpenseMonthTotal(cardId, month) + F.installmentMonthDue(cardId, month);
+F.cardColumnTotalBase = (month = state.month) => F.cardAccounts()
+  .filter(c => (c.currency || state.base) === state.base)
+  .reduce((s, c) => s + F.cardColumnMonthTotal(c.id, month), 0);
+
+// ---------------- Monthly stats (Tổng quan / Chi tiêu) ----------------
+// Month-only, cash-basis-of-record report. Never reads accounts, never
+// reads investments — "Không lấy bất kỳ số nào từ trang Tài sản" (spec §2).
+F.statsFor = (month = state.month) => {
+  const rows = F.periodTransactions(month).filter(F.baseTx);
+  let income = 0, fixed = 0, variable = 0, exceptional = 0;
+  rows.forEach(t => {
+    const amt = F.baseAmount(t);
+    if (t.transaction_type === 'income') income += amt;
+    else if (t.transaction_type === 'expense') {
+      if (F.isExceptional(t)) exceptional += amt;
+      else (F.expenseKind(t) === 'fixed' ? fixed += amt : variable += amt);
     }
   });
-  (state.cardMonth || []).filter(x => !x.paid && n(x.expected_amount) > 0).forEach(x => {
-    items.push({ kind: 'card', id: x.account_id, label: x.card_name || 'Thẻ tín dụng', amount: x.expected_amount, currency: x.currency || state.base, note: 'Cần thanh toán', date: x.payment_date });
-  });
-  return items.sort((a, b) => String(a.date || '9999-99-99').localeCompare(String(b.date || '9999-99-99')));
-};
-
-// ---------------- Credit cards ----------------
-F.cardAccounts = () => F.activeAccounts().filter(a => a.account_type === 'credit');
-F.settingFor = id => (state.cardSettings || []).find(x => x.account_id === id);
-F.cardMonthFor = id => (state.cardMonth || []).find(x => x.account_id === id);
-F.configuredCards = () => F.cardAccounts().filter(a => F.settingFor(a.id));
-
-// ---------------- Investments ----------------
-F.investmentAccounts = () => F.activeAccounts().filter(a => a.account_type === 'investment');
-F.investmentCapital = a => {
-  let cap = clamp0(a.opening_balance);
-  (state.fullTransactions || []).forEach(t => {
-    if (!F.TRANSFER_TYPES.has(t.transaction_type)) return;
-    const amt = n(t.amount);
-    if (t.transfer_account_id === a.id) cap += amt;
-    if (t.account_id === a.id) cap -= amt;
-  });
-  return Math.max(0, cap);
+  const card = F.cardColumnTotalBase(month);
+  const debt = F.debtMonthTotalBase(month);
+  const expense = fixed + variable + card + debt;
+  return { income, fixed, variable, exceptional, card, debt, expense, remaining: income - expense };
 };
 
 // ---------------- Charts ----------------
@@ -383,10 +322,6 @@ function donutSvg(items, size = 168, thickness = 22) {
 function legendHtml(items, mode = 'value', income = 0) {
   return `<div class="chart-legend">${items.filter(x => n(x.value) > 0).map((x, i) => `<div><span><i class="legend-dot legend-c${i % 10}"></i>${esc(x.label)}</span><strong>${money(x.value)}${mode === 'income' && income > 0 ? `<small>${pctText(x.value, income)}</small>` : ''}</strong></div>`).join('')}</div>`;
 }
-// Small per-category trend widget — bars via SVG attributes (never inline
-// style="...", which the production CSP silently drops). Pass `sharedMax`
-// when rendering several sparklines together so their bar heights stay
-// comparable to each other instead of each one filling to its own max.
 function sparklineSvg(data, w = 108, h = 28, sharedMax = 0) {
   const max = Math.max(1, sharedMax, ...data.map(x => n(x.value)));
   const slot = w / data.length, bw = Math.max(1, slot - 2);
@@ -398,7 +333,7 @@ function sparklineSvg(data, w = 108, h = 28, sharedMax = 0) {
 }
 function trendSvg() {
   const keys = Array.from({ length: 12 }, (_, i) => addMonths(state.month, i - 11));
-  const data = keys.map(k => { const s = F.statsFor(F.periodTransactions(k)); return { k, inc: s.income, exp: s.expense }; });
+  const data = keys.map(k => { const s = F.statsFor(k); return { k, inc: s.income, exp: s.expense }; });
   const W = 720, H = 230, pad = 30, max = Math.max(1, ...data.flatMap(x => [x.inc, x.exp])), group = (W - pad * 2) / 12, bw = 12;
   const grid = [0, 1, 2, 3].map(i => { const y = pad + (H - pad * 2) * i / 3; return `<line class="v-gridline" x1="${pad}" y1="${y}" x2="${W - pad}" y2="${y}"/>`; }).join('');
   const bars = data.map((x, i) => {

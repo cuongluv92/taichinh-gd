@@ -1,12 +1,8 @@
 // ==========================================================================
-// Boot, data orchestration, router. One clear place instead of the previous
-// 250ms-polling "wait until state.key exists" hacks scattered across files.
+// Boot, data orchestration, router.
 // ==========================================================================
 'use strict';
 
-// `d.goals` and `d.monthly_summary` also come back in this response but
-// aren't kept on `state` — nothing in this simplified UI reads them (see
-// the handoff notes on dropped goals/analytics screens).
 function applyBootstrap(d) {
   state.household = d.household || {};
   state.base = state.household.base_currency || 'JPY';
@@ -19,25 +15,27 @@ function applyBootstrap(d) {
 }
 
 async function loadExtras(month = state.month) {
-  // Only the endpoints this UI actually renders. (The backend also has
-  // recurring-expense reminders, a second card "overview" summary, and a
-  // monthly FX-history table — all still intact in Supabase, just not part
-  // of this pass's simplified screens, so they're not fetched here.)
-  const [ext, allocation, cardGet, cardInstallments, cardMonthRes, exceptional] = await Promise.all([
+  const [ext, exceptional, adjustments, cardExpenses, installments, investments] = await Promise.all([
     api.extension('get'),
-    api.allocation('get_month', { month: monthDate(month) }),
-    api.card('get'),
-    api.card('list_installments'),
-    api.cardMonth(month),
-    api.exceptional('list')
+    api.exceptional('list'),
+    api.accountAdjustment('list'),
+    api.cardLedger('list_expenses'),
+    api.cardLedger('list_installments'),
+    api.investment('list')
   ]);
   state.reporting = { show_vnd_conversion: false, jpy_vnd_rate: null, ...(ext?.reporting || {}) };
   state.loanTerms = ext?.loan_terms || [];
-  state.allocationPlan = allocation || null;
-  state.cardSettings = cardGet?.items || [];
-  state.cardInstallments = cardInstallments?.items || [];
-  state.cardMonth = cardMonthRes?.items || [];
   state.exceptionalIds = exceptional?.ids || [];
+  state.accountAdjustments = adjustments?.items || [];
+  state.cardExpenses = cardExpenses?.items || [];
+  state.installments = installments?.items || [];
+  state.investments = investments?.items || [];
+  // Per-investment event history — small dataset for a personal app, needed
+  // (not just today's totals) so the Tài sản net-worth chart can show an
+  // accurate point-in-time invested value for past months.
+  const eventLists = await Promise.all(state.investments.map(inv => api.investment('list_events', { investment_id: inv.id })));
+  state.investmentEvents = {};
+  state.investments.forEach((inv, i) => { state.investmentEvents[inv.id] = eventLists[i]?.items || []; });
 }
 
 async function boot() {
@@ -96,10 +94,10 @@ async function changeMonth(delta) {
 }
 
 const VIEW_META = {
-  dashboard: ['Tổng quan', 'Kế hoạch tháng và phân tích tài chính'],
-  budget: ['Chi tiêu', 'Thu nhập, chi cố định, chi biến động, thẻ và nợ trong tháng'],
-  transactions: ['Giao dịch', 'Toàn bộ thu, chi, chuyển khoản — lọc, sửa, xóa'],
-  accounts: ['Tài sản', 'Tiền mặt, ngân hàng, tiết kiệm và đầu tư'],
+  dashboard: ['Tổng quan', 'Thu chi tháng đang chọn — không gồm tài sản, đầu tư'],
+  budget: ['Chi tiêu', 'Thu nhập, chi cố định, chi biến động, thẻ & trả góp, nợ trong tháng'],
+  investments: ['Đầu tư', 'Vốn, giá trị hiện tại và lãi/lỗ từng khoản đầu tư'],
+  accounts: ['Tài sản', 'Số dư thủ công của tiền mặt, ngân hàng, tiết kiệm — độc lập với Chi tiêu'],
   settings: ['Cài đặt', 'Gia đình, tiền tệ và sao lưu dữ liệu']
 };
 function navigate(v) {
@@ -111,11 +109,10 @@ function navigate(v) {
 }
 function render() {
   if (!state.household) return;
-  const views = { dashboard: window.renderDashboard, budget: window.renderBudget, transactions: window.renderTransactions, accounts: window.renderAccounts, settings: window.renderSettings };
+  const views = { dashboard: window.renderDashboard, budget: window.renderBudget, investments: window.renderInvestments, accounts: window.renderAccounts, settings: window.renderSettings };
   const fn = views[state.view] || views.dashboard;
   $('#content').innerHTML = fn();
   if (state.view === 'settings') window.wireSettingsView?.();
-  if (state.view === 'transactions') window.wireTransactionsView?.();
 }
 
 $('#unlockForm').addEventListener('submit', e => {
@@ -141,33 +138,29 @@ async function exportData() {
 }
 
 const CSV_TYPE_LABEL = {
-  income: 'Thu nhập', expense: 'Chi tiêu', transfer: 'Chuyển khoản', loan_borrow: 'Vay',
-  loan_lend: 'Cho vay', loan_pay: 'Trả nợ', loan_collect: 'Thu hồi nợ', loan_interest: 'Lãi vay',
-  investment_gain: 'Tăng giá trị đầu tư', investment_loss: 'Giảm giá trị đầu tư', goal_save: 'Góp mục tiêu', goal_withdraw: 'Rút mục tiêu'
+  income: 'Thu nhập', expense: 'Chi tiêu',
+  loan_borrow: 'Vay', loan_lend: 'Cho vay', loan_pay: 'Trả nợ', loan_collect: 'Thu hồi nợ', loan_interest: 'Lãi vay'
 };
+// Loans (unchanged, still trigger-driven) are the only non income/expense
+// types `transactions` can still contain going forward — income/expense
+// entries never carry an account_id anymore, so there's nothing left to sum
+// into a cash-flow total the way transfers/goals used to need signing for.
+const CSV_POSITIVE_TYPES = new Set(['income', 'loan_borrow', 'loan_collect']);
 function csvCell(v) {
   const s = String(v ?? '');
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
-// Signed for a "SUM this column" cash-flow total: + for income-like types,
-// − for expense-like types, blank for transfer/goal_save/goal_withdraw —
-// those move money between the household's own accounts and have no net
-// effect on total cash, so a sign on them would make the sum wrong, not
-// just imprecise.
 function csvSignedAmount(t) {
-  if (F.TRANSFER_TYPES.has(t.transaction_type)) return '';
-  return F.POSITIVE_TYPES.has(t.transaction_type) ? n(t.amount) : -n(t.amount);
+  return CSV_POSITIVE_TYPES.has(t.transaction_type) ? n(t.amount) : -n(t.amount);
 }
-// Every transaction the household has ever recorded, for opening in Excel —
-// no server round-trip needed, state.fullTransactions is already loaded.
 function exportCsv() {
   const rows = [...(state.fullTransactions || [])].sort((a, b) => String(a.transaction_date).localeCompare(String(b.transaction_date)));
-  const header = ['Ngày', 'Loại', 'Danh mục', 'Tài khoản', 'Tài khoản nhận', 'Số tiền', 'Dòng tiền (dấu +/-)', 'Tiền tệ', 'Ghi chú'];
+  const header = ['Ngày', 'Loại', 'Danh mục', 'Số tiền', 'Dòng tiền (dấu +/-)', 'Tiền tệ', 'Ghi chú'];
   const lines = rows.map(t => [
     String(t.transaction_date).slice(0, 10), CSV_TYPE_LABEL[t.transaction_type] || t.transaction_type,
-    t.category_name || '', t.account_name || '', t.transfer_account_name || '', t.amount, csvSignedAmount(t), t.currency, t.note || ''
+    t.category_name || '', t.amount, csvSignedAmount(t), t.currency, t.note || ''
   ].map(csvCell).join(','));
-  const csv = '﻿' + [header.join(','), ...lines].join('\r\n'); // BOM so Excel reads UTF-8 Vietnamese correctly
+  const csv = '﻿' + [header.join(','), ...lines].join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `taichinh-gd-giao-dich-${localToday()}.csv`; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);

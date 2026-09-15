@@ -18,10 +18,8 @@ const api = {
   investment: (action, payload = {}) => { needKey(); return callRpc('taichinh_gd_investment_api', { p_key: state.key, p_action: action, p_payload: payload }); },
   extension: (action, payload = {}) => { needKey(); return callRpc('taichinh_gd_extension_api', { p_key: state.key, p_action: action, p_payload: payload }); },
   bankLoan: (action, payload = {}) => { needKey(); return callRpc('taichinh_gd_bank_loan_api', { p_key: state.key, p_action: action, p_payload: payload }); },
-  allocation: (action, payload = {}) => { needKey(); return callRpc('taichinh_gd_allocation_api', { p_key: state.key, p_action: action, p_payload: payload }); },
-  card: (action, payload = {}) => { needKey(); return callRpc('taichinh_gd_credit_card_api', { p_key: state.key, p_action: action, p_payload: payload }); },
-  cardPlan: (action, payload = {}) => { needKey(); return callRpc('taichinh_gd_credit_card_plan_api', { p_key: state.key, p_action: action, p_payload: payload }); },
-  cardMonth: month => { needKey(); return callRpc('taichinh_gd_credit_card_month_api', { p_key: state.key, p_month: monthDate(month) }); },
+  accountAdjustment: (action, payload = {}) => { needKey(); return callRpc('taichinh_gd_account_adjustment_api', { p_key: state.key, p_action: action, p_payload: payload }); },
+  cardLedger: (action, payload = {}) => { needKey(); return callRpc('taichinh_gd_card_ledger_api', { p_key: state.key, p_action: action, p_payload: payload }); },
   exceptional: (action, payload = {}) => { needKey(); return callRpc('taichinh_gd_exceptional_api', { p_key: state.key, p_action: action, p_payload: payload }); },
   backup: () => { needKey(); return callRpc('taichinh_gd_backup_api', { p_key: state.key }); },
   budgetColumn: (kind, effectiveMonth, rows) => { needKey(); return callRpc('taichinh_gd_budget_column_api', { p_key: state.key, p_kind: kind, p_effective_month: monthDate(effectiveMonth), p_rows: rows }); }

@@ -29,11 +29,14 @@ const state = {
   loans: [],
   loanTerms: [],
   reporting: { show_vnd_conversion: false, jpy_vnd_rate: null },
-  allocationPlan: null,
-  cardSettings: [],
-  cardInstallments: [],
-  cardMonth: [],
-  exceptionalIds: []
+  exceptionalIds: [],
+  // Tài sản (manual-only balances) and Đầu tư (its own ledger) — see
+  // finance.js for the formulas these feed. Neither is derived from
+  // `transactions`/`fullTransactions` anymore.
+  accountAdjustments: [],
+  cardExpenses: [],
+  installments: [],
+  investments: []
 };
 
 const $ = (s, root = document) => root.querySelector(s);

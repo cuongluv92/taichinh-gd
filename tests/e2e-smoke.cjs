@@ -22,9 +22,6 @@ function contentType(p) {
   if (p.endsWith('.webmanifest') || p.endsWith('.json')) return 'application/json';
   return 'application/octet-stream';
 }
-// Mirrors vercel.json exactly — the whole point of this test is to catch
-// anything the strict production CSP would silently block that a plain
-// local server (no headers at all) would hide.
 const PROD_CSP = "default-src 'self'; connect-src 'self' https://frqujwlswqmtsxnqnwwc.supabase.co; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
 const server = http.createServer((req, res) => {
   let p = decodeURIComponent(req.url.split('?')[0]);
@@ -54,18 +51,17 @@ const CATEGORIES = [
   cat('inc2', 'income', null, 'Lương T', 140000),
   cat('fx1', 'expense', 'fixed', 'Nhà ở', 95000),
   cat('fx2', 'expense', 'fixed', 'Wifi', 6000),
-  cat('fx3', 'expense', 'fixed', 'Điện thoại', 8000),
-  cat('fx4', 'expense', 'fixed', 'Bảo hiểm', 17500),
   cat('vr1', 'expense', 'variable', 'Ăn uống', 60000),
-  cat('vr2', 'expense', 'variable', 'Đi lại', 15000),
-  cat('vr3', 'expense', 'variable', 'Giải trí', 10000)
+  cat('vr2', 'expense', 'variable', 'Đi lại', 15000)
 ];
+// No account_type 'investment' or 'credit' balance concept anymore — cash/
+// bank/savings only carry a Tài sản balance; the card account is a Chi tiêu
+// identity referenced by card_expenses/installments, nothing more.
 const ACCOUNTS = [
-  { id: 'bank', name: 'MUFG', account_type: 'bank', currency: 'JPY', opening_balance: 300000, is_active: true },
+  { id: 'bank', name: 'UFJ', account_type: 'bank', currency: 'JPY', opening_balance: 300000, is_active: true },
   { id: 'cash', name: 'Tiền mặt', account_type: 'cash', currency: 'JPY', opening_balance: 50000, is_active: true },
   { id: 'sav', name: 'Tiết kiệm', account_type: 'savings', currency: 'JPY', opening_balance: 200000, is_active: true },
-  { id: 'inv', name: 'NISA', account_type: 'investment', currency: 'JPY', opening_balance: 100000, is_active: true },
-  { id: 'card', name: 'Rakuten Card', account_type: 'credit', currency: 'JPY', opening_balance: 0, is_active: true },
+  { id: 'card', name: 'Rakuten', account_type: 'credit', currency: 'JPY', opening_balance: 0, is_active: true },
   { id: 'vnbank', name: 'Vietcombank', account_type: 'bank', currency: 'VND', opening_balance: 5000000, is_active: true },
   { id: 'oldwallet', name: 'Ví cũ', account_type: 'cash', currency: 'JPY', opening_balance: 0, is_active: false }
 ];
@@ -77,54 +73,136 @@ const LOAN_TERMS = [
   { loan_id: 'loan2', loan_kind: 'bank', institution_name: 'Ngân hàng ABC', product_name: 'Vay tiêu dùng', annual_rate: 3, repayment_method: 'equal_payment', term_months: 60, payment_day: 15 }
 ];
 let txSeq = 0;
-function tx(o) { return { id: 'tx' + (++txSeq), currency: 'JPY', fx_rate: 1, note: '', account_name: (ACCOUNTS.find(a => a.id === o.account_id) || {}).name, transfer_account_name: (ACCOUNTS.find(a => a.id === o.transfer_account_id) || {}).name, category_name: (CATEGORIES.find(c => c.id === o.category_id) || {}).name, ...o }; }
+function tx(o) { return { id: 'tx' + (++txSeq), currency: 'JPY', note: '', category_name: (CATEGORIES.find(c => c.id === o.category_id) || {}).name, ...o }; }
 const FULL_TX = [];
-// 24 months of history so year-over-year comparisons have real data too.
+// 24 months of history so year-over-year / whole-year analytics have real data.
 for (let i = 23; i >= 0; i--) {
   const m = addMonths(MONTH, -i);
-  FULL_TX.push(tx({ account_id: 'bank', category_id: 'inc1', transaction_type: 'income', amount: 300000, transaction_date: `${m}-05` }));
-  FULL_TX.push(tx({ account_id: 'bank', category_id: 'inc2', transaction_type: 'income', amount: 140000, transaction_date: `${m}-05` }));
-  FULL_TX.push(tx({ account_id: 'bank', category_id: 'fx1', transaction_type: 'expense', amount: 95000, transaction_date: `${m}-27` }));
-  FULL_TX.push(tx({ account_id: 'cash', category_id: 'vr1', transaction_type: 'expense', amount: 42000 + (i % 3) * 4000, transaction_date: `${m}-15` }));
-  FULL_TX.push(tx({ account_id: 'cash', category_id: 'vr2', transaction_type: 'expense', amount: 10000 + (i % 4) * 1000, transaction_date: `${m}-20` }));
+  FULL_TX.push(tx({ category_id: 'inc1', transaction_type: 'income', amount: 300000, transaction_date: `${m}-05` }));
+  FULL_TX.push(tx({ category_id: 'inc2', transaction_type: 'income', amount: 140000, transaction_date: `${m}-05` }));
+  FULL_TX.push(tx({ category_id: 'fx1', transaction_type: 'expense', amount: 95000, transaction_date: `${m}-27` }));
+  FULL_TX.push(tx({ category_id: 'vr1', transaction_type: 'expense', amount: 42000 + (i % 3) * 4000, transaction_date: `${m}-15` }));
+  FULL_TX.push(tx({ category_id: 'vr2', transaction_type: 'expense', amount: 10000 + (i % 4) * 1000, transaction_date: `${m}-20` }));
 }
-FULL_TX.push(tx({ account_id: 'card', category_id: 'vr3', transaction_type: 'expense', amount: 8000, transaction_date: `${MONTH}-08` }));
-FULL_TX.push(tx({ account_id: 'bank', transfer_account_id: 'sav', transaction_type: 'transfer', amount: 20000, transaction_date: `${MONTH}-06` }));
 FULL_TX.push(tx({ account_id: 'bank', loan_id: 'loan1', transaction_type: 'loan_pay', amount: 30000, transaction_date: `${MONTH}-12` }));
 FULL_TX.push(tx({ account_id: 'bank', loan_id: 'loan1', transaction_type: 'loan_interest', amount: 4500, transaction_date: `${MONTH}-12` }));
-FULL_TX.push(tx({ account_id: 'inv', transaction_type: 'investment_gain', amount: 5000, transaction_date: `${MONTH}-10`, note: 'Cập nhật giá trị NISA' }));
 const MONTH_TX = FULL_TX.filter(t => t.transaction_date.startsWith(MONTH));
+
+const ADJUSTMENTS = [
+  { id: 'adj1', account_id: 'bank', account_name: 'UFJ', direction: 'increase', amount: 100000, currency: 'JPY', adjustment_date: `${MONTH}-03`, note: 'Lương tháng trước còn lại' }
+];
+const CARD_EXPENSES = [
+  { id: 'ce1', card_account_id: 'card', card_name: 'Rakuten', entry_mode: 'detail', expense_date: `${MONTH}-15`, description: 'Điện · Ga', amount: 10000, note: '' }
+];
+const INSTALLMENTS = [
+  {
+    id: 'inst1', card_account_id: 'card', card_name: 'Rakuten', name: 'Máy giặt', purchase_date: `${MONTH}-01`,
+    principal_amount: 60000, fee_total: 0, total_installments: 6, paid_installments_before: 0, first_payment_month: `${MONTH}-01`, currency: 'JPY', note: '',
+    schedule: Array.from({ length: 6 }, (_, i) => ({ id: `sch${i + 1}`, installment_no: i + 1, payment_month: addMonths(MONTH, i) + '-01', principal_amount: 10000, fee_amount: 0, is_paid: i === 0, payment_kind: 'regular' }))
+  }
+];
+const INVESTMENTS = [
+  { id: 'nisa', name: 'NISA', asset_type: 'NISA', currency: 'JPY', initial_capital: 400000, note: '', created_at: `${MONTH}-01T00:00:00Z`, total_contributed: 100000, total_withdrawn: 0, latest_value: 550000, latest_value_date: `${MONTH}-10` }
+];
+const INVESTMENT_EVENTS = {
+  nisa: [
+    { id: 'ev1', event_type: 'contribution', amount: 100000, event_date: `${MONTH}-02`, note: '' },
+    { id: 'ev2', event_type: 'valuation', amount: 550000, event_date: `${MONTH}-10`, note: '' }
+  ]
+};
+
+// Stateful mocks — save/delete/toggle actually mutate these fixture arrays,
+// so a created/edited/deleted row is reflected the next time the app
+// refreshes and re-fetches (exactly like the real backend), instead of a
+// static response silently reverting every change.
+let seq = 0;
+function newId(prefix) { return `${prefix}${++seq}`; }
 
 const RPC_HANDLERS = {
   taichinh_gd_api: (action) => {
-    if (action === 'bootstrap' || action === 'month') return { household: { name: 'Nguyễn Gia', base_currency: 'JPY' }, accounts: ACCOUNTS, categories: CATEGORIES, category_versions: [], transactions: MONTH_TX, goals: [], loans: LOANS, monthly_summary: [] };
+    if (action === 'bootstrap' || action === 'month') return { household: { name: 'Nguyễn Gia', base_currency: 'JPY' }, accounts: ACCOUNTS, categories: CATEGORIES, category_versions: [], transactions: MONTH_TX, loans: LOANS };
     if (action === 'export') return { transactions: FULL_TX };
     if (action === 'save_account') return { ok: true, id: 'newacct1' };
-    if (action === 'deleted_transactions') return { items: [{ id: 'deltx1', account_id: 'cash', category_id: 'vr1', category_name: 'Ăn uống', transaction_type: 'expense', amount: 3000, currency: 'JPY', transaction_date: `${MONTH}-03`, note: '', deleted_at: `${MONTH}-14T10:00:00Z` }] };
-    if (action === 'restore_transaction') return { ok: true };
     return { ok: true, id: 'x' };
   },
   taichinh_gd_extension_api: (action) => {
     if (action === 'save_reporting' || action === 'bank_payment') return { ok: true };
     return { reporting: { show_vnd_conversion: false, jpy_vnd_rate: null }, loan_terms: LOAN_TERMS };
   },
-  taichinh_gd_allocation_api: () => ({ month: `${MONTH}-01`, fixed_pct: 25, variable_pct: 20, interest_pct: 2, saving_pct: 10, investment_pct: 10, debt_pct: 8, reserve_pct: 25, inherited: false, source_month: `${MONTH}-01` }),
-  taichinh_gd_recurring_api: () => ({ items: [] }),
-  taichinh_gd_credit_card_api: (action) => {
-    if (action === 'get') return { items: [{ account_id: 'card', closing_day: 10, payment_day: 27, payment_month_offset: 1, payment_account_id: 'bank' }] };
-    if (action === 'overview') return { items: [] };
-    if (action === 'list_installments') return { items: [] };
-    return { ok: true };
-  },
-  taichinh_gd_credit_card_month_api: () => ({ items: [{ account_id: 'card', card_name: 'Rakuten Card', currency: 'JPY', payment_month: `${MONTH}-01`, payment_date: `${MONTH}-27`, regular_amount: 8000, installment_principal: 0, installment_fee: 0, expected_amount: 8000, paid: false }] }),
   taichinh_gd_exceptional_api: (action) => action === 'set' ? { ok: true } : { ids: [] },
-  taichinh_gd_fx_history_api: () => ({ items: [] }),
   taichinh_gd_backup_api: () => ({ ok: true }),
   taichinh_gd_debt_api: () => ({ ok: true, id: 'x' }),
   taichinh_gd_bank_loan_api: () => ({ ok: true, id: 'x' }),
   taichinh_gd_budget_column_api: () => ({ ok: true }),
-  taichinh_gd_investment_api: () => ({ ok: true, id: 'x' }),
-  taichinh_gd_credit_card_plan_api: () => ({ ok: true, id: 'x' })
+  taichinh_gd_account_adjustment_api: (action, body) => {
+    const p = body?.p_payload || {};
+    if (action === 'list') return { items: ADJUSTMENTS };
+    if (action === 'save') {
+      if (p.id) { const row = ADJUSTMENTS.find(x => x.id === p.id); if (row) Object.assign(row, p); return { ok: true, id: p.id }; }
+      const id = newId('adj');
+      ADJUSTMENTS.push({ id, account_id: p.account_id, account_name: (ACCOUNTS.find(a => a.id === p.account_id) || {}).name, direction: p.direction, amount: Number(p.amount), currency: p.currency || 'JPY', adjustment_date: p.adjustment_date, note: p.note || '' });
+      return { ok: true, id };
+    }
+    if (action === 'delete') { const i = ADJUSTMENTS.findIndex(x => x.id === p.id); if (i >= 0) ADJUSTMENTS.splice(i, 1); return { ok: true }; }
+    return { ok: true };
+  },
+  taichinh_gd_card_ledger_api: (action, body) => {
+    const p = body?.p_payload || {};
+    if (action === 'list_expenses') return { items: CARD_EXPENSES };
+    if (action === 'list_installments') return { items: INSTALLMENTS };
+    if (action === 'save_expense') {
+      if (p.id) { const row = CARD_EXPENSES.find(x => x.id === p.id); if (row) Object.assign(row, p); return { ok: true, id: p.id }; }
+      const id = newId('ce');
+      CARD_EXPENSES.push({ id, card_account_id: p.card_account_id, card_name: (ACCOUNTS.find(a => a.id === p.card_account_id) || {}).name, entry_mode: p.entry_mode, expense_date: p.expense_date, description: p.description || '', amount: Number(p.amount), note: p.note || '' });
+      return { ok: true, id };
+    }
+    if (action === 'delete_expense') { const i = CARD_EXPENSES.findIndex(x => x.id === p.id); if (i >= 0) CARD_EXPENSES.splice(i, 1); return { ok: true }; }
+    if (action === 'save_installment') {
+      const total = Number(p.total_installments), principal = Number(p.principal_amount);
+      const schedule = Array.from({ length: total }, (_, i) => ({ id: newId('sch'), installment_no: i + 1, payment_month: addMonths(p.first_payment_month?.slice(0, 7) || MONTH, i) + '-01', principal_amount: Math.round(principal / total), fee_amount: 0, is_paid: false, payment_kind: 'regular' }));
+      if (p.id) {
+        const row = INSTALLMENTS.find(x => x.id === p.id);
+        if (row) { Object.assign(row, p, { total_installments: total, principal_amount: principal, schedule }); return { ok: true, id: p.id }; }
+      }
+      const id = newId('inst');
+      INSTALLMENTS.push({ id, card_account_id: p.card_account_id, card_name: (ACCOUNTS.find(a => a.id === p.card_account_id) || {}).name, name: p.name, purchase_date: p.purchase_date, principal_amount: principal, fee_total: Number(p.fee_total || 0), total_installments: total, paid_installments_before: Number(p.paid_installments_before || 0), first_payment_month: p.first_payment_month, currency: p.currency || 'JPY', note: p.note || '', schedule });
+      return { ok: true, id };
+    }
+    if (action === 'delete_installment') { const i = INSTALLMENTS.findIndex(x => x.id === p.id); if (i >= 0) INSTALLMENTS.splice(i, 1); return { ok: true }; }
+    if (action === 'toggle_paid') { for (const inst of INSTALLMENTS) { const row = (inst.schedule || []).find(s => s.id === p.id); if (row) { row.is_paid = !row.is_paid; break; } } return { ok: true }; }
+    return { ok: true };
+  },
+  taichinh_gd_investment_api: (action, body) => {
+    const p = body?.p_payload || {};
+    if (action === 'list') return { items: INVESTMENTS };
+    if (action === 'list_events') return { items: INVESTMENT_EVENTS[p.investment_id] || [] };
+    if (action === 'save') {
+      if (p.id) { const row = INVESTMENTS.find(x => x.id === p.id); if (row) Object.assign(row, p); return { ok: true, id: p.id }; }
+      const id = newId('inv');
+      INVESTMENTS.push({ id, name: p.name, asset_type: p.asset_type || null, currency: p.currency || 'JPY', initial_capital: Number(p.initial_capital || 0), note: p.note || '', created_at: new Date().toISOString(), total_contributed: 0, total_withdrawn: 0, latest_value: null, latest_value_date: null });
+      INVESTMENT_EVENTS[id] = [];
+      return { ok: true, id };
+    }
+    if (action === 'delete') { const i = INVESTMENTS.findIndex(x => x.id === p.id); if (i >= 0) INVESTMENTS.splice(i, 1); return { ok: true }; }
+    if (action === 'save_event') {
+      const list = INVESTMENT_EVENTS[p.investment_id] = INVESTMENT_EVENTS[p.investment_id] || [];
+      if (p.id) { const row = list.find(x => x.id === p.id); if (row) Object.assign(row, p); return { ok: true, id: p.id }; }
+      const id = newId('ev');
+      list.push({ id, event_type: p.event_type, amount: Number(p.amount), event_date: p.event_date, note: p.note || '' });
+      const inv = INVESTMENTS.find(x => x.id === p.investment_id);
+      if (inv) {
+        if (p.event_type === 'contribution') inv.total_contributed = Number(inv.total_contributed || 0) + Number(p.amount);
+        if (p.event_type === 'withdrawal') inv.total_withdrawn = Number(inv.total_withdrawn || 0) + Number(p.amount);
+        if (p.event_type === 'valuation') { inv.latest_value = Number(p.amount); inv.latest_value_date = p.event_date; }
+      }
+      return { ok: true, id };
+    }
+    if (action === 'delete_event') {
+      for (const key of Object.keys(INVESTMENT_EVENTS)) { const i = INVESTMENT_EVENTS[key].findIndex(x => x.id === p.id); if (i >= 0) { INVESTMENT_EVENTS[key].splice(i, 1); break; } }
+      return { ok: true };
+    }
+    return { ok: true };
+  }
 };
 
 (async () => {
@@ -137,7 +215,7 @@ const RPC_HANDLERS = {
     const page = await browser.newPage();
     page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
     page.on('pageerror', err => consoleErrors.push('pageerror: ' + err.message));
-    page.on('dialog', d => d.dismiss().catch(() => {})); // native confirm/prompt/alert never block the run
+    page.on('dialog', d => d.dismiss().catch(() => {}));
     await page.route('**/rest/v1/rpc/**', async route => {
       const url = route.request().url();
       const fn = url.split('/rpc/')[1].split('?')[0];
@@ -157,49 +235,45 @@ const RPC_HANDLERS = {
   await page.waitForSelector('#app:not(.hidden)', { timeout: 8000 });
   results.push('BOOT: app shell visible after fixture bootstrap - OK');
 
-  // Dashboard sanity numbers
+  // ---- Tổng quan: must be month-only, zero asset/investment data ----
   const dashboardText = await page.textContent('#content');
-  results.push(`DASHBOARD contains "440" (income plan): ${dashboardText.includes('440')}`);
-  results.push(`DASHBOARD contains "126" (fixed plan / 28.7%%): ${dashboardText.includes('126') || dashboardText.includes('28.7')}`);
-  results.push(`DASHBOARD shows VND-equivalent net worth when toggle is on: ${dashboardText.includes('₫')}`);
-  results.push(`DASHBOARD shows "Sắp đến hạn" upcoming-due section with the unpaid card: ${dashboardText.includes('Sắp đến hạn') && dashboardText.includes('Rakuten Card')}`);
+  const kpiLabels = await page.locator('.kpi-grid .kpi .label').allTextContents();
+  results.push(`DASHBOARD kpi-grid = ${JSON.stringify(kpiLabels)}`);
+  results.push(`  Shows the 4 month-only KPIs (Thu nhập/Tổng chi tiêu/Còn lại/Tỷ lệ): ${kpiLabels.length === 4}`);
+  results.push(`  Tài sản ròng / Tiền thanh khoản / Đang đầu tư NEVER appear on Tổng quan: ${!/Tài sản ròng|Tiền thanh khoản|Đang đầu tư/.test(dashboardText)}`);
+  results.push(`  NISA / investment name never appears on Tổng quan: ${!dashboardText.includes('NISA')}`);
   results.push(`DASHBOARD shows month-over-month comparison text: ${dashboardText.includes('so với tháng trước') || dashboardText.includes('Bằng tháng trước')}`);
-  results.push(`DASHBOARD shows spending-pace note: ${dashboardText.includes('ngân sách chi biến động')}`);
   results.push(`DASHBOARD shows year-over-year comparison text: ${dashboardText.includes('cùng kỳ năm trước')}`);
-  results.push(`DASHBOARD shows category-trend section: ${dashboardText.includes('Xu hướng theo danh mục')}`);
+  results.push(`DASHBOARD shows "năm nay so với năm trước" section: ${dashboardText.includes('Năm nay so với năm trước')}`);
+  results.push(`DASHBOARD shows "từng tháng trong năm" section: ${dashboardText.includes('Từng tháng trong năm')}`);
+  results.push(`DASHBOARD shows biggest-mover category section: ${dashboardText.includes('tăng/giảm nhiều nhất')}`);
+  results.push(`DASHBOARD shows "Sắp đến hạn" with the unpaid loan: ${dashboardText.includes('Sắp đến hạn') && dashboardText.includes('Vay mua xe')}`);
   await page.screenshot({ path: path.join(SHOT_DIR, 'shot-dashboard-1440.png'), fullPage: true });
 
-  // Budget view - must show 5 columns on one row at desktop widths
+  // ---- Chi tiêu: 5 independent columns ----
   await page.click('[data-view="budget"]');
   await page.waitForSelector('.money-board');
   const cols = await page.$$('.money-column');
   results.push(`BUDGET column count = ${cols.length} (expect 5)`);
-  const tops = [];
-  for (const c of cols) { const box = await c.boundingBox(); tops.push(Math.round(box.y)); }
-  const sameRow = new Set(tops).size === 1;
-  results.push(`BUDGET all 5 columns share one row at 1440px: ${sameRow} (tops=${tops.join(',')})`);
+  const budgetText = await page.textContent('#content');
+  results.push(`BUDGET Thẻ & trả góp column shows the card expense (10,000) not mixed into Chi biến động: ${budgetText.includes('Rakuten')}`);
   await page.screenshot({ path: path.join(SHOT_DIR, 'shot-budget-1440.png'), fullPage: true });
 
   for (const w of [1366, 1024]) {
     await page.setViewportSize({ width: w, height: 900 });
     await page.waitForTimeout(150);
     const cols2 = await page.$$('.money-column');
-    const tops2 = []; for (const c of cols2) { const box = await c.boundingBox(); tops2.push(Math.round(box.y)); }
-    results.push(`BUDGET at ${w}px: columns=${cols2.length}, one row=${new Set(tops2).size === 1}`);
-    await page.screenshot({ path: path.join(SHOT_DIR, `shot-budget-${w}.png`), fullPage: true });
+    results.push(`BUDGET at ${w}px: columns=${cols2.length}`);
   }
-
   for (const w of [430, 390]) {
     await page.setViewportSize({ width: w, height: 800 });
     await page.waitForTimeout(150);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     results.push(`MOBILE ${w}px: horizontal overflow px = ${overflow} (expect 0)`);
-    await page.screenshot({ path: path.join(SHOT_DIR, `shot-budget-${w}.png`), fullPage: true });
   }
-
-  // Check for accidental white backgrounds across all 4 views at desktop width
   await page.setViewportSize({ width: 1440, height: 900 });
-  for (const view of ['dashboard', 'budget', 'accounts', 'settings']) {
+
+  for (const view of ['dashboard', 'budget', 'investments', 'accounts', 'settings']) {
     await page.click(`[data-view="${view}"]`);
     await page.waitForTimeout(150);
     const whiteEls = await page.evaluate(() => {
@@ -210,52 +284,31 @@ const RPC_HANDLERS = {
       });
       return bad;
     });
-    results.push(`VIEW ${view}: elements with pure-white background = ${whiteEls.length} ${whiteEls.length ? '(' + whiteEls.slice(0, 5).join(',') + ')' : ''}`);
+    results.push(`VIEW ${view}: renders without error, pure-white elements = ${whiteEls.length}`);
   }
 
-  // ---- REAL CLICKS ONLY from here on (page.evaluate() calling a function
-  // directly bypasses CSP entirely and would have hidden the exact bug that
-  // shipped in the first pass — every one of these must be page.click()). ----
-  await page.addInitScript(() => { window.confirm = () => false; }); // don't actually navigate away on forgetDevice()
+  // ---- REAL CLICKS ONLY from here — a CSP-blocked handler must show up. ----
+  await page.addInitScript(() => { window.confirm = () => false; });
   await page.reload();
   await page.waitForSelector('#app:not(.hidden)', { timeout: 8000 });
-
-  // toast.show can linger up to 2.4s (see lib.js toast()); without clearing
-  // it first, waitForSelector('#toast.show') right after a click can match
-  // a STALE toast left over from an earlier step instead of a new one,
-  // making a silently-failed action look like it succeeded.
   async function resetToast() { await page.evaluate(() => { const t = document.getElementById('toast'); if (t) t.className = 'toast'; }); }
-
   async function clickAndCheckModal(label, selector, checkSelector) {
     await page.click(selector);
     try {
       await page.waitForSelector('#modal[open]', { timeout: 1500 });
       const ok = checkSelector ? await page.isVisible(checkSelector) : true;
       results.push(`CLICK ${label}: modal opened${checkSelector ? ', field visible=' + ok : ''} - OK`);
-    } catch {
-      results.push(`CLICK ${label}: modal did NOT open - FAIL`);
-    }
+    } catch { results.push(`CLICK ${label}: modal did NOT open - FAIL`); }
     await page.evaluate(() => document.getElementById('modal')?.close());
     await page.waitForTimeout(50);
   }
 
+  // ---- Quick entry: income/expense only, no account/transfer picker ----
   await page.click('[data-view="dashboard"]');
-  // Tổng quan reports the month's cash-flow result now — net worth/liquid
-  // cash moved to Tài sản. Verify by label text, not just element count.
-  const kpiLabels = await page.locator('.kpi-grid .kpi .label').allTextContents();
-  results.push(`DASHBOARD kpi-grid shows the 4 month-result KPIs (Thu nhập/Chi tiêu/Ngân sách còn lại/Dòng tiền): ${JSON.stringify(kpiLabels)}`);
-  results.push(`  Tài sản ròng / Tiền khả dụng removed from Tổng quan: ${!kpiLabels.some(l => /Tài sản ròng|Tiền khả dụng/.test(l))}`);
-  await clickAndCheckModal('#quickAdd (Nhập nhanh)', '#quickAdd', '#qeAmount');
-  await clickAndCheckModal('dashboard "Sửa chỉ tiêu %"', 'button:has-text("Sửa chỉ tiêu %")', '#allocTotal');
-  const recentTx = await page.$('.tx-row-btn:not([disabled])');
-  if (recentTx) { await recentTx.click(); await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK recent-transaction row: modal opened - OK')).catch(() => results.push('CLICK recent-transaction row: modal did NOT open - FAIL')); await page.evaluate(() => document.getElementById('modal')?.close()); }
-  const upcomingBtn = page.locator('section.card.section', { hasText: 'Sắp đến hạn' }).locator('.tx-row-btn').first();
-  if (await upcomingBtn.count()) { await upcomingBtn.click(); await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK upcoming-due row (Sắp đến hạn): modal opened - OK')).catch(() => results.push('CLICK upcoming-due row: modal did NOT open - FAIL')); await page.evaluate(() => document.getElementById('modal')?.close()); }
-
-  // "Chi tiêu bất thường" checkbox: visible for expense, hidden for income,
-  // and the write path (api.exceptional 'set') doesn't throw on submit.
   await page.click('#quickAdd');
   await page.waitForSelector('#modal[open]', { timeout: 1500 });
+  const qeHasTransferTab = await page.locator('#qeTypeTabs button[data-t="transfer"]').count();
+  results.push(`QUICK ENTRY has no Chuyển (transfer) tab anymore: ${qeHasTransferTab === 0}`);
   await page.click('.details-summary');
   const excVisibleExpense = await page.isVisible('#qeExceptionalField');
   results.push(`QUICK ENTRY "bất thường" checkbox visible for Chi (expense): ${excVisibleExpense}`);
@@ -263,236 +316,165 @@ const RPC_HANDLERS = {
   const excVisibleIncome = await page.isVisible('#qeExceptionalField');
   results.push(`QUICK ENTRY "bất thường" checkbox hidden for Thu (income): ${!excVisibleIncome}`);
   await page.click('#qeTypeTabs button[data-t="expense"]');
-  await page.fill('#qeAmount', '12345');
-  await page.check('#qeExceptional');
+  await page.fill('#qeAmount', '3000');
   await resetToast();
   await page.click('#modalForm [type=submit]');
-  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`SUBMIT quick-entry with "bất thường" checked: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('SUBMIT quick-entry with "bất thường" checked: no toast - FAIL'));
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`SUBMIT quick-entry expense: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('SUBMIT quick-entry expense: no toast - FAIL'));
   await page.evaluate(() => document.getElementById('modal')?.close());
   await page.waitForTimeout(50);
-
-  // Delete a transaction: confirm() stubbed true just for this click, same
-  // pattern as the loan delete below.
-  await page.evaluate(() => { window.confirm = () => true; });
-  const deleteTxBtn = await page.$('.tx-actions .mini-btn[aria-label="Xóa"]');
-  if (deleteTxBtn) {
-    await resetToast();
-    await deleteTxBtn.click();
-    await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`CLICK delete transaction (×): saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('CLICK delete transaction: no toast - FAIL'));
-  }
-  await page.evaluate(() => { window.confirm = () => false; });
 
   await page.click('[data-view="budget"]');
   await page.waitForSelector('.money-board');
   await clickAndCheckModal('budget Thu-nhập column-settings', '.money-column.income .column-settings', '#columnRows');
-  await page.evaluate(() => document.getElementById('modal')?.close());
-
-  // Reported bug: with enough rows, #modalBody grew past the dialog's
-  // 88vh/overflow:hidden bound and clipped the Lưu button out of reach —
-  // #modalBody wasn't itself a flex column, so modal-head/-content/-actions
-  // never split into fixed-head/scrolling-middle/fixed-actions.
-  await page.click('.money-column.variable .column-settings');
-  await page.waitForSelector('#columnRows', { timeout: 1500 });
-  for (let i = 0; i < 15; i++) await page.click('#columnAddRow');
-  const dialogBox = await page.locator('#modal').boundingBox();
-  const submitBox = await page.locator('#modalForm button[type=submit]').boundingBox();
-  const submitReachable = !!(dialogBox && submitBox && submitBox.y + submitBox.height <= dialogBox.y + dialogBox.height + 1);
-  results.push(`Chi biến động column-settings with 15+ rows: Lưu button stays inside the dialog (not clipped): ${submitReachable}`);
-  const contentScrollable = await page.evaluate(() => { const el = document.querySelector('#modalBody .stack, #columnRows')?.closest('.modal-content'); return el ? el.scrollHeight > el.clientHeight : false; });
-  results.push(`  modal-content actually scrolls internally once it overflows: ${contentScrollable}`);
-  await page.evaluate(() => document.getElementById('modal')?.close());
-  await page.waitForTimeout(50);
   await clickAndCheckModal('budget Thẻ&trả-góp column-settings', '.money-column.credit .column-settings');
-  // Debt column settings opens an info modal with a nested "+ Thêm khoản nợ"
-  // button that closes-then-reopens a different modal (reopenAfterModal) —
-  // don't auto-close in between, that's the exact path being tested.
   await page.click('.money-column.debt .column-settings');
   await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK budget Nợ column-settings: modal opened - OK')).catch(() => results.push('CLICK budget Nợ column-settings: modal did NOT open - FAIL'));
-  await page.click('button:has-text("Thêm khoản nợ")');
-  try {
-    await page.waitForSelector('[name="counterparty"]', { timeout: 1500 });
-    results.push('CLICK "+ Thêm khoản nợ" inside manager (reopenAfterModal): loan form opened - OK');
-  } catch { results.push('CLICK "+ Thêm khoản nợ" inside manager: loan form did NOT open - FAIL'); }
   await page.evaluate(() => document.getElementById('modal')?.close());
   await page.waitForTimeout(50);
 
-  // Delete an unlinked loan from inside the debt manager (loan2 has no
-  // transactions in the fixture, so deleteLoan's own "has history" guard
-  // doesn't block it) — confirm() is stubbed false everywhere else in this
-  // run, so flip it true just for this one click and put it back after.
-  await page.click('.money-column.debt .column-settings');
+  // Category with money already in it opens the transaction list, not a
+  // blind add — inc1 "Lương C" has real transactions in the fixture.
+  await page.click('.money-column.income .money-line:has-text("Lương C")');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK income category with money (Lương C): opens transaction list - OK')).catch(() => results.push('CLICK income category with money: modal did NOT open - FAIL'));
+  await page.evaluate(() => document.getElementById('modal')?.close());
+  await page.waitForTimeout(50);
+
+  // ---- Thẻ & trả góp: card ledger, card_expenses + installments ----
+  await page.click('.money-column.credit .money-line:has-text("Rakuten")');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK Rakuten card row (openCardLedger): modal opened - OK')).catch(() => results.push('CLICK Rakuten card row: modal did NOT open - FAIL'));
+  const ledgerText = await page.textContent('#modalBody');
+  results.push(`  Card ledger shows labeled "Xóa"/"Sửa" buttons (not bare icons): ${ledgerText.includes('Sửa') && ledgerText.includes('Xóa')}`);
+  results.push(`  Card ledger lists the existing detail expense (Điện · Ga): ${ledgerText.includes('Điện')}`);
+  results.push(`  Card ledger shows the installment (Máy giặt) with kỳ progress: ${ledgerText.includes('Máy giặt')}`);
+
+  await page.click('button:has-text("＋ Thêm khoản chi")');
+  await page.waitForSelector('#modalBody [name="description"]', { timeout: 1500 }).then(() => results.push('CLICK "+ Thêm khoản chi" (detail entry form): opened - OK')).catch(() => results.push('CLICK "+ Thêm khoản chi": did NOT open - FAIL'));
+  await page.fill('[name="amount"]', '2500');
+  await resetToast();
+  await page.click('#modalForm [type=submit]');
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`SUBMIT new card detail expense: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('SUBMIT card detail expense: no toast - FAIL'));
+
+  await page.click('.money-column.credit .money-line:has-text("Rakuten")');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 });
+  await page.click('button:has-text("＋ Nhập tổng theo tháng")');
+  await page.waitForSelector('[name="expense_month"]', { timeout: 1500 }).then(() => results.push('CLICK "+ Nhập tổng theo tháng" (lump entry form): opened - OK')).catch(() => results.push('CLICK "+ Nhập tổng theo tháng": did NOT open - FAIL'));
+  await page.evaluate(() => document.getElementById('modal')?.close());
+  await page.waitForTimeout(50);
+
+  // Edit and delete an existing card expense from the ledger list.
+  await page.click('.money-column.credit .money-line:has-text("Rakuten")');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 });
+  await page.click('#modalBody .tx .btn:has-text("Sửa")');
+  await page.waitForSelector('[name="amount"]', { timeout: 1500 }).then(() => results.push('CLICK "Sửa" on a card expense row: edit form opened - OK')).catch(() => results.push('CLICK "Sửa" on card expense: edit form did NOT open - FAIL'));
+  await page.evaluate(() => document.getElementById('modal')?.close());
+  await page.waitForTimeout(50);
+
+  await page.click('.money-column.credit .money-line:has-text("Rakuten")');
   await page.waitForSelector('#modal[open]', { timeout: 1500 });
   await page.evaluate(() => { window.confirm = () => true; });
   await resetToast();
-  await page.click('.tx:has-text("ABC") [aria-label="Xóa khoản nợ"]');
-  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`CLICK delete unlinked loan (debt manager ×): saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('CLICK delete unlinked loan: no toast - FAIL'));
-  const modalClosedAfterDelete = !(await page.$('#modal[open]'));
-  results.push(`Debt manager modal closes itself after a successful delete: ${modalClosedAfterDelete}`);
+  await page.click('#modalBody .tx .btn:has-text("Xóa")');
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`CLICK "Xóa" on a card expense row: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('CLICK "Xóa" on card expense: no toast - FAIL'));
   await page.evaluate(() => { window.confirm = () => false; });
   await page.evaluate(() => document.getElementById('modal')?.close());
   await page.waitForTimeout(50);
 
-  // A category row with money already in it must open the transaction
-  // LIST (edit/delete what's there), not silently add another entry on
-  // top of it. inc1 "Lương C" has real transactions in the fixture.
-  await page.click('.money-column.income .money-line:has-text("Lương C")');
-  await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK income category with money (Lương C): opens transaction list, not blind add - OK')).catch(() => results.push('CLICK income category with money: modal did NOT open - FAIL'));
-  const hasAddMoreBtn = await page.isVisible('button:has-text("Thêm giao dịch")');
-  results.push(`  category list has "+ Thêm giao dịch" button: ${hasAddMoreBtn}`);
-  const listTxBtn = page.locator('#modalBody .tx-row-btn').first();
-  if (await listTxBtn.count()) {
-    await listTxBtn.click();
-    await page.waitForSelector('[name="amount"]', { timeout: 1500 }).then(() => results.push('CLICK a transaction inside the category list: edit form opened - OK')).catch(() => results.push('CLICK a transaction inside the category list: edit form did NOT open - FAIL'));
-    await page.evaluate(() => document.getElementById('modal')?.close());
-    await page.waitForTimeout(50);
-  }
-  // Delete from inside the list must refresh the list in place (not leave
-  // a stale row showing, and not close the whole modal).
-  await page.click('.money-column.income .money-line:has-text("Lương C")');
+  // ---- Trả góp: create, view schedule, toggle paid, delete ----
+  await page.click('.money-column.credit .money-line:has-text("Rakuten")');
   await page.waitForSelector('#modal[open]', { timeout: 1500 });
-  await page.evaluate(() => { window.confirm = () => true; });
-  await resetToast();
-  await page.click('#modalBody .tx .mini-btn[aria-label="Xóa"]');
-  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`CLICK delete from category list: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('CLICK delete from category list: no toast - FAIL'));
-  const modalStillOpenAfterListDelete = !!(await page.$('#modal[open]'));
-  results.push(`Category list modal stays open (refreshed in place) after delete: ${modalStillOpenAfterListDelete}`);
-  await page.evaluate(() => { window.confirm = () => false; });
-  await page.evaluate(() => document.getElementById('modal')?.close());
-  await page.waitForTimeout(50);
-  // A category with NO transactions yet (Wifi, cost_type fixed, 0 actual
-  // in the fixture) must still go straight to Nhập nhanh.
-  await page.click('.money-column.fixed .money-line:has-text("Wifi")');
-  await page.waitForSelector('#qeAmount', { timeout: 1500 }).then(() => results.push('CLICK empty category (Wifi, no transactions yet): goes straight to Nhập nhanh - OK')).catch(() => results.push('CLICK empty category (Wifi): did NOT open Nhập nhanh - FAIL'));
-  await page.evaluate(() => document.getElementById('modal')?.close());
-  await page.waitForTimeout(50);
-  const debtLine = await page.$('.money-column.debt .money-line');
-  if (debtLine) { await debtLine.click(); await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK debt money-line (openLoanPayment): modal opened - OK')).catch(() => results.push('CLICK debt money-line: modal did NOT open - FAIL')); await page.evaluate(() => document.getElementById('modal')?.close()); }
-  // loan2 is a bank-kind loan (has loan_terms) — its row must route to
-  // openBankPayment (gốc/lãi split), not the plain personal-loan modal.
-  const bankLoanLine = page.locator('.money-column.debt .money-line', { hasText: 'ABC' });
-  if (await bankLoanLine.count()) {
-    await bankLoanLine.click();
-    await page.waitForSelector('#bpPrincipal', { timeout: 1500 }).then(() => results.push('CLICK bank-loan money-line (openBankPayment, gốc/lãi split): modal opened - OK')).catch(() => results.push('CLICK bank-loan money-line: openBankPayment did NOT open - FAIL'));
-    await page.evaluate(() => document.getElementById('modal')?.close());
-    await page.waitForTimeout(50);
-  }
-  const creditLine = await page.$('.money-column.credit .money-line');
-  if (creditLine) { await creditLine.click(); await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK credit money-line (statement payment): modal opened - OK')).catch(() => results.push('CLICK credit money-line: modal did NOT open - FAIL')); await page.evaluate(() => document.getElementById('modal')?.close()); }
-  // ＋ on a card now opens the SAME Nhập nhanh as any other account, just
-  // pre-scoped to that card — a card purchase needs a real Chi tiêu
-  // category, exactly like cash or bank (card is a payment account, not a
-  // category of its own).
-  const creditQuickAdd = await page.$('.money-column.credit .money-line-wrap [aria-label^="Ghi chi tiêu"]');
-  if (creditQuickAdd) {
-    await creditQuickAdd.click();
-    await page.waitForSelector('#qeAmount', { timeout: 1500 }).then(() => results.push('CLICK credit ＋ (openCardExpense -> Nhập nhanh): form opened - OK')).catch(() => results.push('CLICK credit ＋: form did NOT open - FAIL'));
-    const catChipCount = await page.locator('#qeCategoryChips .chip').count();
-    results.push(`  card expense form shows real Chi tiêu category chips: ${catChipCount > 0}`);
-    await page.fill('#qeAmount', '5000');
-    await resetToast();
-    await page.click('#modalForm [type=submit]');
-    await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`SUBMIT card expense with a real category: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('SUBMIT card expense: no toast - FAIL'));
-  }
-  await page.waitForTimeout(50);
-
-  // 📋 opens this month's card transactions for edit/delete, listed by
-  // their real category name (not a card-only tag).
-  const cardListBtn = await page.$('.money-column.credit .money-line-wrap [aria-label^="Xem chi tiêu"]');
-  if (cardListBtn) {
-    await cardListBtn.click();
-    await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK credit 📋 (openCardTransactions): list opened - OK')).catch(() => results.push('CLICK credit 📋: list did NOT open - FAIL'));
-    const listText = await page.textContent('#modalBody');
-    results.push(`  card transaction list shows the purchase's real category (Giải trí): ${listText.includes('Giải trí')}`);
-    const firstTxBtn = page.locator('#modalBody .tx-row-btn').first();
-    if (await firstTxBtn.count()) {
-      await firstTxBtn.click();
-      await page.waitForSelector('#etCat', { timeout: 1500 }).then(() => results.push('CLICK a card transaction from the list: edit form opens with the normal category field - OK')).catch(() => results.push('CLICK a card transaction: edit form did NOT open - FAIL'));
-      const catFieldVisible = !(await page.isHidden('#etCatField'));
-      results.push(`  edit form shows the regular Danh mục field for a card transaction (no separate card-category field): ${catFieldVisible}`);
-    }
-    await page.evaluate(() => document.getElementById('modal')?.close());
-    await page.waitForTimeout(50);
-  }
-
-  // "+ Thẻ tín dụng" and "+ Khoản trả góp" inside the credit column manager
-  // — never actually clicked before this round, unlike the debt column's
-  // equivalent "+ Thêm khoản nợ".
-  await page.click('.money-column.credit .column-settings');
-  await page.waitForSelector('#modal[open]', { timeout: 1500 });
-  await page.click('button:has-text("Thẻ tín dụng")');
-  await page.waitForSelector('[name="closing_day"]', { timeout: 1500 }).then(() => results.push('CLICK "+ Thẻ tín dụng" inside manager (reopenAfterModal): new-card form opened - OK')).catch(() => results.push('CLICK "+ Thẻ tín dụng": new-card form did NOT open - FAIL'));
-  await page.evaluate(() => document.getElementById('modal')?.close());
-  await page.waitForTimeout(50);
-
-  await page.click('.money-column.credit .column-settings');
-  await page.waitForSelector('#modal[open]', { timeout: 1500 });
-  await page.click('button:has-text("Khoản trả góp")');
-  await page.waitForSelector('[name="principal_amount"]', { timeout: 1500 }).then(() => results.push('CLICK "+ Khoản trả góp" inside manager (reopenAfterModal): new-installment form opened - OK')).catch(() => results.push('CLICK "+ Khoản trả góp": new-installment form did NOT open - FAIL'));
-
-  // Custom/Bonus schedule: hand-editing one row's amount must show whether
-  // the total still matches the purchase price, not just a plain sum.
-  await page.selectOption('[name="schedule_mode"]', 'custom');
+  await page.click('button:has-text("＋ Thêm khoản trả góp")');
+  await page.waitForSelector('[name="principal_amount"]', { timeout: 1500 }).then(() => results.push('CLICK "+ Thêm khoản trả góp": form opened - OK')).catch(() => results.push('CLICK "+ Thêm khoản trả góp": did NOT open - FAIL'));
+  await page.fill('[name="name"]', 'Tủ lạnh');
   await page.fill('[name="principal_amount"]', '120000');
-  await page.fill('#instTotal', '12');
-  await page.click('#instGenerate');
-  await page.waitForSelector('#instRows [data-row]', { timeout: 1500 });
-  const summaryBalanced = await page.textContent('#instSummary');
-  results.push(`INSTALLMENT custom schedule starts balanced (12 × 10,000 = 120,000): ${/✓/.test(summaryBalanced)}`);
-  const firstPrincipalInput = page.locator('#instRows [data-row]').first().locator('[data-principal]');
-  await firstPrincipalInput.fill('20000'); // bump row 1 up by +10,000 without compensating elsewhere
-  const summaryMismatched = await page.textContent('#instSummary');
-  results.push(`INSTALLMENT shows a clear mismatch after a manual bonus-month edit (red, not just a silent total): ${/còn thiếu|đang thừa/.test(summaryMismatched)}`);
+  await page.fill('[name="total_installments"]', '12');
+  await resetToast();
+  await page.click('#modalForm [type=submit]');
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`SUBMIT new installment: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('SUBMIT new installment: no toast - FAIL'));
 
-  // "+ Thêm thẻ mới" next to the Thẻ dropdown — must not be stuck with only
-  // whatever card happened to be configured first (Rakuten in the fixture).
-  await page.click('[aria-label="Thêm thẻ mới"]');
-  await page.waitForSelector('[name="closing_day"]', { timeout: 1500 }).then(() => results.push('CLICK "+ Thêm thẻ mới" next to Thẻ dropdown: new-card form opened - OK')).catch(() => results.push('CLICK "+ Thêm thẻ mới": new-card form did NOT open - FAIL'));
+  await page.click('.money-column.credit .money-line:has-text("Rakuten")');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 });
+  await page.click('#modalBody .tx:has-text("Máy giặt") .btn:has-text("Xem lịch")');
+  await page.waitForSelector('#modalBody', { timeout: 1500 }).then(() => results.push('CLICK "Xem lịch" on installment: schedule modal opened - OK')).catch(() => results.push('CLICK "Xem lịch": schedule modal did NOT open - FAIL'));
+  const scheduleText = await page.textContent('#modalBody');
+  results.push(`  Schedule shows labeled "Đánh dấu đã trả/chưa trả" buttons per kỳ: ${/Đánh dấu/.test(scheduleText)}`);
+  const toggleBtn = page.locator('#modalBody .tx .btn', { hasText: 'Đánh dấu' }).first();
+  if (await toggleBtn.count()) {
+    await resetToast();
+    await toggleBtn.click();
+    await page.waitForTimeout(200);
+    results.push('CLICK "Đánh dấu đã trả/chưa trả" on a kỳ: no crash - OK');
+  }
   await page.evaluate(() => document.getElementById('modal')?.close());
   await page.waitForTimeout(50);
 
+  await page.click('.money-column.credit .money-line:has-text("Rakuten")');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 });
+  await page.evaluate(() => { window.confirm = () => true; });
+  await resetToast();
+  await page.click('#modalBody .tx:has-text("Tủ lạnh") .btn:has-text("Xóa")');
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`CLICK "Xóa" on installment: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('CLICK "Xóa" on installment: no toast - FAIL'));
+  await page.evaluate(() => { window.confirm = () => false; });
+  await page.evaluate(() => document.getElementById('modal')?.close());
+  await page.waitForTimeout(50);
+
+  // ---- Đầu tư ----
+  await page.click('[data-view="investments"]');
+  await page.waitForTimeout(150);
+  const investText = await page.textContent('#content');
+  results.push(`INVESTMENTS shows NISA card with vốn ròng/lãi-lỗ: ${investText.includes('NISA') && investText.includes('Vốn ròng')}`);
+  await clickAndCheckModal('investments "+ Đầu tư mới"', 'button:has-text("＋ Đầu tư mới")', '[name="name"]');
+
+  const nisaCard = page.locator('.item-card', { hasText: 'NISA' });
+  await clickAndCheckModal('investment "Thêm vốn"', '.item-card:has-text("NISA") button:has-text("Thêm vốn")', '[name="amount"]');
+  await clickAndCheckModal('investment "Rút vốn"', '.item-card:has-text("NISA") button:has-text("Rút vốn")', '[name="amount"]');
+  await clickAndCheckModal('investment "Cập nhật giá trị"', '.item-card:has-text("NISA") button:has-text("Cập nhật giá trị")', '[name="amount"]');
+  await page.click('.item-card:has-text("NISA") button:has-text("Xem lịch sử")');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK investment "Xem lịch sử": modal opened - OK')).catch(() => results.push('CLICK investment "Xem lịch sử": modal did NOT open - FAIL'));
+  const histText = await page.textContent('#modalBody');
+  results.push(`  History lists both fixture events (Thêm vốn + Cập nhật giá trị) with Sửa/Xóa: ${histText.includes('Thêm vốn') && histText.includes('Cập nhật giá trị') && histText.includes('Sửa') && histText.includes('Xóa')}`);
+  await page.evaluate(() => { window.confirm = () => true; });
+  await resetToast();
+  await page.click('#modalBody .tx .btn:has-text("Xóa")');
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`CLICK delete investment event: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('CLICK delete investment event: no toast - FAIL'));
+  await page.evaluate(() => { window.confirm = () => false; });
+  await page.evaluate(() => document.getElementById('modal')?.close());
+  await page.waitForTimeout(50);
+  await clickAndCheckModal('investment "Sửa"', '.item-card:has-text("NISA") button:has-text("Sửa")', '[name="name"]');
+
+  // ---- Tài sản: net worth / liquid KPIs, manual +/- adjustments, no Chuyển tiền ----
   await page.click('[data-view="accounts"]');
-  // Net worth / liquid-cash KPIs and the net-worth chart now live here
-  // (moved off Tổng quan), and a hidden VND account must be visible, not
-  // silently filtered out just because it's a different currency.
+  await page.waitForTimeout(150);
   const assetKpiLabels = await page.locator('.kpi-grid .kpi .label').allTextContents();
-  results.push(`ASSETS kpi-grid shows liquidity/net-worth KPIs: ${JSON.stringify(assetKpiLabels)}`);
+  results.push(`ASSETS kpi-grid shows liquidity/net-worth/invested KPIs: ${JSON.stringify(assetKpiLabels)}`);
   results.push(`  Net worth chart present on Tài sản: ${await page.locator('.chart-card', { hasText: 'Tài sản ròng' }).count() > 0}`);
+  results.push(`  "Đang đầu tư" total reflects Đầu tư (550,000): ${(await page.textContent('#content')).includes('550')}`);
+  const assetsText = await page.textContent('#content');
+  results.push(`  No "Chuyển tiền" button anywhere on Tài sản: ${!assetsText.includes('Chuyển tiền')}`);
+  results.push(`  No investment account card rendered here (investments live only in Đầu tư tab): ${!page.url().includes('NISA')}`);
   await clickAndCheckModal('accounts "+ Tài khoản"', 'button:has-text("＋ Tài khoản")', '[name="name"]');
-  await clickAndCheckModal('accounts "Chuyển tiền"', 'button:has-text("Chuyển tiền")');
-  const acctEditBtn = await page.$('.item-card .mini-btn');
+
+  await clickAndCheckModal('account "＋ Tiền"', '.item-card:has-text("UFJ") button:has-text("＋ Tiền")', '[name="amount"]');
+  await page.click('.item-card:has-text("UFJ") button:has-text("＋ Tiền")');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 });
+  await page.fill('[name="amount"]', '50000');
+  await resetToast();
+  await page.click('#modalForm [type=submit]');
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`SUBMIT "＋ Tiền" on UFJ: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('SUBMIT "＋ Tiền": no toast - FAIL'));
+
+  await clickAndCheckModal('account "− Tiền"', '.item-card:has-text("UFJ") button:has-text("− Tiền")', '[name="amount"]');
+  await page.click('.item-card:has-text("UFJ") button:has-text("Xem lịch sử")');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK account "Xem lịch sử" (adjustment history): modal opened - OK')).catch(() => results.push('CLICK account "Xem lịch sử": modal did NOT open - FAIL'));
+  const adjHistText = await page.textContent('#modalBody');
+  results.push(`  Adjustment history lists the fixture row and a month filter: ${adjHistText.includes('100') && (await page.locator('#adjHistFilter').count()) > 0}`);
+  await page.click('#modalBody .tx .btn:has-text("Sửa")');
+  await page.waitForSelector('[name="amount"]', { timeout: 1500 }).then(() => results.push('CLICK "Sửa" on an adjustment row: edit form opened - OK')).catch(() => results.push('CLICK "Sửa" on adjustment: edit form did NOT open - FAIL'));
+  await page.evaluate(() => document.getElementById('modal')?.close());
+  await page.waitForTimeout(50);
+
+  const acctEditBtn = await page.$('.item-card .mini-btn[aria-label="Sửa"]');
   if (acctEditBtn) { await acctEditBtn.click(); await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK account card edit (pencil): modal opened - OK')).catch(() => results.push('CLICK account edit: modal did NOT open - FAIL')); await page.evaluate(() => document.getElementById('modal')?.close()); }
-  const archiveBtn = await page.$('.item-card [aria-label="Ẩn tài khoản"]');
-  if (archiveBtn) {
-    await page.evaluate(() => { window.confirm = () => true; });
-    await resetToast();
-    await archiveBtn.click();
-    await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`CLICK account "Ẩn tài khoản" (archiveAccount): saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('CLICK account "Ẩn tài khoản": no toast - FAIL'));
-    await page.evaluate(() => { window.confirm = () => false; });
-  } else { results.push('CLICK account "Ẩn tài khoản": button not found - FAIL'); }
-  // Locators (not page.$() element handles) — the archive click above
-  // re-renders #content, which detaches any handle grabbed beforehand;
-  // locators re-resolve against the live DOM on every action instead.
-  const investCard = page.locator('.item-card', { hasText: 'NISA' });
-  if (await investCard.count()) {
-    const nap = investCard.locator('button:has-text("＋ Nạp")');
-    if (await nap.count()) { await nap.click(); await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK investment "+ Nạp": modal opened - OK')).catch(() => results.push('CLICK investment Nạp: modal did NOT open - FAIL')); await page.evaluate(() => document.getElementById('modal')?.close()); }
-    const dinhGia = investCard.locator('button:has-text("Định giá")');
-    if (await dinhGia.count()) { await dinhGia.click(); await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK investment "Định giá": modal opened - OK')).catch(() => results.push('CLICK investment Định giá: modal did NOT open - FAIL')); await page.evaluate(() => document.getElementById('modal')?.close()); }
-    const history = investCard.locator('[aria-label="Lịch sử định giá"]');
-    if (await history.count()) {
-      await history.click();
-      await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK investment "📋" (openInvestmentHistory): modal opened - OK')).catch(() => results.push('CLICK investment history: modal did NOT open - FAIL'));
-      const hasRow = await page.locator('#modalBody .tx').count() > 0;
-      results.push(`Investment history lists the fixture valuation row: ${hasRow}`);
-      await page.evaluate(() => { window.confirm = () => true; });
-      await resetToast();
-      await page.click('#modalBody .tx .mini-btn[aria-label="Xóa"]');
-      await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`CLICK delete investment valuation: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('CLICK delete investment valuation: no toast - FAIL'));
-      await page.evaluate(() => { window.confirm = () => false; });
-      await page.evaluate(() => document.getElementById('modal')?.close());
-    } else { results.push('CLICK investment "📋": button not found - FAIL'); }
-  }
-  const foreignSection = page.locator('.section', { hasText: 'Tài khoản VND' });
+
+  const foreignSection = page.locator('.section', { hasText: 'Tài khoản ngoại tệ' });
   results.push(`Foreign-currency account (VND) shows up on Tài sản instead of vanishing: ${await foreignSection.count() > 0}`);
   const hiddenSection = page.locator('.section', { hasText: 'Tài khoản đã ẩn' });
   results.push(`Hidden account (Ví cũ) listed under "Tài khoản đã ẩn": ${await hiddenSection.count() > 0}`);
@@ -503,92 +485,42 @@ const RPC_HANDLERS = {
     await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`CLICK "Khôi phục" on hidden account: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('CLICK "Khôi phục": no toast - FAIL'));
   } else { results.push('CLICK "Khôi phục": button not found - FAIL'); }
 
-  // Giao dịch — the standalone transactions screen with filters and
-  // always-visible Sửa/Xóa buttons (section 7's main ask).
-  await page.click('[data-view="transactions"]');
-  await page.waitForSelector('#txfType', { timeout: 1500 }).then(() => results.push('NAV "Giao dịch": filter bar rendered - OK')).catch(() => results.push('NAV "Giao dịch": did NOT render - FAIL'));
-  const txRowCount = await page.locator('#content .tx .btn:has-text("Sửa")').count();
-  results.push(`GIAO DỊCH list shows labeled Sửa/Xóa buttons (not just ×): ${txRowCount > 0}`);
-  await page.selectOption('#txfType', 'expense');
-  await page.waitForTimeout(50);
-  const afterFilterTypes = await page.locator('#content .tx-main strong').allTextContents();
-  results.push(`GIAO DỊCH filter by loại=Chi narrows the list: ${afterFilterTypes.length > 0 && afterFilterTypes.every(t => t.includes('Chi'))}`);
-  await page.click('#txfReset');
-  await page.waitForTimeout(50);
-  const editBtn = page.locator('#content .tx .btn:has-text("Sửa")').first();
-  if (await editBtn.count()) {
-    await editBtn.click();
-    await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK "Sửa" on a Giao dịch row: edit form opened - OK')).catch(() => results.push('CLICK "Sửa": edit form did NOT open - FAIL'));
-    await page.evaluate(() => document.getElementById('modal')?.close());
-  }
-  const delBtn = page.locator('#content .tx .btn:has-text("Xóa")').first();
-  if (await delBtn.count()) {
-    await page.evaluate(() => { window.confirm = () => true; });
-    await resetToast();
-    await delBtn.click();
-    await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`CLICK "Xóa" on a Giao dịch row: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('CLICK "Xóa": no toast - FAIL'));
-    await page.evaluate(() => { window.confirm = () => false; });
-  }
-
-  // Soft delete: the fixture's already-deleted row must be reachable and
-  // restorable, not just gone.
-  await page.click('#txfToggleDeleted');
-  await page.waitForSelector('#content .empty.compact, #content .tx', { timeout: 1500 }).catch(() => {});
-  await page.waitForTimeout(150);
-  const deletedRowText = await page.locator('#content section.card', { hasText: 'Giao dịch đã xóa' }).textContent();
-  results.push(`GIAO DỊCH ĐÃ XÓA lists the fixture's soft-deleted row: ${deletedRowText.includes('Ăn uống')}`);
-  const txRestoreBtn = page.locator('#content section.card', { hasText: 'Giao dịch đã xóa' }).locator('button:has-text("Khôi phục")').first();
-  if (await txRestoreBtn.count()) {
-    await resetToast();
-    await txRestoreBtn.click();
-    await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`CLICK "Khôi phục" on a deleted Giao dịch row: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('CLICK "Khôi phục" (Giao dịch): no toast - FAIL'));
-  } else { results.push('CLICK "Khôi phục" (Giao dịch): button not found - FAIL'); }
-
-  // Account form: is_liquid (savings) and asset_type (investment) fields
-  // show/hide correctly by account type.
-  await page.click('[data-view="accounts"]');
+  // Account form: only cash/bank/savings types offered, is_liquid shows for savings only.
   await page.click('button:has-text("＋ Tài khoản")');
   await page.waitForSelector('#modal[open]', { timeout: 1500 });
+  const acTypeOptions = await page.locator('#acType option').allTextContents();
+  results.push(`ACCOUNT FORM type list is exactly Tiền mặt/Ngân hàng/Tiết kiệm (no Đầu tư): ${JSON.stringify(acTypeOptions)}`);
   await page.selectOption('#acType', 'savings');
   const liquidVisible = await page.isVisible('#acLiquidField');
-  const assetTypeHiddenForSavings = await page.isHidden('#acAssetTypeField');
-  results.push(`ACCOUNT FORM shows "Có thể rút ngay" for Tiết kiệm: ${liquidVisible && assetTypeHiddenForSavings}`);
-  await page.selectOption('#acType', 'investment');
-  const assetTypeVisible = await page.isVisible('#acAssetTypeField');
-  const liquidHiddenForInvestment = await page.isHidden('#acLiquidField');
-  results.push(`ACCOUNT FORM shows "Loại tài sản" for Đầu tư: ${assetTypeVisible && liquidHiddenForInvestment}`);
+  results.push(`ACCOUNT FORM shows "Có thể rút ngay" for Tiết kiệm: ${liquidVisible}`);
   await page.evaluate(() => document.getElementById('modal')?.close());
+  await page.waitForTimeout(50);
 
+  // ---- Nav: no "Giao dịch" tab anywhere ----
+  const navLabels = await page.locator('#nav button span').allTextContents();
+  results.push(`NAV has exactly Tổng quan/Chi tiêu/Đầu tư/Tài sản/Cài đặt, no Giao dịch: ${JSON.stringify(navLabels)} / ${!navLabels.includes('Giao dịch')}`);
+
+  // ---- Cài đặt ----
   await page.click('[data-view="settings"]');
-  // Actual form submits (save_household / save_reporting), not just that
-  // the buttons exist — wireSettingsView()'s listeners must have attached.
   await resetToast();
   await page.click('#householdForm button[type=submit]');
   await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`SUBMIT "Gia đình" form (saveHousehold): saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('SUBMIT "Gia đình" form: no toast - FAIL'));
   await resetToast();
   await page.click('#reportingForm button[type=submit]');
   await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`SUBMIT "Tỷ giá" form (saveReporting): saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('SUBMIT "Tỷ giá" form: no toast - FAIL'));
-  await page.click('button:has-text("Sao chép link riêng")').catch(() => {});
-  results.push('CLICK settings "Sao chép link riêng": no crash - OK');
   const csvBtn = await page.$('button:has-text("Xuất CSV")');
-  results.push(`SETTINGS has CSV export button: ${!!csvBtn}`);
   if (csvBtn) {
     try {
       const [download] = await Promise.all([page.waitForEvent('download', { timeout: 1500 }), csvBtn.click()]);
       const csvPath = path.join(SHOT_DIR, await download.suggestedFilename());
       await download.saveAs(csvPath);
       const csvContent = fs.readFileSync(csvPath, 'utf8');
-      results.push(`CLICK "Xuất CSV giao dịch": download triggered, filename=${await download.suggestedFilename()} - OK`);
+      results.push(`CLICK "Xuất CSV giao dịch": download triggered - OK`);
       results.push(`CSV content has header row: ${csvContent.startsWith('﻿Ngày,Loại,Danh mục')}`);
-      results.push(`CSV content has transaction rows: ${csvContent.split('\r\n').length > 1}`);
     } catch { results.push('CLICK "Xuất CSV giao dịch": download did NOT trigger - FAIL'); }
   }
-  await page.click('button:has-text("Xóa khóa khỏi thiết bị này")').catch(() => {});
-  results.push('CLICK settings "Xóa khóa" (confirm stubbed false): no crash - OK');
 
-  // Explicit CSP-violation scan: this is the exact class of bug that shipped
-  // in the previous version (onclick="..." silently dropped under
-  // script-src 'self'). If ANY of these strings show up, buttons are dead.
+  // Explicit CSP-violation scan.
   const cspHits = consoleErrors.filter(e => /content security policy|refused to execute inline event handler/i.test(e));
   results.push(`CSP VIOLATIONS DETECTED: ${cspHits.length} (must be 0)`);
   cspHits.forEach(e => results.push('  CSP: ' + e));

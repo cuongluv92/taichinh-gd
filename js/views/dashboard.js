@@ -1,7 +1,8 @@
 // ==========================================================================
-// Tổng quan — full analytics dashboard. KPIs, plan vs actual, recent
-// transactions, charts, and a plan/actual comparison table. No leftover
-// "Việc cần chú ý" / "Góc nhìn nhanh" / duplicate allocation cards.
+// Tổng quan — month-only report. Uses ONLY the selected month's income/
+// expense + Thẻ & trả góp + Nợ data (F.statsFor). Never reads accounts,
+// never reads investments — no bank balance, net worth, liquid cash, total
+// assets, or investment value appears anywhere on this page.
 // ==========================================================================
 'use strict';
 
@@ -9,31 +10,29 @@ function kpiCard(label, value, sub, cls = '') {
   return `<section class="card kpi"><div class="label">${esc(label)}</div><div class="value ${cls}">${value}</div><div class="sub">${sub}</div></section>`;
 }
 
+const DASH_POSITIVE_TYPES = new Set(['income', 'loan_borrow', 'loan_collect']);
 function txLabel(t) {
   const type = t.transaction_type;
   const loan = (state.loans || []).find(l => l.id === t.loan_id);
   const map = {
     income: t.category_name || 'Thu nhập', expense: t.category_name || 'Chi tiêu',
-    transfer: `${t.account_name || 'Tài khoản'} → ${t.transfer_account_name || 'Tài khoản'}`,
-    loan_borrow: `Vay · ${loan?.counterparty || 'Khoản nợ'}`, loan_lend: `Cho vay · ${loan?.counterparty || ''}`,
-    loan_pay: `Trả nợ · ${loan?.counterparty || ''}`, loan_collect: `Thu hồi nợ · ${loan?.counterparty || ''}`,
-    loan_interest: `Lãi vay · ${loan?.counterparty || ''}`, investment_gain: `Tăng giá trị · ${t.account_name || 'Đầu tư'}`,
-    investment_loss: `Giảm giá trị · ${t.account_name || 'Đầu tư'}`, goal_save: 'Góp mục tiêu', goal_withdraw: 'Rút mục tiêu'
+    loan_borrow: `Vay · ${loan?.counterparty || 'Khoản nợ'}`, loan_pay: `Trả nợ · ${loan?.counterparty || ''}`,
+    loan_collect: `Thu hồi nợ · ${loan?.counterparty || ''}`, loan_interest: `Lãi vay · ${loan?.counterparty || ''}`
   };
   return map[type] || 'Giao dịch';
 }
-function txTone(t) { return F.POSITIVE_TYPES.has(t.transaction_type) ? 'positive' : (F.TRANSFER_TYPES.has(t.transaction_type) ? 'transfer' : 'negative'); }
+function txTone(t) { return DASH_POSITIVE_TYPES.has(t.transaction_type) ? 'positive' : 'negative'; }
 function txListHtml(rows) {
   if (!rows.length) return '<div class="empty">Chưa có giao dịch thực tế trong tháng này.</div>';
-  const editable = new Set(['income', 'expense', 'transfer']);
+  const editable = new Set(['income', 'expense']);
   return `<div class="list">${rows.map(t => {
-    const tone = txTone(t), sign = tone === 'positive' ? '+' : tone === 'negative' ? '−' : '';
-    const cls = tone === 'positive' ? 'green' : tone === 'negative' ? 'red' : '';
-    const icon = tone === 'positive' ? '↓' : tone === 'transfer' ? '⇄' : '↑';
+    const tone = txTone(t), sign = tone === 'positive' ? '+' : '−';
+    const cls = tone === 'positive' ? 'green' : 'red';
+    const icon = tone === 'positive' ? '↓' : '↑';
     const canEdit = editable.has(t.transaction_type);
     return `<div class="tx"><button class="tx-row-btn${canEdit ? '' : ' no-cursor'}" ${canEdit ? act('openTransactionEdit', t.id) : 'disabled'}>
       <div class="tx-icon">${icon}</div>
-      <div class="tx-main"><strong>${esc(txLabel(t))}${F.isExceptional(t) ? ' <span class="status-chip warn">Bất thường</span>' : ''}</strong><span>${esc(String(t.transaction_date).slice(0, 10))}${t.account_name ? ` · ${esc(t.account_name)}` : ''}${t.note ? ` · ${esc(t.note)}` : ''}</span></div>
+      <div class="tx-main"><strong>${esc(txLabel(t))}${F.isExceptional(t) ? ' <span class="status-chip warn">Bất thường</span>' : ''}</strong><span>${esc(String(t.transaction_date).slice(0, 10))}${t.note ? ` · ${esc(t.note)}` : ''}</span></div>
       </button>
       <div class="tx-actions"><strong class="amount ${cls}">${sign}${money(t.amount, t.currency)}</strong>${canEdit ? `<button class="mini-btn" aria-label="Xóa" ${act('deleteTransaction', t.id)}>×</button>` : ''}</div>
     </div>`;
@@ -56,7 +55,6 @@ function compareRow(label, sub, target, actual, basis, mode) {
   </div>`;
 }
 
-// "" when there's no data for the comparison period (avoids /0).
 function compareText(cur, prev, label) {
   if (!(prev > 0)) return '';
   const diff = (cur - prev) / prev * 100;
@@ -80,13 +78,12 @@ function categoryTrendHtml() {
 }
 
 function upcomingDueHtml(items) {
-  if (!items.length) return '<div class="empty">Không có khoản nợ hay thẻ nào sắp đến hạn.</div>';
+  if (!items.length) return '<div class="empty">Không có khoản nợ nào sắp đến hạn.</div>';
   return `<div class="list">${items.map(x => {
-    const openAct = x.kind === 'loan' ? act('openLoanPayment', x.id) : act('openStatementPayment', x.id);
     const overdue = x.date && daysUntil(x.date) < 0;
     const dateNote = x.date ? ` · ${overdue ? 'Quá hạn' : 'Hạn'} ${esc(String(x.date).slice(0, 10))}` : '';
-    return `<div class="tx"><button class="tx-row-btn" ${openAct}>
-      <div class="tx-icon">${x.kind === 'loan' ? '↑' : '⇄'}</div>
+    return `<div class="tx"><button class="tx-row-btn" ${act('openLoanPayment', x.id)}>
+      <div class="tx-icon">↑</div>
       <div class="tx-main"><strong>${esc(x.label)}</strong><span>${esc(x.note)}${dateNote}</span></div>
       </button>
       <div class="tx-actions"><strong class="amount ${overdue ? 'red' : ''}">${money(x.amount, x.currency)}</strong></div>
@@ -94,85 +91,102 @@ function upcomingDueHtml(items) {
   }).join('')}</div>`;
 }
 
+// "Tổng theo từng tháng trong năm" — the 12 calendar months of the selected
+// year (Jan..Dec), not a rolling window, so it reads as one fiscal year.
+function yearMonthlyHtml() {
+  const year = state.month.slice(0, 4);
+  const rows = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`).map(k => ({ k, s: F.statsFor(k) }));
+  const max = Math.max(1, ...rows.flatMap(r => [r.s.income, r.s.expense]));
+  return `<div class="list">${rows.map(r => `<div class="category-trend-row">
+    <div class="tx-main"><strong>${fmtMonthKey(r.k)}</strong><span>Thu ${money(r.s.income)} · Chi ${money(r.s.expense)}</span></div>
+    ${sparklineSvg([{ month: 'Thu', value: r.s.income }, { month: 'Chi', value: r.s.expense }], 60, 28, max)}
+  </div>`).join('')}</div>`;
+}
+// "Năm nay so với năm trước" — year-to-date through the selected month, so
+// both years compare the same number of months.
+function yearOverYearHtml() {
+  const [y, m] = state.month.split('-').map(Number);
+  const monthsThisYear = Array.from({ length: m }, (_, i) => `${y}-${String(i + 1).padStart(2, '0')}`);
+  const monthsLastYear = monthsThisYear.map(k => addMonths(k, -12));
+  const sum = keys => keys.reduce((acc, k) => { const s = F.statsFor(k); acc.income += s.income; acc.expense += s.expense; return acc; }, { income: 0, expense: 0 });
+  const cur = sum(monthsThisYear), prev = sum(monthsLastYear);
+  return `<div class="compare-table">
+    <div class="compare-head"><span>Chỉ tiêu (lũy kế ${m} tháng đầu năm)</span><span>${y - 1}</span><span>${y}</span><span>So sánh</span></div>
+    <div class="compare-row"><div class="label"><b>Thu nhập</b></div><div>${money(prev.income)}</div><div>${money(cur.income)}</div><div>${yoyText(cur.income, prev.income).replace(/^ · /, '') || '—'}</div></div>
+    <div class="compare-row"><div class="label"><b>Chi tiêu</b></div><div>${money(prev.expense)}</div><div>${money(cur.expense)}</div><div>${yoyText(cur.expense, prev.expense).replace(/^ · /, '') || '—'}</div></div>
+  </div>`;
+}
+function biggestMoverHtml() {
+  const m = F.biggestCategoryMover(state.month);
+  if (!m || (!m.current && !m.previous)) return '<div class="empty compact">Chưa đủ dữ liệu để so sánh.</div>';
+  const up = m.diff >= 0;
+  return `<div class="compare-row"><div class="label"><b>${esc(m.name)}</b><small>${up ? 'Tăng nhiều nhất' : 'Giảm nhiều nhất'} so với tháng trước</small></div>
+    <div>${money(m.previous)}<br><small class="muted">Tháng trước</small></div>
+    <div>${money(m.current)}<br><small class="muted">Tháng này</small></div>
+    <div><span class="status-chip ${up ? 'bad' : 'good'}">${up ? '▲' : '▼'} ${money(Math.abs(m.diff))}</span></div>
+  </div>`;
+}
+
 function renderDashboard() {
-  const s = F.statsFor(F.periodTransactions(state.month));
+  const s = F.statsFor(state.month);
   const incomePlan = incomePlanTotal();
   const fixedPlan = F.orderedCategories('expense').filter(c => c.cost_type === 'fixed').reduce((a, c) => a + n(c.planned_amount), 0);
   const variablePlan = F.orderedCategories('expense').filter(c => c.cost_type !== 'fixed').reduce((a, c) => a + n(c.planned_amount), 0);
-  const p = state.allocationPlan && monthKey(state.allocationPlan.month) === state.month ? state.allocationPlan : { saving_pct: 0, investment_pct: 0, debt_pct: 0, interest_pct: 0 };
-  const savingTarget = incomePlan * n(p.saving_pct) / 100, investmentTarget = incomePlan * n(p.investment_pct) / 100;
-  const cardTarget = F.cardMonthTotalBase(), cardActual = (state.cardMonth || []).filter(x => (x.currency || state.base) === state.base && x.paid).reduce((sum, x) => sum + n(x.expected_amount), 0);
-  const debtTarget = F.debtMonthTotalBase(), debtActual = s.debtPay + s.loanInterest;
   const recent = [...state.transactions].sort((a, b) => String(b.transaction_date).localeCompare(String(a.transaction_date))).slice(0, 8);
   const expenseComposition = F.expenseByCategory(F.periodTransactions(state.month));
-  const prevStats = F.statsFor(F.periodTransactions(addMonths(state.month, -1)));
-  const prevYearStats = F.statsFor(F.periodTransactions(addMonths(state.month, -12)));
+  const prevStats = F.statsFor(addMonths(state.month, -1));
+  const prevYearStats = F.statsFor(addMonths(state.month, -12));
   const upcoming = F.upcomingDue(state.month);
   const yoy = (cur, prev) => { const t = yoyText(cur, prev); return t ? `<small class="muted">${t.replace(/^ · /, '')}</small>` : ''; };
+  const hasAnyActivity = (state.transactions || []).some(t => ['income', 'expense'].includes(t.transaction_type)) || s.card > 0 || s.debt > 0;
+  const ratio = pctText(s.expense, s.income);
 
-  // Spending-pace note: only meaningful while the month is still in progress.
-  const isCurrentMonth = state.month === localMonth();
-  let paceNote = 'Kế hoạch luôn hiển thị đầy đủ dù thực tế đang là 0.', paceCls = '';
-  if (isCurrentMonth && variablePlan > 0) {
-    const daysInMonth = new Date(Number(state.month.slice(0, 4)), Number(state.month.slice(5, 7)), 0).getDate();
-    const dayPct = new Date(localToday()).getDate() / daysInMonth * 100;
-    const spendPct = s.variable / variablePlan * 100;
-    const ahead = spendPct - dayPct;
-    paceCls = ahead > 15 ? 'bad' : ahead > 5 ? 'warn' : 'good';
-    paceNote = `${ahead > 5 ? '⚠ ' : ''}Đã dùng ${spendPct.toFixed(0)}% ngân sách chi biến động · đã qua ${dayPct.toFixed(0)}% số ngày trong tháng.`;
-  }
-
-  // Tổng quan reports the month's cash-flow result, not the household's
-  // asset position — net worth/liquid-cash/asset-mix now live on Tài sản,
-  // where "as of right now" actually makes sense (they're not month-scoped).
-  const budgetPlan = fixedPlan + variablePlan, budgetActual = s.fixed + s.variable;
-  // Remaining budget can't exceed money you've actually earned this month —
-  // capping the plan at real income means spending with zero income logged
-  // shows as a real deficit (negative) instead of "still ¥X left" against a
-  // plan you have no income to back yet.
-  const budgetAvailable = Math.min(budgetPlan, s.income);
-  const budgetRemaining = budgetAvailable - budgetActual;
-  const hasAnyActivity = (state.transactions || []).some(t => ['income', 'expense'].includes(t.transaction_type));
   return `
   <div class="grid kpi-grid">
     ${kpiCard('Thu nhập tháng', money(s.income), `Kế hoạch ${money(incomePlan)}${momText(s.income, prevStats.income)}`, 'green')}
-    ${kpiCard('Chi tiêu tháng', money(s.expense), `Ngân sách ${money(budgetPlan)} · ${pctText(s.expense, incomePlan)} thu nhập${momText(s.expense, prevStats.expense)}`, '')}
-    ${kpiCard('Ngân sách còn lại', money(budgetRemaining), `${money(budgetActual)} đã chi / ${money(budgetAvailable)} (giới hạn theo thu nhập thực nhận)`, budgetRemaining < 0 ? 'red' : 'green')}
-    ${kpiCard('Dòng tiền tháng', money(s.cashFlow), 'Tiền thực thu − tiền thực chi ra khỏi tài khoản', s.cashFlow < 0 ? 'red' : 'green')}
+    ${kpiCard('Tổng chi tiêu tháng', money(s.expense), `Cố định ${money(s.fixed)} · Biến động ${money(s.variable)} · Thẻ&góp ${money(s.card)} · Nợ ${money(s.debt)}${momText(s.expense, prevStats.expense)}`, '')}
+    ${kpiCard('Còn lại trong tháng', signedMoney(s.remaining), 'Thu nhập − Tổng chi tiêu tháng', s.remaining < 0 ? 'red' : 'green')}
+    ${kpiCard('Tỷ lệ chi tiêu / thu nhập', ratio, s.exceptional > 0 ? `Chưa tính ${money(s.exceptional)} chi bất thường` : 'Tổng chi tiêu so với thu nhập tháng', s.expense > s.income ? 'red' : '')}
   </div>
   ${!hasAnyActivity ? '<div class="card empty mt-16">Chưa có giao dịch thực tế trong tháng này.</div>' : ''}
 
   <section class="card mt-16">
-    <div class="section-head"><div><h2>Kế hoạch tháng ${fmtMonthKey(state.month)}</h2><p class="${paceCls === 'bad' ? 'red' : paceCls === 'warn' ? 'amber' : ''}">${esc(paceNote)}</p></div></div>
+    <div class="section-head"><div><h2>Kế hoạch vs Thực tế · Tháng ${fmtMonthKey(state.month)}</h2></div></div>
     <div class="compare-table">
       <div class="compare-head"><span>Nhóm</span><span>Kế hoạch</span><span>Thực tế</span><span>Cùng kỳ năm trước</span></div>
       <div class="compare-row"><div class="label"><b>Thu nhập</b></div><div>${money(incomePlan)}</div><div>${money(s.income)}</div><div>${yoy(s.income, prevYearStats.income)}</div></div>
-      <div class="compare-row"><div class="label"><b>Chi cố định</b></div><div>${money(fixedPlan)}<br><small class="muted">${pctText(fixedPlan, incomePlan)}</small></div><div>${money(s.fixed)}<br><small class="muted">${pctText(s.fixed, incomePlan)}</small></div><div>${yoy(s.fixed, prevYearStats.fixed)}</div></div>
-      <div class="compare-row"><div class="label"><b>Chi biến động</b></div><div>${money(variablePlan)}<br><small class="muted">${pctText(variablePlan, incomePlan)}</small></div><div>${money(s.variable)}<br><small class="muted">${pctText(s.variable, incomePlan)}</small></div><div>${yoy(s.variable, prevYearStats.variable)}</div></div>
+      <div class="compare-row"><div class="label"><b>Chi cố định</b></div><div>${money(fixedPlan)}</div><div>${money(s.fixed)}</div><div>${yoy(s.fixed, prevYearStats.fixed)}</div></div>
+      <div class="compare-row"><div class="label"><b>Chi biến động</b></div><div>${money(variablePlan)}</div><div>${money(s.variable)}</div><div>${yoy(s.variable, prevYearStats.variable)}</div></div>
+      <div class="compare-row"><div class="label"><b>Thẻ & trả góp</b></div><div>—</div><div>${money(s.card)}</div><div>${yoy(s.card, prevYearStats.card)}</div></div>
+      <div class="compare-row"><div class="label"><b>Nợ phải trả</b></div><div>—</div><div>${money(s.debt)}</div><div>${yoy(s.debt, prevYearStats.debt)}</div></div>
     </div>
   </section>
 
-  <section class="card section chart-card mt-16"><div class="section-head"><div><h2>Thu nhập vs Chi tiêu</h2><p>12 tháng gần nhất · theo ngày phát sinh giao dịch</p></div></div>${trendSvg()}</section>
+  <section class="card section chart-card mt-16"><div class="section-head"><div><h2>Thu nhập vs Chi tiêu</h2><p>12 tháng gần nhất</p></div></div>${trendSvg()}</section>
 
-  <section class="card section mt-16"><div class="section-head"><div><h2>Cơ cấu chi tiêu tháng</h2><p>${fmtMonthKey(state.month)}</p></div></div>
+  <div class="grid section-grid mt-16">
+    <section class="card section">
+      <div class="section-head"><div><h2>Từng tháng trong năm ${state.month.slice(0, 4)}</h2><p>Thu / chi theo từng tháng</p></div></div>
+      ${yearMonthlyHtml()}
+    </section>
+    <section class="card section">
+      <div class="section-head"><div><h2>Năm nay so với năm trước</h2><p>Lũy kế đến tháng ${fmtMonthKey(state.month)}</p></div></div>
+      ${yearOverYearHtml()}
+    </section>
+  </div>
+
+  <section class="card section mt-16">
+    <div class="section-head"><div><h2>Cơ cấu chi tiêu tháng</h2><p>${fmtMonthKey(state.month)}</p></div></div>
     ${expenseComposition.length ? `<div class="donut-layout">${donutSvg(expenseComposition)}${legendHtml(expenseComposition, 'income', s.income)}</div>` : '<div class="empty">Chưa có giao dịch thực tế trong tháng này.</div>'}</section>
+
+  <section class="card section mt-16">
+    <div class="section-head"><div><h2>Danh mục tăng/giảm nhiều nhất</h2><p>So với tháng trước</p></div></div>
+    <div class="compare-table">${biggestMoverHtml()}</div>
+  </section>
 
   <section class="card section mt-16">
     <div class="section-head"><div><h2>Xu hướng theo danh mục</h2><p>5 danh mục chi nhiều nhất tháng này · 6 tháng gần nhất</p></div></div>
     ${categoryTrendHtml()}
-  </section>
-
-  <section class="card section mt-16">
-    <div class="section-head"><div><h2>Kế hoạch vs Thực tế</h2><p>Toàn bộ dòng tiền được phân bổ trong tháng</p></div><button class="btn sm" ${act('openAllocationPlan')}>Sửa chỉ tiêu %</button></div>
-    <div class="compare-table">
-      <div class="compare-head"><span>Nhóm</span><span>Kế hoạch</span><span>Thực tế</span><span>Trạng thái</span></div>
-      ${compareRow('Chi cố định', 'Theo danh mục', fixedPlan, s.fixed, incomePlan, 'max')}
-      ${compareRow('Chi biến động', 'Theo danh mục', variablePlan, s.variable, incomePlan, 'max')}
-      ${compareRow('Thẻ & trả góp', 'Kỳ thanh toán tháng này', cardTarget, cardActual, incomePlan, 'max')}
-      ${compareRow('Nợ', 'Phải trả trong tháng', debtTarget, debtActual, incomePlan, 'max')}
-      ${compareRow('Tiết kiệm', `Chỉ tiêu ${n(p.saving_pct).toFixed(1)}%`, savingTarget, s.saving, incomePlan, 'min')}
-      ${compareRow('Đầu tư', `Chỉ tiêu ${n(p.investment_pct).toFixed(1)}%`, investmentTarget, s.investment, incomePlan, 'min')}
-    </div>
   </section>
 
   <div class="grid section-grid mt-16">
@@ -181,7 +195,7 @@ function renderDashboard() {
       ${txListHtml(recent)}
     </section>
     <section class="card section">
-      <div class="section-head"><div><h2>Sắp đến hạn</h2><p>Khoản nợ chưa trả · thẻ chưa thanh toán</p></div></div>
+      <div class="section-head"><div><h2>Sắp đến hạn</h2><p>Khoản nợ chưa trả</p></div></div>
       ${upcomingDueHtml(upcoming)}
     </section>
   </div>`;

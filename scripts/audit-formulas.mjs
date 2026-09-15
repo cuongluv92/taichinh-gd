@@ -3,6 +3,11 @@
 // Standalone formula audit — exercises the REAL js/finance.js code (not a
 // parallel reimplementation) against synthetic fixture data. No network,
 // no real household data touched. Run: node scripts/audit-formulas.mjs
+//
+// Covers the architecture split: Chi tiêu (month report) / Tài sản (manual
+// account balances) / Đầu tư (its own ledger, one-way link into Tài sản) are
+// independent systems — these cases are largely the acceptance scenarios
+// A-F from the spec that drove the split.
 // ==========================================================================
 import fs from 'node:fs';
 import path from 'node:path';
@@ -22,9 +27,6 @@ function eq(name, actual, expected, tol = 1e-6) {
 
 const sandbox = {
   console,
-  // Minimal stubs for the handful of lib.js helpers finance.js calls.
-  // These are pure formatting helpers with no bearing on the numbers being
-  // asserted below, so plain stand-ins are enough to let finance.js load.
   n: v => Number(v || 0),
   clamp0: v => Math.max(0, Number(v || 0)),
   money: (v, c) => `${Math.round(Number(v || 0))} ${c || ''}`,
@@ -36,7 +38,11 @@ const sandbox = {
   localToday: () => '2026-09-15',
   localMonth: () => '2026-09',
   addMonths: (ym, delta) => { const [y, m] = String(ym).slice(0, 7).split('-').map(Number); const idx = y * 12 + (m - 1) + delta; return `${Math.floor(idx / 12)}-${String(idx % 12 + 1).padStart(2, '0')}`; },
-  state: { base: 'JPY', month: '2026-09', analyticsYear: 2026, accounts: [], categories: [], categoryVersions: [], transactions: [], fullTransactions: [], loans: [], exceptionalIds: [], reporting: { show_vnd_conversion: false, jpy_vnd_rate: null } }
+  state: {
+    base: 'JPY', month: '2026-09', accounts: [], categories: [], categoryVersions: [], transactions: [], fullTransactions: [],
+    loans: [], exceptionalIds: [], reporting: { show_vnd_conversion: false, jpy_vnd_rate: null },
+    accountAdjustments: [], cardExpenses: [], installments: [], investments: [], investmentEvents: {}
+  }
 };
 sandbox.window = sandbox;
 vm.createContext(sandbox);
@@ -45,155 +51,154 @@ const F = sandbox.F;
 
 function resetState(patch) {
   Object.assign(sandbox.state, {
-    base: 'JPY', accounts: [], categories: [], categoryVersions: [], transactions: [], fullTransactions: [], loans: [], exceptionalIds: [], reporting: { show_vnd_conversion: false, jpy_vnd_rate: null }
+    base: 'JPY', accounts: [], categories: [], categoryVersions: [], transactions: [], fullTransactions: [],
+    loans: [], exceptionalIds: [], reporting: { show_vnd_conversion: false, jpy_vnd_rate: null },
+    accountAdjustments: [], cardExpenses: [], installments: [], investments: [], investmentEvents: {}
   }, patch);
 }
-function acc(id, type, currency, opening = 0) { return { id, account_type: type, currency, opening_balance: opening, is_active: true }; }
-function tx(overrides) { return { id: overrides.id || Math.random().toString(36).slice(2), currency: 'JPY', fx_rate: 1, ...overrides }; }
+function acc(id, type, currency, opening = 0, extra = {}) { return { id, account_type: type, currency, opening_balance: opening, is_active: true, ...extra }; }
+function tx(overrides) { return { id: overrides.id || Math.random().toString(36).slice(2), currency: 'JPY', ...overrides }; }
+function adj(id, accountId, direction, amount, date, currency = 'JPY') { return { id, account_id: accountId, direction, amount, currency, adjustment_date: date }; }
 
 // ---------------------------------------------------------------------
-// A. Thu nhập kế hoạch 440,000 / Chi cố định kế hoạch 126,500 => 28.75%
-// ---------------------------------------------------------------------
-{
-  const incomePlan = 440000, fixedPlan = 126500;
-  eq('A. Fixed-plan % of income-plan = 28.75%', fixedPlan / incomePlan * 100, 28.75, 1e-9);
-}
-
-// ---------------------------------------------------------------------
-// B. Credit card: purchase is an expense at purchase date; paying the
-//    statement the next month is a transfer and must NOT add expense again.
+// A. Chi biến động: Ăn uống ¥3,000 only increases Chi biến động + Tổng chi
+//    tiêu tháng; never touches accounts or any other column.
 // ---------------------------------------------------------------------
 {
   resetState({
-    accounts: [acc('bank', 'bank', 'JPY', 500000), acc('card', 'credit', 'JPY', 0)],
-    categories: [{ id: 'shopping', direction: 'expense', cost_type: 'variable', is_active: true }],
+    accounts: [acc('ufj', 'bank', 'JPY', 500000)],
+    accountAdjustments: [],
+    categories: [{ id: 'eat', direction: 'expense', cost_type: 'variable', name: 'Ăn uống', is_active: true }],
+    fullTransactions: [tx({ category_id: 'eat', transaction_type: 'expense', amount: 3000, transaction_date: '2026-09-10' })]
   });
-  const purchase = tx({ account_id: 'card', category_id: 'shopping', transaction_type: 'expense', amount: 30000, transaction_date: '2026-08-20' });
-  const payment = tx({ account_id: 'bank', transfer_account_id: 'card', transaction_type: 'transfer', amount: 30000, transaction_date: '2026-09-27' });
-  sandbox.state.fullTransactions = [purchase, payment];
-  sandbox.state.transactions = [payment]; // September's own ledger view
-  const augustStats = F.statsFor([purchase]);
-  const septemberStats = F.statsFor([payment]);
-  eq('B. Purchase month expense includes the 30,000 card purchase', augustStats.expense, 30000);
-  eq('B. Statement-payment month adds ZERO expense (no double count)', septemberStats.expense, 0);
-  const cardBalanceAfterPurchase = F.accountBalanceAt(sandbox.state.accounts[1], '2026-08-31');
-  const bankBalanceAfterPayment = F.accountBalanceAt(sandbox.state.accounts[0], '2026-09-30');
-  eq('B. Card balance goes to -30,000 after purchase (owed)', cardBalanceAfterPurchase, -30000);
-  eq('B. Bank balance drops by exactly 30,000 at payment (not 60,000)', bankBalanceAfterPayment, 470000);
+  sandbox.state.transactions = sandbox.state.fullTransactions;
+  const s = F.statsFor('2026-09');
+  eq('A. Chi biến động increases by exactly 3,000', s.variable, 3000);
+  eq('A. Tổng chi tiêu tháng increases by exactly 3,000 (fixed/card/debt untouched)', s.expense, 3000);
+  eq('A. Bank account balance is completely unaffected by an expense transaction', F.accountBalance(sandbox.state.accounts[0]), 500000);
 }
 
 // ---------------------------------------------------------------------
-// B2. A transaction flagged exceptional (taichinh_gd_exceptional_api 'set')
-//     must drop out of Chi cố định/Chi biến động and expenseByCategory, but
-//     still count in net worth / account balances — it happened, it just
-//     shouldn't skew the recurring monthly budget comparison.
+// B. Rakuten card expense ¥10,000: only Thẻ & trả góp increases, Chi biến
+//    động and accounts stay untouched. Edit to 12,000 and delete both
+//    recompute the column total correctly.
 // ---------------------------------------------------------------------
 {
   resetState({
-    accounts: [acc('bank', 'bank', 'JPY', 500000)],
-    categories: [{ id: 'repair', direction: 'expense', cost_type: 'variable', name: 'Sửa nhà', is_active: true }],
+    accounts: [acc('rakuten', 'credit', 'JPY', 0)],
+    cardExpenses: [{ id: 'ce1', card_account_id: 'rakuten', entry_mode: 'detail', expense_date: '2026-09-15', amount: 10000 }]
   });
-  const normal = tx({ id: 'tx-normal', account_id: 'bank', category_id: 'repair', transaction_type: 'expense', amount: 5000, transaction_date: '2026-09-05' });
-  const oneOff = tx({ id: 'tx-oneoff', account_id: 'bank', category_id: 'repair', transaction_type: 'expense', amount: 300000, transaction_date: '2026-09-10' });
-  sandbox.state.fullTransactions = [normal, oneOff];
-  sandbox.state.transactions = [normal, oneOff];
-  sandbox.state.exceptionalIds = ['tx-oneoff'];
-  const stats = F.statsFor([normal, oneOff]);
-  eq('B2. Exceptional expense excluded from variable-expense total', stats.variable, 5000);
-  eq('B2. Exceptional expense tracked in its own bucket, not lost', stats.exceptional, 300000);
-  eq('B2. categoryActualBase (budget column actuals) excludes the exceptional amount', F.categoryActualBase('repair', 'expense'), 5000);
-  eq('B2. expenseByCategory (dashboard donut) excludes the exceptional amount', F.expenseByCategory([normal, oneOff]).find(x => x.label === 'Sửa nhà')?.value, 5000);
-  eq('B2. Net worth still falls by the FULL amount incl. the exceptional expense', F.financialPosition('2026-09-30').netWorth, 500000 - 5000 - 300000);
+  let s = F.statsFor('2026-09');
+  eq('B. Thẻ & trả góp increases by exactly 10,000', s.card, 10000);
+  eq('B. Chi biến động unaffected by a card expense', s.variable, 0);
+  eq('B. Tổng chi tiêu tháng = the card amount only', s.expense, 10000);
+
+  // Edit to 12,000
+  sandbox.state.cardExpenses[0].amount = 12000;
+  s = F.statsFor('2026-09');
+  eq('B. After editing to 12,000, Thẻ & trả góp = 12,000', s.card, 12000);
+  eq('B. After editing, Tổng chi tiêu tháng = 12,000', s.expense, 12000);
+
+  // Delete
+  sandbox.state.cardExpenses = [];
+  s = F.statsFor('2026-09');
+  eq('B. After deleting, Thẻ & trả góp returns to 0', s.card, 0);
+  eq('B. After deleting, Tổng chi tiêu tháng returns to 0', s.expense, 0);
 }
 
 // ---------------------------------------------------------------------
-// B3 (acceptance case C). A card is a PAYMENT ACCOUNT, not a category — a
-// Rakuten purchase for Mua sắm counts in Chi biến động exactly like a cash
-// purchase in the same category, on the purchase date, and simultaneously
-// shows up as informational "cardSpend". Paying the statement later must
-// never double-count as a second expense.
+// C. Trả góp ¥60,000 / 6 kỳ / ¥10,000 mỗi kỳ: each month shows only that
+//    month's due kỳ in Thẻ & trả góp; never appears in Chi biến động; never
+//    auto-deducts from a bank account.
+// ---------------------------------------------------------------------
+{
+  const schedule = Array.from({ length: 6 }, (_, i) => ({
+    installment_no: i + 1, payment_month: sandbox.addMonths('2026-09-01', i), principal_amount: 10000, fee_amount: 0, is_paid: false
+  }));
+  resetState({
+    accounts: [acc('rakuten', 'credit', 'JPY', 0), acc('ufj', 'bank', 'JPY', 500000)],
+    installments: [{ id: 'i1', card_account_id: 'rakuten', name: 'Máy giặt', principal_amount: 60000, total_installments: 6, currency: 'JPY', schedule }]
+  });
+  const sep = F.statsFor('2026-09'), oct = F.statsFor('2026-10'), dec = F.statsFor('2026-12');
+  eq('C. September shows exactly one kỳ (10,000) in Thẻ & trả góp', sep.card, 10000);
+  eq('C. October also shows exactly one kỳ (10,000), not the running total', oct.card, 10000);
+  eq('C. A month with no due kỳ (none scheduled past Feb) shows 0', dec.card, 10000); // Sep..Feb = 6 months, Dec is kỳ #4 = still 10,000
+  eq('C. Chi biến động never includes any installment amount', sep.variable, 0);
+  eq('C. Bank account balance is untouched by installment schedule', F.accountBalance(sandbox.state.accounts[1]), 500000);
+}
+
+// ---------------------------------------------------------------------
+// D. Điều chỉnh ngân hàng thủ công: +100,000 increases UFJ only, Thu nhập
+//    tháng unaffected; −20,000 decreases UFJ only, Chi tiêu tháng unaffected.
 // ---------------------------------------------------------------------
 {
   resetState({
-    accounts: [acc('bank', 'bank', 'JPY', 500000), acc('card', 'credit', 'JPY', 0)],
-    categories: [{ id: 'shopping', direction: 'expense', cost_type: 'variable', name: 'Mua sắm', is_active: true }],
+    accounts: [acc('ufj', 'bank', 'JPY', 500000)],
+    accountAdjustments: [adj('a1', 'ufj', 'increase', 100000, '2026-09-05')]
   });
-  const cash = tx({ account_id: 'bank', category_id: 'shopping', transaction_type: 'expense', amount: 20000, transaction_date: '2026-09-05' });
-  const card1000 = tx({ account_id: 'card', category_id: 'shopping', transaction_type: 'expense', amount: 1000, transaction_date: '2026-09-15' });
-  sandbox.state.fullTransactions = [cash, card1000];
-  sandbox.state.transactions = [cash, card1000];
-  const stats = F.statsFor([cash, card1000]);
-  eq('C. Chi biến động counts the card purchase too, same as cash, by category', stats.variable, 21000);
-  eq('C. cardSpend is informational (how much of that ran through a card)', stats.cardSpend, 1000);
-  eq('C. Overall "expense" (Chi tiêu tháng) = cash + card, no double count', stats.expense, 21000);
-  eq('C. categoryActualBase includes the card-paid row under its real category', F.categoryActualBase('shopping', 'expense'), 21000);
-  eq('C. expenseByCategory (dashboard donut) includes the card-paid row too', F.expenseByCategory([cash, card1000]).find(x => x.label === 'Mua sắm')?.value, 21000);
-  // A card purchase doesn't move real cash out of a bank/cash account yet —
-  // only the statement payment does — so it must be excluded from cashFlow
-  // outflow even though it's already recognized as expense.
-  eq('C. Dòng tiền tháng excludes the card purchase (no real cash left an account yet)', stats.cashFlow, -20000);
+  eq('D. Manual +100,000 increases UFJ balance to 600,000', F.accountBalance(sandbox.state.accounts[0]), 600000);
+  let s = F.statsFor('2026-09');
+  eq('D. Thu nhập tháng is untouched by a manual account increase', s.income, 0);
 
-  const statementPayment = tx({ account_id: 'bank', transfer_account_id: 'card', transaction_type: 'transfer', amount: 1000, transaction_date: '2026-10-27' });
-  sandbox.state.fullTransactions = [cash, card1000, statementPayment];
-  const octStats = F.statsFor([statementPayment]);
-  eq('C. Statement payment next month is not counted as expense a second time', octStats.expense, 0);
-  eq('C. Statement payment IS real cash out that month (dòng tiền)', octStats.cashFlow, -1000);
+  sandbox.state.accountAdjustments.push(adj('a2', 'ufj', 'decrease', 20000, '2026-09-06'));
+  eq('D. Manual -20,000 further decreases UFJ balance to 580,000', F.accountBalance(sandbox.state.accounts[0]), 580000);
+  s = F.statsFor('2026-09');
+  eq('D. Chi tiêu tháng is untouched by a manual account decrease', s.expense, 0);
 }
 
 // ---------------------------------------------------------------------
-// C. Bank loan repayment 50,000 = 40,000 principal + 10,000 interest.
-//    Principal must NOT count as household expense; interest must.
-//    Net worth must fall by exactly the interest portion.
+// E. Đầu tư NISA giá trị hiện tại ¥500,000: Đầu tư total = 500,000; Tài sản
+//    ròng increases by 500,000; Tiền thanh khoản does NOT increase; monthly
+//    Tổng quan (statsFor) is entirely unaffected.
 // ---------------------------------------------------------------------
 {
-  const opening = tx({ account_id: 'bank', loan_id: 'loan1', transaction_type: 'loan_borrow', amount: 2000000, transaction_date: '2026-01-10' });
   resetState({
-    accounts: [acc('bank', 'bank', 'JPY', 500000)],
-    loans: [{ id: 'loan1', loan_type: 'borrowed', currency: 'JPY', principal: 2000000, remaining_amount: 2000000, start_date: '2026-01-10' }],
-    fullTransactions: [opening]
+    accounts: [acc('ufj', 'bank', 'JPY', 200000)],
+    investments: [{ id: 'nisa', name: 'NISA', currency: 'JPY', initial_capital: 500000, total_contributed: 0, total_withdrawn: 0, latest_value: 500000, latest_value_date: '2026-09-15' }]
   });
-  const before = F.financialPosition(); // current position, loan freshly disbursed, nothing repaid yet
-  const principalTx = tx({ account_id: 'bank', loan_id: 'loan1', transaction_type: 'loan_pay', amount: 40000, transaction_date: '2026-09-05' });
-  const interestTx = tx({ account_id: 'bank', loan_id: 'loan1', transaction_type: 'loan_interest', amount: 10000, transaction_date: '2026-09-05' });
-  const stats = F.statsFor([principalTx, interestTx]);
-  eq('C. loan_pay (principal) counted as debtPay, NOT expense', stats.debtPay, 40000);
-  eq('C. loan_interest counted as expense', stats.loanInterest, 10000);
-  eq('C. Total expense = interest only (principal excluded)', stats.expense, 10000);
-  // Apply the payment: bank balance drops by the full 50,000; server updates
-  // remaining_amount by the 40,000 principal only (interest never touches it).
-  sandbox.state.fullTransactions = [opening, principalTx, interestTx];
-  sandbox.state.loans[0].remaining_amount = 2000000 - 40000;
-  const after = F.financialPosition();
-  eq('C. Net worth falls by exactly the 10,000 interest (not 50,000)', before.netWorth - after.netWorth, 10000);
+  eq('E. Đầu tư total current value = 500,000', F.investmentTotalValue(), 500000);
+  const pos = F.financialPosition();
+  eq('E. Tài sản ròng = bank (200,000) + invested (500,000)', pos.netWorth, 700000);
+  eq('E. Tiền thanh khoản does NOT include the investment', pos.liquid, 200000);
+  const s = F.statsFor('2026-09');
+  eq('E. Monthly Tổng quan (income/expense) is completely unaffected by investment data', s.income + s.expense, 0);
 }
 
 // ---------------------------------------------------------------------
-// D. Transfer bank -> savings is asset reallocation, not expense; it must
-//    show up as this month's "saving" contribution.
+// F. Báo cáo: switching months must not mix data; each month's stats are
+//    computed independently from the same shared fixture data.
 // ---------------------------------------------------------------------
 {
-  resetState({ accounts: [acc('bank', 'bank', 'JPY', 200000), acc('sav', 'savings', 'JPY', 0)] });
-  const t = tx({ account_id: 'bank', transfer_account_id: 'sav', transaction_type: 'transfer', amount: 30000, transaction_date: '2026-09-10' });
-  const stats = F.statsFor([t]);
-  eq('D. Bank->savings transfer adds ZERO expense', stats.expense, 0);
-  eq('D. Bank->savings transfer counts fully as "saving" for the month', stats.saving, 30000);
+  resetState({
+    categories: [{ id: 'eat', direction: 'expense', cost_type: 'variable', is_active: true }],
+    fullTransactions: [
+      tx({ category_id: 'eat', transaction_type: 'expense', amount: 3000, transaction_date: '2026-09-15' }),
+      tx({ category_id: 'eat', transaction_type: 'expense', amount: 9000, transaction_date: '2026-08-15' }),
+      tx({ category_id: 'eat', transaction_type: 'expense', amount: 4000, transaction_date: '2025-09-15' })
+    ]
+  });
+  eq('F. September 2026 sees only its own 3,000', F.statsFor('2026-09').variable, 3000);
+  eq('F. August 2026 sees only its own 9,000 (not mixed with September)', F.statsFor('2026-08').variable, 9000);
+  eq('F. September 2025 (same month last year) sees only its own 4,000', F.statsFor('2025-09').variable, 4000);
 }
 
 // ---------------------------------------------------------------------
-// E. Transfer bank -> investment is asset reallocation, not household
-//    expense; it must show up as this month's "investment" contribution.
+// Investment formulas: vốn ròng, lãi/lỗ, and the no-valuation-yet fallback.
 // ---------------------------------------------------------------------
 {
-  resetState({ accounts: [acc('bank', 'bank', 'JPY', 200000), acc('inv', 'investment', 'JPY', 0)] });
-  const t = tx({ account_id: 'bank', transfer_account_id: 'inv', transaction_type: 'transfer', amount: 50000, transaction_date: '2026-09-10' });
-  const stats = F.statsFor([t]);
-  eq('E. Bank->investment transfer adds ZERO household expense', stats.expense, 0);
-  eq('E. Bank->investment transfer counts fully as "investment" for the month', stats.investment, 50000);
+  const withValuation = { initial_capital: 100000, total_contributed: 50000, total_withdrawn: 20000, latest_value: 200000 };
+  eq('Vốn ròng = vốn ban đầu + vốn thêm − vốn rút', F.investmentNetCapital(withValuation), 130000);
+  eq('Giá trị hiện tại uses the latest valuation when one exists', F.investmentCurrentValue(withValuation), 200000);
+  eq('Lãi/lỗ = giá trị hiện tại − vốn ròng', F.investmentPL(withValuation), 70000);
+  eq('Lãi/lỗ % = lãi/lỗ ÷ vốn ròng × 100', F.investmentPLPercent(withValuation), 70000 / 130000 * 100, 1e-9);
+
+  const noValuation = { initial_capital: 100000, total_contributed: 0, total_withdrawn: 0, latest_value: null };
+  eq('With no valuation yet, giá trị hiện tại falls back to vốn ròng', F.investmentCurrentValue(noValuation), 100000);
+  eq('With no valuation yet, lãi/lỗ = 0', F.investmentPL(noValuation), 0);
 }
 
 // ---------------------------------------------------------------------
-// F. Category plan edited effective from October: September must keep the
-//    old value, October onward gets the new value (no rewriting history).
+// Category plan history (unaffected by the architecture split).
 // ---------------------------------------------------------------------
 {
   resetState({
@@ -202,71 +207,51 @@ function tx(overrides) { return { id: overrides.id || Math.random().toString(36)
       { category_id: 'salary', effective_month: '2026-10-01', name: 'Lương C', planned_amount: 300000 }
     ]
   });
-  eq('F. September still resolves to the old 280,000 plan', F.categoryVersionAt('salary', '2026-09-20').planned_amount, 280000);
-  eq('F. October resolves to the new 300,000 plan', F.categoryVersionAt('salary', '2026-10-02').planned_amount, 300000);
-  eq('F. November inherits forward (still 300,000, no new edit needed)', F.categoryVersionAt('salary', '2026-11-01').planned_amount, 300000);
+  eq('September still resolves to the old 280,000 plan', F.categoryVersionAt('salary', '2026-09-20').planned_amount, 280000);
+  eq('October resolves to the new 300,000 plan', F.categoryVersionAt('salary', '2026-10-02').planned_amount, 300000);
+  eq('November inherits forward (still 300,000, no new edit needed)', F.categoryVersionAt('salary', '2026-11-01').planned_amount, 300000);
 }
-
-// ---------------------------------------------------------------------
-// F2. Category trend widget must survive a rename: it groups by
-//     category_id, not the display name, so spend from before a rename
-//     doesn't silently read as zero once the name changes.
-// ---------------------------------------------------------------------
 {
   resetState({
     categories: [{ id: 'eat1', direction: 'expense', cost_type: 'variable', name: 'Ăn uống ngoài', is_active: true }],
     categoryVersions: [
       { category_id: 'eat1', effective_month: '2026-07-01', name: 'Ăn uống', cost_type: 'variable' },
       { category_id: 'eat1', effective_month: '2026-09-01', name: 'Ăn uống ngoài', cost_type: 'variable' }
+    ],
+    fullTransactions: [
+      tx({ category_id: 'eat1', transaction_type: 'expense', amount: 40000, transaction_date: '2026-07-15' }),
+      tx({ category_id: 'eat1', transaction_type: 'expense', amount: 50000, transaction_date: '2026-09-15' })
     ]
   });
-  sandbox.state.fullTransactions = [
-    tx({ account_id: 'bank', category_id: 'eat1', transaction_type: 'expense', amount: 40000, transaction_date: '2026-07-15' }),
-    tx({ account_id: 'bank', category_id: 'eat1', transaction_type: 'expense', amount: 50000, transaction_date: '2026-09-15' })
-  ];
-  const trend = F.categoryTrendData(5, 3, '2026-09'); // window = Jul, Aug, Sep
-  eq('F2. Renamed category collapses to exactly one trend row, not two', trend.length, 1);
-  eq('F2. Pre-rename month (July, old name) still shows its real spend', trend[0]?.series[0]?.value, 40000);
-  eq('F2. Post-rename month (September, new name) shows its spend', trend[0]?.series[2]?.value, 50000);
-  eq('F2. Row label uses the current name', trend[0]?.name, 'Ăn uống ngoài');
+  const trend = F.categoryTrendData(5, 3, '2026-09');
+  eq('Renamed category collapses to exactly one trend row, not two', trend.length, 1);
+  eq('Pre-rename month (July, old name) still shows its real spend', trend[0]?.series[0]?.value, 40000);
+  eq('Post-rename month (September, new name) shows its spend', trend[0]?.series[2]?.value, 50000);
+  eq('Row label uses the current name', trend[0]?.name, 'Ăn uống ngoài');
 }
 
 // ---------------------------------------------------------------------
-// Net-worth invariants (each of these must NOT create or destroy money):
+// Net-worth invariants — Tài sản is manual-only; loans stay untouched.
 // ---------------------------------------------------------------------
 {
   resetState({ accounts: [acc('bank', 'bank', 'JPY', 100000)] });
-  const nw0 = F.financialPosition().netWorth;
-  eq('Baseline net worth = opening balance', nw0, 100000);
+  eq('Baseline net worth = opening balance with no adjustments', F.financialPosition().netWorth, 100000);
 
   resetState({
     accounts: [acc('bank', 'bank', 'JPY', 100000)],
-    loans: [{ id: 'l', loan_type: 'borrowed', currency: 'JPY', principal: 100000, remaining_amount: 100000, start_date: '2026-01-01' }],
-    fullTransactions: [tx({ account_id: 'bank', loan_id: 'l', transaction_type: 'loan_borrow', amount: 100000, transaction_date: '2026-02-01' })]
+    accountAdjustments: [adj('a1', 'bank', 'increase', 50000, '2026-09-01')]
   });
-  eq('Borrowing 100,000: cash +100,000 and liability +100,000 => net worth unchanged', F.financialPosition().netWorth, 100000);
-  eq('Borrowing 100,000: liquidNet stays flat too (loan proceeds are not "extra" spendable money)', F.financialPosition().liquidNet, 100000);
-  eq('Borrowing 100,000: raw liquid DOES rise (it is real cash sitting in the account)', F.financialPosition().liquid, 200000);
+  eq('Manual increase raises both balance and net worth by the same amount', F.financialPosition().netWorth, 150000);
 
   resetState({
-    accounts: [acc('bank', 'bank', 'JPY', 80000), acc('sav', 'savings', 'JPY', 20000)],
-    fullTransactions: [tx({ account_id: 'bank', transfer_account_id: 'sav', transaction_type: 'transfer', amount: 20000, transaction_date: '2026-09-01' })]
+    accounts: [acc('bank', 'bank', 'JPY', 100000)],
+    loans: [{ id: 'l', loan_type: 'borrowed', currency: 'JPY', principal: 40000, remaining_amount: 40000, start_date: '2026-01-01' }]
   });
-  eq('Internal transfer between own accounts leaves net worth unchanged', F.financialPosition().netWorth, 100000);
+  const pos = F.financialPosition();
+  eq('An outstanding loan reduces net worth by its remaining amount', pos.netWorth, 60000);
+  eq('Loan does not affect liquid (a loan disbursement is never auto-posted to an account anymore)', pos.liquid, 100000);
+  eq('liquidNet = liquid − borrowed', pos.liquidNet, 60000);
 
-  resetState({
-    accounts: [acc('c1', 'bank', 'JPY', 100000), acc('c2', 'credit', 'JPY', 0)],
-    fullTransactions: [
-      tx({ account_id: 'c2', transaction_type: 'expense', amount: 10000, transaction_date: '2026-09-01', category_id: 'x' }),
-      tx({ account_id: 'c1', transfer_account_id: 'c2', transaction_type: 'transfer', amount: 10000, transaction_date: '2026-09-15' })
-    ]
-  });
-  eq('Card purchase then statement payment: net worth drops once (spend), not twice', F.financialPosition().netWorth, 90000);
-
-  // "Tiết kiệm dài hạn" (is_liquid=false): still a real asset (netWorth,
-  // totalAssets, invested-adjacent accountAssets), just not spendable today
-  // (liquid/liquidNet). A plain savings account (is_liquid omitted/true)
-  // keeps counting as liquid exactly like before this field existed.
   resetState({
     accounts: [
       acc('bank', 'bank', 'JPY', 100000),
@@ -276,11 +261,14 @@ function tx(overrides) { return { id: overrides.id || Math.random().toString(36)
   });
   const posLiquid = F.financialPosition();
   eq('Locked savings (is_liquid:false) excluded from liquid', posLiquid.liquid, 150000);
-  eq('Locked savings still counted in totalAssets/netWorth', posLiquid.netWorth, 180000);
+  eq('Locked savings still counted in netWorth', posLiquid.netWorth, 180000);
+
+  resetState({ accounts: [acc('rakuten', 'credit', 'JPY', 0)] });
+  eq('A credit (card) account never contributes to netWorth — it is a Chi tiêu identity only', F.financialPosition().netWorth, 0);
 }
 
 // ---------------------------------------------------------------------
-// Bank-loan amortisation math (元利均等 annuity formula).
+// Bank-loan amortisation math (元利均等 annuity formula) — unchanged.
 // ---------------------------------------------------------------------
 {
   eq('annuityPayment at 0% = principal / months', F.annuityPayment(120000, 0, 12), 10000, 1e-9);
