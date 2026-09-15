@@ -47,7 +47,7 @@
 
   const configuredCards=()=>activeAccounts().filter(a=>a.account_type==='credit'&&(state.cardSettings||[]).some(s=>s.account_id===a.id));
   const settingFor=id=>(state.cardSettings||[]).find(s=>s.account_id===id);
-  const localMonth=()=>String(V.localToday?.()||new Date().toISOString().slice(0,10)).slice(0,7);
+  const localMonth=()=>state.month||String(V.localToday?.()||new Date().toISOString().slice(0,10)).slice(0,7);
   const pad=n=>String(n).padStart(2,'0');
   function addMonths(ym,delta){
     const [y,m]=String(ym).slice(0,7).split('-').map(Number),idx=y*12+(m-1)+delta;
@@ -84,7 +84,7 @@
     const rows=[...document.querySelectorAll('#modalBody [data-cc-adv-row]')];
     const p=rows.reduce((s,r)=>s+Number(r.querySelector('[data-cc-adv-principal]')?.value||0),0);
     const f=rows.reduce((s,r)=>s+Number(r.querySelector('[data-cc-adv-fee]')?.value||0),0);
-    const el=document.querySelector('#ccAdvScheduleSummary');if(el)el.textContent=`Lịch tương lai: gốc ${money(p,state.base)} · phí ${money(f,state.base)} · ${rows.length} kỳ`;
+    const el=document.querySelector('#ccAdvScheduleSummary');if(el)el.textContent=`Lịch còn lại: gốc ${money(p,state.base)} · phí ${money(f,state.base)} · ${rows.length} kỳ`;
   }
 
   function generateCustomRows(){
@@ -110,8 +110,8 @@
     if(custom)custom.hidden=s.schedule!=='custom';
     if(equalExisting)equalExisting.hidden=!(s.entry==='existing'&&s.schedule==='equal');
     if(note)note.innerHTML=s.entry==='existing'
-      ?'<b>Đang trả dở:</b> app chỉ tạo lịch các kỳ còn lại, không ghi lại chi phí mua cũ. Dư nợ hiện tại của thẻ nên được phản ánh bằng số dư đầu/đối soát để thanh toán không làm thẻ thành số dương giả.'
-      :'<b>Mua mới:</b> toàn bộ giá mua được ghi chi một lần ở ngày mua; tháng trả thẻ chỉ là chuyển tiền, không tính chi lần hai.';
+      ?'<b>Đang trả dở:</b> nhập số kỳ đã trả và kỳ tiếp theo. App tự ghi nhận phần gốc còn lại là nghĩa vụ của thẻ; không cần nhập “số dư ban đầu”. Nếu có tháng Bonus hoặc số tiền khác, chọn “Tùy chỉnh / Bonus”.'
+      :'<b>Mua mới:</b> toàn bộ giá mua được ghi chi một lần ở ngày mua; các tháng trả thẻ chỉ thanh toán nghĩa vụ, không tính chi lần hai.';
   }
 
   function collectCustomSchedule(){
@@ -125,14 +125,14 @@
 
   function openAdvancedInstallment(){
     const cards=configuredCards(),cats=activeCategories('expense');
-    if(!cards.length)return toast('Hãy thiết lập chu kỳ cho ít nhất một thẻ trước.',true);
+    if(!cards.length)return toast('Hãy tạo thẻ và thiết lập ngày chốt/ngày trả trước.',true);
     if(!cats.length)return toast('Hãy tạo danh mục chi trước.',true);
     const today=V.localToday?.()||new Date().toISOString().slice(0,10);
-    modal('Thêm khoản trả góp',`<div id="ccAdvModeNote" class="cc-form-note"></div><div class="cc-adv-top"><div class="field"><label>Loại nhập</label><select name="entry_mode"><option value="purchase">Mua mới</option><option value="existing">Đang trả dở · nhập tay</option></select></div><div class="field"><label>Kiểu lịch</label><select name="schedule_mode"><option value="equal">Đều hàng tháng</option><option value="custom">Tùy chỉnh / Bonus</option></select></div></div><div class="cc-install-form"><div class="field full"><label>Tên khoản</label><input name="name" placeholder="VD: iPhone / Máy giặt / trả góp đang dở" required autofocus></div><div class="field"><label>Thẻ</label><select name="card_account_id" required>${options(cards,cards[0].id,a=>`${a.name} · ${a.currency}`)}</select></div><div class="field"><label>Giá mua ban đầu</label><input name="principal_amount" type="number" min="1" step="1" required></div><div class="field"><label>Tổng số kỳ</label><input name="total_installments" type="number" min="2" max="60" value="12" required><div class="cc-chips">${[3,6,10,12,24,36].map(k=>`<button type="button" data-cc-adv-terms="${k}">${k} kỳ</button>`).join('')}</div></div><div class="field"><label>Phí/lãi tổng</label><input name="fee_total" type="number" min="0" step="1" value="0"></div><div class="field"><label>Ngày mua</label><input name="purchase_date" type="date" value="${today}" required></div><div class="field"><label>Danh mục</label><select name="category_id" required>${options(cats,cats[0].id,c=>c.name)}</select></div><div id="ccAdvExisting" class="field full" hidden><div class="cc-adv-existing-grid"><div><label>Đã trả bao nhiêu kỳ</label><input name="paid_installments_before" type="number" min="0" max="59" value="0"></div><div><label>Kỳ tiếp theo</label><input name="next_payment_month" type="month" value="${localMonth()}"></div></div></div><div id="ccAdvEqualExisting" class="field full" hidden><small>Với lịch đều, app sẽ tạo đúng số kỳ còn lại từ “Kỳ tiếp theo”.</small></div><div id="ccAdvCustom" class="field full cc-adv-custom" hidden><div class="cc-adv-custom-head"><div><b>Lịch từng tháng</b><small>Nhấn tạo lịch đều rồi sửa riêng tháng Bonus/số tiền khác. Một khoản chỉ có một dòng mỗi tháng; nếu có Bonus cùng tháng hãy gộp vào số gốc của tháng đó.</small></div><button type="button" class="btn" data-cc-adv-generate>Tạo lịch dự kiến</button></div><div id="ccAdvRows" class="cc-adv-rows"></div><div id="ccAdvScheduleSummary" class="cc-adv-summary"></div></div><div class="field full"><label>Ghi chú</label><input name="note" placeholder="Tùy chọn"></div></div>`,async fd=>{
+    modal('Thêm khoản trả góp',`<div id="ccAdvModeNote" class="cc-form-note"></div><div class="cc-adv-top"><div class="field"><label>Loại khoản</label><select name="entry_mode"><option value="purchase">Mua mới</option><option value="existing">Đang trả dở · nhập lịch còn lại</option></select></div><div class="field"><label>Lịch thanh toán</label><select name="schedule_mode"><option value="equal">Số tiền đều hàng tháng</option><option value="custom">Từng tháng / Bonus</option></select></div></div><div class="cc-install-form"><div class="field full"><label>Tên khoản</label><input name="name" placeholder="VD: iPhone / Máy giặt / khoản đang trả" required autofocus></div><div class="field"><label>Thẻ</label><select name="card_account_id" required>${options(cards,cards[0].id,a=>`${a.name} · ${a.currency}`)}</select></div><div class="field"><label>Giá mua / gốc ban đầu</label><input name="principal_amount" type="number" min="1" step="1" required></div><div class="field"><label>Tổng số kỳ</label><input name="total_installments" type="number" min="2" max="60" value="12" required><div class="cc-chips">${[3,6,10,12,24,36].map(k=>`<button type="button" data-cc-adv-terms="${k}">${k} kỳ</button>`).join('')}</div></div><div class="field"><label>Phí/lãi tổng</label><input name="fee_total" type="number" min="0" step="1" value="0"></div><div class="field"><label>Ngày mua</label><input name="purchase_date" type="date" value="${today}" required></div><div class="field"><label>Danh mục</label><select name="category_id" required>${options(cats,cats[0].id,c=>c.name)}</select></div><div id="ccAdvExisting" class="field full" hidden><div class="cc-adv-existing-grid"><div><label>Đã trả bao nhiêu kỳ</label><input name="paid_installments_before" type="number" min="0" max="59" value="0"></div><div><label>Tháng bắt đầu trả tiếp</label><input name="next_payment_month" type="month" value="${localMonth()}"></div></div></div><div id="ccAdvEqualExisting" class="field full" hidden><small>App tự tính số tiền kỳ tiếp theo từ giá mua, tổng số kỳ và số kỳ đã trả. Nếu thực tế mỗi tháng khác nhau, hãy chọn “Từng tháng / Bonus”.</small></div><div id="ccAdvCustom" class="field full cc-adv-custom" hidden><div class="cc-adv-custom-head"><div><b>Lịch từng tháng</b><small>Tạo lịch dự kiến rồi sửa trực tiếp số tiền của từng tháng. Tháng thưởng/Bonus chọn “Bonus” và nhập đúng số phải trả của tháng đó.</small></div><button type="button" class="btn" data-cc-adv-generate>Tạo lịch dự kiến</button></div><div id="ccAdvRows" class="cc-adv-rows"></div><div id="ccAdvScheduleSummary" class="cc-adv-summary"></div></div><div class="field full"><label>Ghi chú</label><input name="note" placeholder="Tùy chọn"></div></div>`,async fd=>{
       const payload={...fd,paid_installments_before:fd.entry_mode==='existing'?Number(fd.paid_installments_before||0):0,next_payment_month:fd.entry_mode==='existing'&&fd.schedule_mode==='equal'&&fd.next_payment_month?`${fd.next_payment_month}-01`:null};
       if(fd.schedule_mode==='custom')payload.schedule=collectCustomSchedule();
       await planApi('create',payload);await refresh();
-    },'Lưu trả góp');
+    },'Lưu lịch trả góp');
 
     document.querySelectorAll('#modalBody [name="entry_mode"],#modalBody [name="schedule_mode"]').forEach(x=>x.addEventListener('change',syncAdvancedForm));
     document.querySelectorAll('#modalBody [data-cc-adv-terms]').forEach(b=>b.addEventListener('click',()=>{const x=document.querySelector('#modalBody [name="total_installments"]');if(x)x.value=b.dataset.ccAdvTerms}));
@@ -144,7 +144,7 @@
   async function showInstallmentSchedule(id){
     const x=(state.cardInstallments||[]).find(i=>i.id===id),d=await planApi('get_schedule',{id}),rows=d?.items||[];
     const body=rows.length?rows.map(r=>`<div class="cc-adv-history-row ${r.is_paid?'paid':''}"><div><b>Kỳ ${r.installment_no}</b><span>${esc(String(r.payment_month).slice(0,7))}</span></div><div><strong>${money(Number(r.principal_amount)+Number(r.fee_amount),x?.currency||state.base)}</strong><small>Gốc ${money(r.principal_amount,x?.currency||state.base)}${Number(r.fee_amount)?` · phí ${money(r.fee_amount,x?.currency||state.base)}`:''} · ${r.payment_kind==='bonus'?'Bonus':r.payment_kind==='manual'?'Thủ công':'Thường'}${r.is_paid?' · đã trả':''}</small></div></div>`).join(''):'<div class="cc-empty">Chưa có lịch.</div>';
-    modal(`Lịch trả · ${esc(x?.name||'Trả góp')}`,`<div class="cc-form-note">${x?.entry_mode==='existing'?'<b>Khoản nhập tay:</b> chỉ theo dõi phần lịch còn lại; không tạo lại chi phí mua cũ.':'Chi phí mua đã được ghi một lần ở ngày mua.'}</div><div class="cc-adv-history">${body}</div>`,async()=>{},'Đóng');
+    modal(`Lịch trả · ${esc(x?.name||'Trả góp')}`,`<div class="cc-form-note">${x?.entry_mode==='existing'?'<b>Khoản đang trả dở:</b> app theo dõi phần lịch còn lại và tự ghi nhận phần gốc chưa trả là nghĩa vụ của thẻ.':'Chi phí mua đã được ghi một lần ở ngày mua.'}</div><div class="cc-adv-history">${body}</div>`,async()=>{},'Đóng');
   }
 
   function decorateInstallments(){
@@ -155,7 +155,7 @@
       const top=card.querySelector('.cc-install-top>div');
       if(top&&!top.querySelector('[data-cc-adv-badge]')){
         const badge=document.createElement('small');badge.dataset.ccAdvBadge='1';badge.className='cc-adv-badge';
-        badge.textContent=[x.entry_mode==='existing'?'Nhập tay · đang trả dở':'Mua mới',x.schedule_mode==='custom'?'Lịch tùy chỉnh / Bonus':'Lịch đều'].join(' · ');top.appendChild(badge);
+        badge.textContent=[x.entry_mode==='existing'?'Đang trả dở':'Mua mới',x.schedule_mode==='custom'?'Lịch từng tháng / Bonus':'Lịch đều'].join(' · ');top.appendChild(badge);
       }
       if(!card.querySelector('[data-cc-adv-schedule]')){
         const b=document.createElement('button');b.type='button';b.dataset.ccAdvSchedule=x.id;b.className='cc-adv-schedule-btn';b.textContent='Xem lịch từng tháng';card.appendChild(b);
@@ -176,6 +176,8 @@
     e.preventDefault();e.stopImmediatePropagation();try{await showInstallmentSchedule(b.dataset.ccAdvSchedule)}catch(err){toast(err.message,true)}
   },true);
 
+  window.openInstallment=openAdvancedInstallment;
+  window.openAdvancedInstallment=openAdvancedInstallment;
   const renderBefore=window.render;
   if(typeof renderBefore==='function')window.render=function(...args){const out=renderBefore.apply(this,args);queueMicrotask(decorateInstallments);return out};
   queueMicrotask(decorateInstallments);
