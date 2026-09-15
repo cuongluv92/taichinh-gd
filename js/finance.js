@@ -137,7 +137,13 @@ F.financialPosition = (endDate = '9999-12-31') => {
   ac.forEach(a => {
     const bal = F.accountBalanceAt(a, endDate);
     if (bal >= 0) accountAssets += bal; else accountLiabilities += -bal;
-    if (['cash', 'bank', 'savings'].includes(a.account_type)) liquid += Math.max(0, bal);
+    // A savings account marked "dài hạn" (is_liquid=false) still counts as
+    // an asset (accountAssets above, so it's part of netWorth) but is
+    // excluded from "tiền thanh khoản" — it's not money you can spend
+    // today without breaking a term deposit. cash/bank/credit-adjacent
+    // types have no such concept and stay liquid=true implicitly.
+    const countsAsLiquid = a.account_type === 'cash' || a.account_type === 'bank' || (a.account_type === 'savings' && a.is_liquid !== false);
+    if (countsAsLiquid) liquid += Math.max(0, bal);
     if (a.account_type === 'investment') invested += Math.max(0, bal);
   });
   const receivables = (state.loans || []).filter(l => l.loan_type === 'lent' && (l.currency || state.base) === state.base).reduce((s, l) => s + F.historicalLoanRemaining(l, endDate), 0);

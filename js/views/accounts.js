@@ -9,12 +9,17 @@ const ACCOUNT_TYPE_LABEL = { cash: 'Tiền mặt', bank: 'Ngân hàng', savings:
 function accountCard(a) {
   const bal = F.accountBalance(a), isInvest = a.account_type === 'investment';
   const capital = isInvest ? F.investmentCapital(a) : 0, pl = isInvest ? bal - capital : 0, ret = capital > 0 ? pl / capital * 100 : null;
+  const isLockedSavings = a.account_type === 'savings' && a.is_liquid === false;
+  const eyebrowBits = [ACCOUNT_TYPE_LABEL[a.account_type] || a.account_type, a.currency || state.base];
+  if (isInvest && a.asset_type) eyebrowBits.splice(1, 0, a.asset_type);
+  if (isLockedSavings) eyebrowBits.push('dài hạn');
   return `<article class="card item-card">
     <div class="item-menu"><button class="mini-btn" aria-label="Sửa" ${act('openAccount', a.id)}>✎</button><button class="mini-btn" aria-label="Ẩn tài khoản" title="Ẩn tài khoản" ${act('archiveAccount', a.id)}>🗑</button></div>
-    <div class="eyebrow">${esc(ACCOUNT_TYPE_LABEL[a.account_type] || a.account_type)} · ${esc(a.currency || state.base)}</div>
+    <div class="eyebrow">${eyebrowBits.map(esc).join(' · ')}</div>
     <div class="big ${bal < 0 ? 'red' : ''}">${money(bal, a.currency)}</div>
     <strong>${esc(a.name)}</strong>
     ${isInvest ? `<div class="invest-summary"><span>Vốn ${money(capital, a.currency)}</span><span class="${pl >= 0 ? 'green' : 'red'}">${pl >= 0 ? '+' : ''}${money(pl, a.currency)}${ret !== null ? ` (${ret.toFixed(1)}%)` : ''}</span></div>` : ''}
+    ${isLockedSavings ? '<small class="muted">Không tính vào Tiền thanh khoản</small>' : ''}
     <div class="card-actions">
       ${isInvest
         ? `<button class="btn sm primary" ${act('openInvestmentTransfer', a.id, 'in')}>＋ Nạp</button><button class="btn sm" ${act('openInvestmentTransfer', a.id, 'out')}>Rút</button><button class="btn sm" ${act('openInvestmentValue', a.id)}>Định giá</button><button class="btn sm" aria-label="Lịch sử định giá" title="Xem/sửa/xóa các lần định giá trước" ${act('openInvestmentHistory', a.id)}>📋</button>`

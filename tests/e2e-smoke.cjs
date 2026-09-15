@@ -100,6 +100,8 @@ const RPC_HANDLERS = {
     if (action === 'bootstrap' || action === 'month') return { household: { name: 'Nguyễn Gia', base_currency: 'JPY' }, accounts: ACCOUNTS, categories: CATEGORIES, category_versions: [], transactions: MONTH_TX, goals: [], loans: LOANS, monthly_summary: [] };
     if (action === 'export') return { transactions: FULL_TX };
     if (action === 'save_account') return { ok: true, id: 'newacct1' };
+    if (action === 'deleted_transactions') return { items: [{ id: 'deltx1', account_id: 'cash', category_id: 'vr1', category_name: 'Ăn uống', transaction_type: 'expense', amount: 3000, currency: 'JPY', transaction_date: `${MONTH}-03`, note: '', deleted_at: `${MONTH}-14T10:00:00Z` }] };
+    if (action === 'restore_transaction') return { ok: true };
     return { ok: true, id: 'x' };
   },
   taichinh_gd_extension_api: (action) => {
@@ -527,6 +529,35 @@ const RPC_HANDLERS = {
     await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`CLICK "Xóa" on a Giao dịch row: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('CLICK "Xóa": no toast - FAIL'));
     await page.evaluate(() => { window.confirm = () => false; });
   }
+
+  // Soft delete: the fixture's already-deleted row must be reachable and
+  // restorable, not just gone.
+  await page.click('#txfToggleDeleted');
+  await page.waitForSelector('#content .empty.compact, #content .tx', { timeout: 1500 }).catch(() => {});
+  await page.waitForTimeout(150);
+  const deletedRowText = await page.locator('#content section.card', { hasText: 'Giao dịch đã xóa' }).textContent();
+  results.push(`GIAO DỊCH ĐÃ XÓA lists the fixture's soft-deleted row: ${deletedRowText.includes('Ăn uống')}`);
+  const txRestoreBtn = page.locator('#content section.card', { hasText: 'Giao dịch đã xóa' }).locator('button:has-text("Khôi phục")').first();
+  if (await txRestoreBtn.count()) {
+    await resetToast();
+    await txRestoreBtn.click();
+    await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`CLICK "Khôi phục" on a deleted Giao dịch row: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('CLICK "Khôi phục" (Giao dịch): no toast - FAIL'));
+  } else { results.push('CLICK "Khôi phục" (Giao dịch): button not found - FAIL'); }
+
+  // Account form: is_liquid (savings) and asset_type (investment) fields
+  // show/hide correctly by account type.
+  await page.click('[data-view="accounts"]');
+  await page.click('button:has-text("＋ Tài khoản")');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 });
+  await page.selectOption('#acType', 'savings');
+  const liquidVisible = await page.isVisible('#acLiquidField');
+  const assetTypeHiddenForSavings = await page.isHidden('#acAssetTypeField');
+  results.push(`ACCOUNT FORM shows "Có thể rút ngay" for Tiết kiệm: ${liquidVisible && assetTypeHiddenForSavings}`);
+  await page.selectOption('#acType', 'investment');
+  const assetTypeVisible = await page.isVisible('#acAssetTypeField');
+  const liquidHiddenForInvestment = await page.isHidden('#acLiquidField');
+  results.push(`ACCOUNT FORM shows "Loại tài sản" for Đầu tư: ${assetTypeVisible && liquidHiddenForInvestment}`);
+  await page.evaluate(() => document.getElementById('modal')?.close());
 
   await page.click('[data-view="settings"]');
   // Actual form submits (save_household / save_reporting), not just that

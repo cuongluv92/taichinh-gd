@@ -262,6 +262,21 @@ function tx(overrides) { return { id: overrides.id || Math.random().toString(36)
     ]
   });
   eq('Card purchase then statement payment: net worth drops once (spend), not twice', F.financialPosition().netWorth, 90000);
+
+  // "Tiết kiệm dài hạn" (is_liquid=false): still a real asset (netWorth,
+  // totalAssets, invested-adjacent accountAssets), just not spendable today
+  // (liquid/liquidNet). A plain savings account (is_liquid omitted/true)
+  // keeps counting as liquid exactly like before this field existed.
+  resetState({
+    accounts: [
+      acc('bank', 'bank', 'JPY', 100000),
+      { id: 'sav1', account_type: 'savings', currency: 'JPY', opening_balance: 50000, is_active: true, is_liquid: true },
+      { id: 'sav2', account_type: 'savings', currency: 'JPY', opening_balance: 30000, is_active: true, is_liquid: false }
+    ]
+  });
+  const posLiquid = F.financialPosition();
+  eq('Locked savings (is_liquid:false) excluded from liquid', posLiquid.liquid, 150000);
+  eq('Locked savings still counted in totalAssets/netWorth', posLiquid.netWorth, 180000);
 }
 
 // ---------------------------------------------------------------------

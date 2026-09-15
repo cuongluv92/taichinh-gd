@@ -8,6 +8,8 @@
 
 const TX_TYPE_LABEL = { income: 'Thu', expense: 'Chi', transfer: 'Chuyển khoản' };
 let txFilters = { type: '', category_id: '', account_id: '', from: '', to: '' };
+let showDeleted = false;
+let deletedTxCache = null; // null = not loaded yet; loaded lazily on toggle
 
 function txFilterRows() {
   const month = state.month;
@@ -45,6 +47,19 @@ function txRowHtml(t) {
   </div>`;
 }
 
+function deletedTxRowHtml(t) {
+  const acc = F.accountById(t.account_id);
+  const desc = t.transaction_type === 'transfer'
+    ? `${t.account_name || ''} → ${t.transfer_account_name || ''}`
+    : `${t.category_name || 'Chưa phân loại'}${acc?.account_type === 'credit' ? ` · ${acc.name}` : ''}`;
+  return `<div class="tx">
+    <div class="tx-main"><strong>${esc(String(t.transaction_date).slice(0, 10))} · ${esc(TX_TYPE_LABEL[t.transaction_type] || t.transaction_type)}</strong>
+      <span>${esc(desc)}${t.note ? ` · ${esc(t.note)}` : ''} · Đã xóa ${esc(String(t.deleted_at || '').slice(0, 16).replace('T', ' '))}</span>
+    </div>
+    <div class="tx-actions"><strong class="amount muted">${money(t.amount, t.currency)}</strong><button class="btn sm" ${act('restoreTransaction', t.id)}>Khôi phục</button></div>
+  </div>`;
+}
+
 function renderTransactions() {
   const rows = txFilterRows();
   const cats = [...F.orderedCategories('income'), ...F.orderedCategories('expense')];
@@ -71,6 +86,11 @@ function renderTransactions() {
   </section>
   <section class="card section mt-16">
     ${rows.length ? `<div class="list">${rows.map(txRowHtml).join('')}</div>` : '<div class="empty">Chưa có giao dịch thực tế phù hợp bộ lọc.</div>'}
+  </section>
+  <section class="card section mt-16">
+    <div class="section-head"><div><h2>Giao dịch đã xóa</h2><p>Xóa là xóa mềm — luôn khôi phục lại được.</p></div>
+      <button class="btn sm" id="txfToggleDeleted">${showDeleted ? 'Ẩn bớt' : 'Xem giao dịch đã xóa'}</button></div>
+    ${showDeleted ? (deletedTxCache === null ? '<div class="empty compact">Đang tải...</div>' : (deletedTxCache.length ? `<div class="list">${deletedTxCache.map(deletedTxRowHtml).join('')}</div>` : '<div class="empty compact">Chưa xóa giao dịch nào gần đây.</div>')) : ''}
   </section>`;
 }
 
@@ -80,6 +100,19 @@ function wireTransactionsView() {
   bind('#txfFrom', 'from'); bind('#txfTo', 'to');
   const reset = $('#txfReset');
   if (reset) reset.onclick = () => { txFilters = { type: '', category_id: '', account_id: '', from: '', to: '' }; window.render(); };
+  const toggle = $('#txfToggleDeleted');
+  if (toggle) toggle.onclick = async () => {
+    showDeleted = !showDeleted;
+    if (showDeleted && deletedTxCache === null) {
+      window.render();
+      try { deletedTxCache = (await api.core('deleted_transactions')).items || []; }
+      catch (e) { deletedTxCache = []; toast(e.message, true); }
+    }
+    window.render();
+  };
 }
+// A restore drops the cache so the next open of this list reflects it,
+// instead of showing a row that's already back.
+function invalidateDeletedTxCache() { deletedTxCache = null; }
 
 Object.assign(window, { renderTransactions, wireTransactionsView });

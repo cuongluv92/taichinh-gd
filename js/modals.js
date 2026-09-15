@@ -154,9 +154,17 @@ function openTransactionEdit(id) {
   typeEl.onchange = sync; accEl.onchange = sync; sync();
 }
 async function deleteTransaction(id) {
-  if (!confirm('Xóa giao dịch này?')) return;
+  if (!confirm('Xóa giao dịch này? (Có thể khôi phục lại ở màn hình Giao dịch)')) return;
   try { await api.core('delete_transaction', { id }); await window.refresh(); toast('Đã xóa giao dịch'); }
   catch (e) { toast(e.message, true); }
+}
+async function restoreTransaction(id) {
+  try {
+    await api.core('restore_transaction', { id });
+    window.invalidateDeletedTxCache?.();
+    await window.refresh();
+    toast('Đã khôi phục giao dịch');
+  } catch (e) { toast(e.message, true); }
 }
 
 // ---------------- Budget column settings (income / fixed / variable) ----------------
@@ -245,10 +253,22 @@ function openAccount(id = '') {
   const types = [['cash', 'Tiền mặt'], ['bank', 'Ngân hàng'], ['savings', 'Tiết kiệm'], ['investment', 'Đầu tư']];
   modal(id ? 'Sửa tài khoản' : 'Thêm tài khoản', `<div class="form-grid">
     <div class="field full"><label>Tên tài khoản</label><input name="name" value="${esc(a.name || '')}" required autofocus></div>
-    <div class="field"><label>Loại</label><select name="account_type" ${locked ? 'disabled' : ''}>${types.map(([v, l]) => `<option value="${v}" ${(a.account_type || 'bank') === v ? 'selected' : ''}>${l}</option>`).join('')}</select>${locked ? `<input type="hidden" name="account_type" value="${esc(a.account_type)}">` : ''}</div>
+    <div class="field"><label>Loại</label><select name="account_type" id="acType" ${locked ? 'disabled' : ''}>${types.map(([v, l]) => `<option value="${v}" ${(a.account_type || 'bank') === v ? 'selected' : ''}>${l}</option>`).join('')}</select>${locked ? `<input type="hidden" name="account_type" value="${esc(a.account_type)}">` : ''}</div>
     <div class="field"><label>Tiền tệ</label><select name="currency" ${locked ? 'disabled' : ''}><option value="JPY" ${(a.currency || state.base) === 'JPY' ? 'selected' : ''}>JPY</option><option value="VND" ${(a.currency || state.base) === 'VND' ? 'selected' : ''}>VND</option></select>${locked ? `<input type="hidden" name="currency" value="${esc(a.currency || state.base)}">` : ''}</div>
     <div class="field full"><label>Số dư ban đầu</label><input name="opening_balance" type="number" step="1" value="${esc(a.opening_balance || 0)}" ${locked ? 'readonly' : ''}>${locked ? '<small>Đã có giao dịch nên không đổi số dư gốc để tránh lệch lịch sử.</small>' : ''}</div>
-  </div>`, fd => api.core('save_account', { ...fd, id: id || null, opening_balance: locked ? a.opening_balance : fd.opening_balance }));
+    <div class="field full hidden" id="acLiquidField"><label class="checkbox-label"><input type="checkbox" id="acLiquid" ${a.is_liquid === false ? '' : 'checked'}> Có thể rút ngay (tính vào Tiền thanh khoản)</label><small>Bỏ chọn cho tiết kiệm dài hạn/kỳ hạn — vẫn tính vào Tài sản ròng, không tính vào Tiền thanh khoản.</small></div>
+    <div class="field full hidden" id="acAssetTypeField"><label>Loại tài sản</label><input name="asset_type" id="acAssetType" value="${esc(a.asset_type || '')}" placeholder="VD: Cổ phiếu, Quỹ ETF, Vàng, Bất động sản..."></div>
+  </div>`, fd => api.core('save_account', {
+    ...fd, id: id || null, opening_balance: locked ? a.opening_balance : fd.opening_balance,
+    is_liquid: fd.account_type === 'savings' ? $('#acLiquid').checked : true,
+    asset_type: fd.account_type === 'investment' ? (fd.asset_type || null) : null
+  }));
+  const typeEl = $('#acType');
+  const sync = () => {
+    $('#acLiquidField').classList.toggle('hidden', typeEl.value !== 'savings');
+    $('#acAssetTypeField').classList.toggle('hidden', typeEl.value !== 'investment');
+  };
+  typeEl.onchange = sync; sync();
 }
 async function archiveAccount(id) {
   if (!confirm('Ẩn tài khoản này? Giao dịch cũ vẫn được giữ.')) return;
