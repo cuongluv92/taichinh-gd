@@ -309,7 +309,7 @@ function openInvestmentNew(id = '') {
   <div class="field full mt-10"><label>Ghi chú</label><input name="note" value="${esc(inv?.note || '')}" placeholder="Tùy chọn"></div>`,
   fd => api.investment('save', {
     id: id || null, name: fd.name, kind: fd.kind, currency: fd.currency, start_date: fd.start_date || null,
-    initial_capital: fd.initial_capital || 0, note: fd.note || '',
+    initial_capital: fd.initial_capital || 0, note: fd.note || '', parent_investment_id: inv?.parent_investment_id || null,
     asset_type: fd.kind === 'other' ? (fd.asset_type_preset === '__custom' ? (fd.asset_type_custom || '') : fd.asset_type_preset) : null,
     broker_name: fd.broker_name || '', nisa_frame: fd.nisa_frame || null, nisa_annual_limit: fd.nisa_annual_limit || null,
     ticker: fd.ticker || '', market: fd.market || '',
@@ -330,6 +330,26 @@ function openInvestmentNew(id = '') {
 async function deleteInvestment(id) {
   if (!confirm('Xóa khoản đầu tư này? Lịch sử vẫn được giữ lại nhưng khoản này sẽ không còn hiển thị.')) return;
   try { await api.investment('delete', { id }); await window.refresh(); toast('Đã xóa khoản đầu tư'); } catch (e) { toast(e.message, true); }
+}
+
+// ---- Quỹ/ETF bên trong một tài khoản NISA — một khoản đầu tư kind='securities'
+// bình thường, chỉ khác là có parent_investment_id trỏ về NISA cha, nên dùng
+// lại nguyên cơ chế Mua/Bán/giá vốn TB của Chứng khoán độc lập. Số lượng/giá
+// vốn không nhập tay — chỉ tạo "vỏ" quỹ ở đây, sau đó bấm "Mua" để ghi nhận.
+function openNisaHolding(nisaId, id = '') {
+  const nisa = F.investments().find(x => x.id === nisaId); if (!nisa) return toast('Không tìm thấy tài khoản NISA.', true);
+  const h = id ? F.nisaHoldings(nisaId).find(x => x.id === id) : null;
+  modal(id ? 'Sửa quỹ/ETF' : `＋ Quỹ/ETF · ${esc(nisa.name)}`, `<div class="form-grid">
+    <div class="field full"><label>Tên quỹ/ETF/cổ phiếu</label><input name="name" value="${esc(h?.name || '')}" placeholder="VD: eMAXIS Slim toàn cầu" required autofocus></div>
+    <div class="field"><label>Mã chứng khoán</label><input name="ticker" value="${esc(h?.ticker || '')}"></div>
+    <div class="field"><label>Thị trường</label><input name="market" value="${esc(h?.market || '')}" placeholder="VD: TSE, NASDAQ"></div>
+    <div class="field"><label>Tiền tệ</label><select name="currency"><option value="JPY" ${(h?.currency || nisa.currency || state.base) === 'JPY' ? 'selected' : ''}>JPY</option><option value="VND" ${(h?.currency || nisa.currency || state.base) === 'VND' ? 'selected' : ''}>VND</option></select></div>
+    <small class="muted full">Số lượng / giá vốn tính tự động từ lịch sử Mua/Bán sau khi tạo — không nhập tay ở đây.</small>
+    <div class="field full"><label>Ghi chú</label><input name="note" value="${esc(h?.note || '')}" placeholder="Tùy chọn"></div>
+  </div>`, fd => api.investment('save', {
+    id: id || null, name: fd.name, kind: 'securities', currency: fd.currency, note: fd.note || '',
+    ticker: fd.ticker || '', market: fd.market || '', parent_investment_id: nisaId
+  }), id ? 'Lưu' : 'Tạo');
 }
 
 // ---- Generic events (contribution / withdrawal / valuation / interest) — NISA, Tiết kiệm sinh lời, Khác ----
@@ -632,7 +652,7 @@ Object.assign(window, {
   openQuickEntry, openTransactionEdit, deleteTransaction, openColumnSettings, openAccount, archiveAccount, unarchiveAccount,
   openAccountAdjustment, deleteAccountAdjustment, openAccountAdjustmentHistory,
   openDebt, archiveDebt, deleteDebt, openDebtAdjustment, deleteDebtAdjustment, openDebtAdjustmentHistory,
-  openInvestmentNew, deleteInvestment, openInvestmentEvent, deleteInvestmentEvent, openInvestmentEventHistory,
+  openInvestmentNew, deleteInvestment, openNisaHolding, openInvestmentEvent, deleteInvestmentEvent, openInvestmentEventHistory,
   openSecurityTrade, openInvestmentPlanConfirm, skipInvestmentPlan,
   openCreditCard, openCardLedger, openCardExpenseForm, deleteCardExpense,
   openInstallment, deleteInstallment, openInstallmentSchedule, toggleInstallmentPaid

@@ -86,13 +86,29 @@ F.totalReceivablesAt = endDate => F.receivables().filter(d => (d.currency || sta
 // kind='securities'. state.investmentEvents[id] holds each investment's raw
 // event history, fetched separately.
 F.investments = () => (state.investments || []);
-F.investmentsByKind = kind => F.investments().filter(inv => inv.kind === kind);
+// A NISA account can hold child quỹ/ETF positions (kind='securities' rows
+// with parent_investment_id set to the NISA's id) — the "chế độ chi tiết"
+// per-fund tracking, reusing the same buy/sell/avg-cost engine as a
+// standalone Chứng khoán. F.investmentsByKind() (used to build the top-level
+// Đầu tư sections and the composition chart) always excludes children so
+// their value isn't double-counted — it's already folded into the parent
+// NISA's rollup below.
+F.nisaHoldings = nisaId => F.investments().filter(inv => inv.parent_investment_id === nisaId);
+F.investmentsByKind = kind => F.investments().filter(inv => inv.kind === kind && !inv.parent_investment_id);
 F.investmentNetCapital = inv => {
   if (inv.kind === 'securities') return n(inv.quantity) * n(inv.avg_cost);
+  if (inv.kind === 'nisa') {
+    const holdings = F.nisaHoldings(inv.id);
+    if (holdings.length) return holdings.reduce((s, h) => s + F.investmentNetCapital(h), 0);
+  }
   return n(inv.initial_capital) + n(inv.total_contributed) - n(inv.total_withdrawn);
 };
 F.investmentCurrentValue = inv => {
   if (inv.kind === 'securities') return n(inv.quantity) * n(inv.current_price ?? inv.avg_cost);
+  if (inv.kind === 'nisa') {
+    const holdings = F.nisaHoldings(inv.id);
+    if (holdings.length) return holdings.reduce((s, h) => s + F.investmentCurrentValue(h), 0);
+  }
   if (inv.latest_value !== null && inv.latest_value !== undefined) return n(inv.latest_value);
   // Interest actually received (kind='savings_interest') is real money that
   // grew the balance — it counts toward "giá trị hiện tại" even with no
@@ -102,10 +118,21 @@ F.investmentCurrentValue = inv => {
   const interest = inv.kind === 'savings_interest' ? n(inv.total_interest) : 0;
   return Math.max(0, F.investmentNetCapital(inv) + interest);
 };
-F.investmentPL = inv => inv.kind === 'securities' ? n(inv.realized_pl) + (F.investmentCurrentValue(inv) - F.investmentNetCapital(inv)) : F.investmentCurrentValue(inv) - F.investmentNetCapital(inv);
+F.investmentPL = inv => {
+  if (inv.kind === 'securities') return n(inv.realized_pl) + (F.investmentCurrentValue(inv) - F.investmentNetCapital(inv));
+  if (inv.kind === 'nisa') {
+    const holdings = F.nisaHoldings(inv.id);
+    if (holdings.length) return holdings.reduce((s, h) => s + F.investmentPL(h), 0);
+  }
+  return F.investmentCurrentValue(inv) - F.investmentNetCapital(inv);
+};
 F.investmentPLPercent = inv => { const cap = F.investmentNetCapital(inv); return cap > 0 ? F.investmentPL(inv) / cap * 100 : null; };
-F.investmentTotalValue = () => F.investments().filter(inv => (inv.currency || state.base) === state.base).reduce((s, inv) => s + F.investmentCurrentValue(inv), 0);
+F.investmentTotalValue = () => F.investments().filter(inv => (inv.currency || state.base) === state.base && !inv.parent_investment_id).reduce((s, inv) => s + F.investmentCurrentValue(inv), 0);
 F.investmentValueAt = (inv, events, endDate) => {
+  if (inv.kind === 'nisa') {
+    const holdings = F.nisaHoldings(inv.id);
+    if (holdings.length) return holdings.reduce((s, h) => s + F.investmentValueAt(h, (state.investmentEvents || {})[h.id], endDate), 0);
+  }
   const rows = (events || []).filter(e => String(e.event_date || '') <= endDate);
   if (inv.kind === 'securities') {
     let qty = 0, avg = 0;
@@ -123,8 +150,31 @@ F.investmentValueAt = (inv, events, endDate) => {
     - rows.filter(e => e.event_type === 'withdrawal' || e.event_type === 'sell').reduce((s, e) => s + n(e.amount), 0);
   return Math.max(0, netCap);
 };
-F.investmentTotalValueAt = endDate => F.investments().filter(inv => (inv.currency || state.base) === state.base)
+F.investmentTotalValueAt = endDate => F.investments().filter(inv => (inv.currency || state.base) === state.base && !inv.parent_investment_id)
   .reduce((s, inv) => s + F.investmentValueAt(inv, (state.investmentEvents || {})[inv.id], endDate), 0);
+// Capital ("vốn") reconstructed as of a past date, for the Tài sản history
+// chart — same rollup rule as the live formulas above: a NISA with child
+// quỹ/ETF sums their capital-at-date instead of its own raw events.
+F.investmentCapitalAt = (inv, endDate) => {
+  if (inv.kind === 'nisa') {
+    const holdings = F.nisaHoldings(inv.id);
+    if (holdings.length) return holdings.reduce((s, h) => s + F.investmentCapitalAt(h, endDate), 0);
+  }
+  const events = (state.investmentEvents || {})[inv.id] || [];
+  const upTo = events.filter(e => String(e.event_date || '') <= endDate);
+  if (inv.kind === 'securities') {
+    let qty = 0, avg = 0;
+    upTo.filter(e => e.event_type === 'buy' || e.event_type === 'sell').sort((a, b) => String(a.event_date).localeCompare(String(b.event_date))).forEach(e => {
+      if (e.event_type === 'buy') { avg = qty + n(e.quantity) > 0 ? (qty * avg + n(e.quantity) * n(e.price)) / (qty + n(e.quantity)) : avg; qty += n(e.quantity); }
+      else qty -= n(e.quantity);
+    });
+    return Math.max(0, qty) * avg;
+  }
+  const cap = n(inv.initial_capital)
+    + upTo.filter(e => e.event_type === 'contribution' || e.event_type === 'buy').reduce((s2, e) => s2 + n(e.amount), 0)
+    - upTo.filter(e => e.event_type === 'withdrawal' || e.event_type === 'sell').reduce((s2, e) => s2 + n(e.amount), 0);
+  return Math.max(0, cap);
+};
 
 // ---- Growth simulation (Đầu tư §8) — entirely separate from real values.
 // "Giá trị dự kiến" is a mô phỏng (simulation) built from the expected
@@ -208,17 +258,11 @@ F.assetHistorySeries = monthKeys => {
   const start = F.dataStartMonth();
   return monthKeys.filter(key => key >= start && key <= state.month).map(key => {
     const pos = F.financialPosition(endOfMonthDate(key));
-    // Investment capital "as of" a past month uses each investment's raw
-    // events (contribution/buy minus withdrawal/sell up to that date) — the
-    // same reconstruction financialPosition already does for invested value.
-    const investedCapital = F.investments().filter(inv => (inv.currency || state.base) === state.base).reduce((s, inv) => {
-      const events = (state.investmentEvents || {})[inv.id] || [];
-      const upTo = events.filter(e => String(e.event_date || '') <= endOfMonthDate(key));
-      const cap = n(inv.initial_capital)
-        + upTo.filter(e => e.event_type === 'contribution' || e.event_type === 'buy').reduce((s2, e) => s2 + n(e.amount), 0)
-        - upTo.filter(e => e.event_type === 'withdrawal' || e.event_type === 'sell').reduce((s2, e) => s2 + n(e.amount), 0);
-      return s + Math.max(0, cap);
-    }, 0);
+    // Investment capital "as of" a past month — same rollup rule as the live
+    // formulas (a NISA with child quỹ/ETF sums their capital, not its own
+    // raw events).
+    const investedCapital = F.investments().filter(inv => (inv.currency || state.base) === state.base && !inv.parent_investment_id)
+      .reduce((s, inv) => s + F.investmentCapitalAt(inv, endOfMonthDate(key)), 0);
     return { month: key, totalAssets: pos.liquid + pos.invested + pos.receivables, totalDebt: pos.payables, netWorth: pos.netWorth, investedCapital, investedValue: pos.invested };
   });
 };

@@ -181,6 +181,44 @@ function debtAdj(id, debtId, direction, amount, date) { return { id, debt_id: de
 }
 
 // ---------------------------------------------------------------------
+// NISA holdings: một tài khoản NISA có thể chứa nhiều quỹ/ETF con
+// (kind='securities' + parent_investment_id) — vốn ròng/giá trị/lãi-lỗ của
+// NISA phải cộng dồn đúng từ các quỹ con, giống cách một sàn chứng khoán
+// thật hiển thị (tổng tài khoản + từng mã giá mua -> giá hiện tại -> %).
+// ---------------------------------------------------------------------
+{
+  const nisaParent = { id: 'nisaP', kind: 'nisa', currency: 'JPY', initial_capital: 0, total_contributed: 0, total_withdrawn: 0, latest_value: null };
+  const fund1 = { id: 'fund1', kind: 'securities', currency: 'JPY', parent_investment_id: 'nisaP', quantity: 10, avg_cost: 15000, current_price: 16500, realized_pl: 0 };
+  const fund2 = { id: 'fund2', kind: 'securities', currency: 'JPY', parent_investment_id: 'nisaP', quantity: 5, avg_cost: 20000, current_price: 19000, realized_pl: 0 };
+  resetState({ investments: [nisaParent, fund1, fund2] });
+
+  eq('NISA holdings. Vốn ròng NISA = tổng vốn 2 quỹ con (150,000 + 100,000)', F.investmentNetCapital(nisaParent), 250000);
+  eq('NISA holdings. Giá trị hiện tại NISA = tổng giá trị 2 quỹ con (165,000 + 95,000)', F.investmentCurrentValue(nisaParent), 260000);
+  eq('NISA holdings. Lãi/lỗ NISA = tổng lãi/lỗ 2 quỹ con (+15,000 và −5,000)', F.investmentPL(nisaParent), 10000);
+  eq('NISA holdings. % lãi/lỗ NISA tính trên tổng vốn ròng khi có quỹ con (không còn là null)', F.investmentPLPercent(nisaParent), 10000 / 250000 * 100, 1e-9);
+
+  eq('NISA holdings. F.investmentsByKind("nisa") vẫn trả về tài khoản NISA cha', F.investmentsByKind('nisa').length, 1);
+  eq('NISA holdings. F.investmentsByKind("securities") KHÔNG trả về quỹ con (đã tính trong NISA cha, tránh trùng ở mục Chứng khoán độc lập)', F.investmentsByKind('securities').length, 0);
+  eq('NISA holdings. F.investmentTotalValue() không đếm quỹ con lần thứ hai', F.investmentTotalValue(), 260000);
+
+  const simpleNisa = { id: 'nisaSimple', kind: 'nisa', currency: 'JPY', initial_capital: 0, total_contributed: 30000, total_withdrawn: 0, latest_value: null };
+  resetState({ investments: [simpleNisa] });
+  eq('NISA holdings. NISA không có quỹ con nào vẫn dùng vốn ròng tài khoản như cũ (chế độ đơn giản)', F.investmentNetCapital(simpleNisa), 30000);
+}
+
+// ---------------------------------------------------------------------
+// NISA %: vốn ròng = 0 (chưa góp gì) thì % là null vì không có gì để chia,
+// không phải một lỗi hiển thị — NISA vẫn dùng đúng công thức % như Khác.
+// ---------------------------------------------------------------------
+{
+  resetState({ investments: [] }); // no leftover holdings from the previous block to collide with an id-less fixture
+  const freshNisa = { kind: 'nisa', currency: 'JPY', initial_capital: 0, total_contributed: 0, total_withdrawn: 0, latest_value: null };
+  eq('NISA %. Vốn ròng = 0 thì % là null (chưa có gì để tính %, không phải lỗi)', F.investmentPLPercent(freshNisa), null);
+  const fundedNisa = { ...freshNisa, total_contributed: 100000, latest_value: 110000 };
+  eq('NISA %. Có vốn ròng > 0 thì % hiển thị đúng như Khác/Chứng khoán', F.investmentPLPercent(fundedNisa), 10, 1e-9);
+}
+
+// ---------------------------------------------------------------------
 // CHỨNG KHOÁN: mua/bán theo giá vốn trung bình, lãi/lỗ chưa/đã thực hiện.
 // ---------------------------------------------------------------------
 {

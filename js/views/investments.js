@@ -45,19 +45,45 @@ function investmentCardOther(inv) {
       <button class="btn sm" ${act('deleteInvestment', inv.id)}>Xóa</button>
     </div>`;
 }
+// A quỹ/ETF held inside a NISA account — an ordinary kind='securities' row
+// (same buy/sell/avg-cost engine as standalone Chứng khoán), just rendered
+// nested under its parent NISA card instead of as its own top-level card.
+function nisaHoldingRow(h) {
+  const val = F.investmentCurrentValue(h), pl = F.investmentPL(h), pct = F.investmentPLPercent(h);
+  return `<div class="tx">
+    <div class="tx-main"><strong>${esc(h.name)}</strong><span>${h.ticker ? `${esc(h.ticker)} · ` : ''}${n(h.quantity)} × ${money(h.current_price ?? h.avg_cost, h.currency)} (mua TB ${money(h.avg_cost, h.currency)})</span></div>
+    <div class="tx-actions wrap">
+      <span class="${pl >= 0 ? 'green' : 'red'}">${money(val, h.currency)}${pct !== null ? ` (${pl >= 0 ? '+' : ''}${pct.toFixed(1)}%)` : ''}</span>
+      <button class="btn sm" ${act('openSecurityTrade', h.id, 'buy')}>Mua</button>
+      <button class="btn sm" ${act('openSecurityTrade', h.id, 'sell')}>Bán</button>
+      <button class="btn sm" ${act('openInvestmentEventHistory', h.id)}>Lịch sử</button>
+      <button class="btn sm" ${act('deleteInvestment', h.id)}>Xóa</button>
+    </div>
+  </div>`;
+}
 function investmentCardNisa(inv) {
+  const holdings = F.nisaHoldings(inv.id);
   const netCap = F.investmentNetCapital(inv), value = F.investmentCurrentValue(inv), pl = F.investmentPL(inv), pct = F.investmentPLPercent(inv);
+  // Once a NISA has ≥1 quỹ/ETF (chế độ chi tiết), its value/vốn ròng roll up
+  // purely from those holdings (see F.investmentCurrentValue/NetCapital) —
+  // Thêm vốn/Rút vốn/Cập nhật giá trị are hidden so they can't silently
+  // double-count against the holdings below, but the account's own event
+  // history (contribution-plan confirmations etc.) stays viewable either way.
+  const accountActions = holdings.length ? '' : `
+      <button class="btn sm primary" ${act('openInvestmentEvent', inv.id, 'contribution')}>Thêm vốn</button>
+      <button class="btn sm" ${act('openInvestmentEvent', inv.id, 'withdrawal')}>Rút vốn</button>
+      <button class="btn sm" ${act('openInvestmentEvent', inv.id, 'valuation')}>Cập nhật giá trị</button>`;
   return `
     <div class="big">${money(value, inv.currency)}</div>
     <strong>${esc(inv.name)}</strong>
     <div class="invest-summary"><span>Vốn ròng ${money(netCap, inv.currency)}</span><span class="${pl >= 0 ? 'green' : 'red'}">${pl >= 0 ? '+' : ''}${money(pl, inv.currency)}${pct !== null ? ` (${pct.toFixed(1)}%)` : ''}</span></div>
     ${inv.nisa_annual_limit ? `<small class="muted">Hạn mức năm (tham khảo): ${money(inv.nisa_annual_limit, inv.currency)}</small>` : ''}
+    ${holdings.length ? `<div class="list mt-6">${holdings.map(nisaHoldingRow).join('')}</div><small class="muted">Giá trị và vốn ròng NISA tính theo tổng các quỹ/ETF bên trên.</small>` : ''}
     ${planStatusWidget(inv)}
     ${simulationWidget(inv)}
     <div class="card-actions wrap">
-      <button class="btn sm primary" ${act('openInvestmentEvent', inv.id, 'contribution')}>Thêm vốn</button>
-      <button class="btn sm" ${act('openInvestmentEvent', inv.id, 'withdrawal')}>Rút vốn</button>
-      <button class="btn sm" ${act('openInvestmentEvent', inv.id, 'valuation')}>Cập nhật giá trị</button>
+      ${accountActions}
+      <button class="btn sm primary" ${act('openNisaHolding', inv.id)}>＋ Thêm quỹ/ETF</button>
       <button class="btn sm" ${act('openInvestmentEventHistory', inv.id)}>Xem lịch sử</button>
       <button class="btn sm" ${act('openInvestmentNew', inv.id)}>Sửa</button>
       <button class="btn sm" ${act('deleteInvestment', inv.id)}>Xóa</button>
@@ -116,7 +142,10 @@ function investmentSection(title, kind, list) {
 }
 
 function renderInvestments() {
-  const list = F.investments();
+  // Root investments only — a NISA's child quỹ/ETF value is already folded
+  // into its parent via F.investmentCurrentValue()'s rollup, so counting
+  // both here would double it.
+  const list = F.investments().filter(inv => !inv.parent_investment_id);
   const totalValue = list.filter(inv => (inv.currency || state.base) === state.base).reduce((s, inv) => s + F.investmentCurrentValue(inv), 0);
   const totalCap = list.filter(inv => (inv.currency || state.base) === state.base).reduce((s, inv) => s + F.investmentNetCapital(inv), 0);
   const totalPL = totalValue - totalCap;

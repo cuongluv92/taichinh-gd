@@ -14,6 +14,8 @@ function assetAccountRow(a) {
     <button class="money-line" ${act('openAccountAdjustmentHistory', a.id)}><span class="line-label">${esc(a.name)}<small>${esc(ACCOUNT_TYPE_LABEL[a.account_type] || a.account_type)}</small></span><strong class="${bal < 0 ? 'red' : ''}">${money(bal, a.currency)}</strong></button>
     <button class="mini-btn" type="button" aria-label="Tăng tiền ${esc(a.name)}" title="＋ Tiền" ${act('openAccountAdjustment', a.id, 'increase')}>＋</button>
     <button class="mini-btn" type="button" aria-label="Giảm tiền ${esc(a.name)}" title="− Tiền" ${act('openAccountAdjustment', a.id, 'decrease')}>−</button>
+    <button class="mini-btn" type="button" aria-label="Sửa ${esc(a.name)}" title="Sửa" ${act('openAccount', a.id)}>✎</button>
+    <button class="mini-btn" type="button" aria-label="Ẩn ${esc(a.name)}" title="Ẩn" ${act('archiveAccount', a.id)}>🗑</button>
   </div>`;
 }
 function investmentRow(inv) {
@@ -21,6 +23,7 @@ function investmentRow(inv) {
   return `<div class="money-line-wrap">
     <button class="money-line" ${act('openInvestmentEventHistory', inv.id)}><span class="line-label">${esc(inv.name)}<small>${esc(INVESTMENT_KIND_LABEL[inv.kind] || '')}</small></span><strong>${money(val, inv.currency)}</strong></button>
     <button class="mini-btn" type="button" aria-label="Sửa ${esc(inv.name)}" title="Sửa" ${act('openInvestmentNew', inv.id)}>✎</button>
+    <button class="mini-btn" type="button" aria-label="Xóa ${esc(inv.name)}" title="Xóa" ${act('deleteInvestment', inv.id)}>🗑</button>
   </div>`;
 }
 function receivableRow(d) {
@@ -29,6 +32,8 @@ function receivableRow(d) {
     <button class="money-line" ${act('openDebtAdjustmentHistory', d.id)}><span class="line-label">${esc(d.name)}${d.counterparty ? `<small>${esc(d.counterparty)}</small>` : ''}</span><strong class="green">${money(bal, d.currency)}</strong></button>
     <button class="mini-btn" type="button" aria-label="Tăng ${esc(d.name)}" title="Tăng" ${act('openDebtAdjustment', d.id, 'increase')}>＋</button>
     <button class="mini-btn" type="button" aria-label="Giảm ${esc(d.name)}" title="Giảm" ${act('openDebtAdjustment', d.id, 'decrease')}>−</button>
+    <button class="mini-btn" type="button" aria-label="Sửa ${esc(d.name)}" title="Sửa" ${act('openDebt', d.id, d.direction)}>✎</button>
+    <button class="mini-btn" type="button" aria-label="Ẩn ${esc(d.name)}" title="Ẩn" ${act('archiveDebt', d.id)}>🗑</button>
   </div>`;
 }
 function payableRow(d) {
@@ -37,6 +42,8 @@ function payableRow(d) {
     <button class="money-line" ${act('openDebtAdjustmentHistory', d.id)}><span class="line-label">${esc(d.name)}${d.counterparty ? `<small>${esc(d.counterparty)}</small>` : ''}</span><strong class="red">${money(bal, d.currency)}</strong></button>
     <button class="mini-btn" type="button" aria-label="Tăng ${esc(d.name)}" title="Tăng" ${act('openDebtAdjustment', d.id, 'increase')}>＋</button>
     <button class="mini-btn" type="button" aria-label="Giảm ${esc(d.name)}" title="Giảm" ${act('openDebtAdjustment', d.id, 'decrease')}>−</button>
+    <button class="mini-btn" type="button" aria-label="Sửa ${esc(d.name)}" title="Sửa" ${act('openDebt', d.id, d.direction)}>✎</button>
+    <button class="mini-btn" type="button" aria-label="Ẩn ${esc(d.name)}" title="Ẩn" ${act('archiveDebt', d.id)}>🗑</button>
   </div>`;
 }
 function hiddenAccountRow(a) {
@@ -50,7 +57,7 @@ function assetColumn() {
   return moneyColumn({ title: 'Tiền mặt & ngân hàng', tone: 'income', items, total: money(total), settingsAction: act('openAccount'), settingsLabel: '＋ Thêm', emptyText: 'Chưa có tài khoản' });
 }
 function investmentColumn() {
-  const list = F.investments().filter(inv => (inv.currency || state.base) === state.base);
+  const list = F.investments().filter(inv => (inv.currency || state.base) === state.base && !inv.parent_investment_id);
   const items = list.map(investmentRow);
   const total = F.investmentTotalValue();
   return moneyColumn({ title: 'Đầu tư', tone: 'credit', items, total: money(total), settingsAction: act('openInvestmentNew'), settingsLabel: '＋ Thêm', emptyText: 'Chưa có khoản đầu tư' });

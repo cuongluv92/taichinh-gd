@@ -86,14 +86,18 @@ const DEBTS = [
 ];
 const DEBT_ADJUSTMENTS = [];
 const INVESTMENTS = [
-  { id: 'nisa1', name: 'NISA Rakuten', kind: 'nisa', currency: 'JPY', initial_capital: 400000, note: '', created_at: `${MONTH}-01T00:00:00Z`, start_date: '2026-01-01', broker_name: 'Rakuten Securities', nisa_frame: 'both', nisa_annual_limit: 3600000, monthly_amount: 30000, monthly_day: 5, plan_start_month: `${MONTH}-01`, plan_paused: false, expected_return_rate: 5, expected_return_period: 'annual', reinvest_mode: 'none', total_contributed: 100000, total_withdrawn: 0, latest_value: 550000, latest_value_date: `${MONTH}-10` },
-  { id: 'sec1', name: 'Toyota', kind: 'securities', currency: 'JPY', initial_capital: 0, note: '', created_at: `${MONTH}-01T00:00:00Z`, broker_name: 'SBI', ticker: '7203', market: 'TSE', quantity: 100, avg_cost: 2000, current_price: 2200, realized_pl: 0, total_contributed: 200000, total_withdrawn: 0, total_dividends: 0 },
-  { id: 'sav1', name: 'Tiết kiệm kỳ hạn SBI', kind: 'savings_interest', currency: 'JPY', initial_capital: 500000, note: '', created_at: `${MONTH}-01T00:00:00Z`, bank_name: 'SBI Sumishin', interest_rate_annual: 1, interest_payment_method: 'maturity', term_end_date: '2027-09-15', total_contributed: 0, total_withdrawn: 0, total_interest: 5000 }
+  { id: 'nisa1', name: 'NISA Rakuten', kind: 'nisa', currency: 'JPY', initial_capital: 400000, note: '', created_at: `${MONTH}-01T00:00:00Z`, start_date: '2026-01-01', broker_name: 'Rakuten Securities', nisa_frame: 'both', nisa_annual_limit: 3600000, monthly_amount: 30000, monthly_day: 5, plan_start_month: `${MONTH}-01`, plan_paused: false, expected_return_rate: 5, expected_return_period: 'annual', reinvest_mode: 'none', total_contributed: 100000, total_withdrawn: 0, latest_value: 550000, latest_value_date: `${MONTH}-10`, parent_investment_id: null },
+  { id: 'fund1', name: 'eMAXIS Slim toàn cầu', kind: 'securities', currency: 'JPY', initial_capital: 0, note: '', created_at: `${MONTH}-03T00:00:00Z`, ticker: '2559', market: 'TSE', quantity: 10, avg_cost: 15000, current_price: 16500, realized_pl: 0, total_contributed: 150000, total_withdrawn: 0, total_dividends: 0, parent_investment_id: 'nisa1' },
+  { id: 'sec1', name: 'Toyota', kind: 'securities', currency: 'JPY', initial_capital: 0, note: '', created_at: `${MONTH}-01T00:00:00Z`, broker_name: 'SBI', ticker: '7203', market: 'TSE', quantity: 100, avg_cost: 2000, current_price: 2200, realized_pl: 0, total_contributed: 200000, total_withdrawn: 0, total_dividends: 0, parent_investment_id: null },
+  { id: 'sav1', name: 'Tiết kiệm kỳ hạn SBI', kind: 'savings_interest', currency: 'JPY', initial_capital: 500000, note: '', created_at: `${MONTH}-01T00:00:00Z`, bank_name: 'SBI Sumishin', interest_rate_annual: 1, interest_payment_method: 'maturity', term_end_date: '2027-09-15', total_contributed: 0, total_withdrawn: 0, total_interest: 5000, parent_investment_id: null }
 ];
 const INVESTMENT_EVENTS = {
   nisa1: [
     { id: 'ev1', event_type: 'contribution', amount: 100000, event_date: `${MONTH}-02`, note: '' },
     { id: 'ev2', event_type: 'valuation', amount: 550000, event_date: `${MONTH}-10`, note: '' }
+  ],
+  fund1: [
+    { id: 'ev6', event_type: 'buy', quantity: 10, price: 15000, amount: 150000, event_date: `${MONTH}-03`, note: '' }
   ],
   sec1: [
     { id: 'ev3', event_type: 'buy', quantity: 100, price: 2000, amount: 200000, event_date: `${MONTH}-01`, note: '' },
@@ -183,11 +187,17 @@ const RPC_HANDLERS = {
     if (action === 'save') {
       if (p.id) { const row = INVESTMENTS.find(x => x.id === p.id); if (row) Object.assign(row, p); return { ok: true, id: p.id }; }
       const id = newId('inv');
-      INVESTMENTS.push({ id, kind: p.kind || 'other', name: p.name, asset_type: p.asset_type || null, currency: p.currency || 'JPY', initial_capital: Number(p.initial_capital || 0), note: p.note || '', created_at: new Date().toISOString(), quantity: 0, avg_cost: 0, realized_pl: 0, total_contributed: 0, total_withdrawn: 0, total_dividends: 0, total_interest: 0, latest_value: null, latest_value_date: null });
+      INVESTMENTS.push({ id, kind: p.kind || 'other', name: p.name, asset_type: p.asset_type || null, currency: p.currency || 'JPY', initial_capital: Number(p.initial_capital || 0), note: p.note || '', created_at: new Date().toISOString(), ticker: p.ticker || null, market: p.market || null, parent_investment_id: p.parent_investment_id || null, quantity: 0, avg_cost: 0, realized_pl: 0, total_contributed: 0, total_withdrawn: 0, total_dividends: 0, total_interest: 0, latest_value: null, latest_value_date: null });
       INVESTMENT_EVENTS[id] = [];
       return { ok: true, id };
     }
-    if (action === 'delete') { const i = INVESTMENTS.findIndex(x => x.id === p.id); if (i >= 0) INVESTMENTS.splice(i, 1); return { ok: true }; }
+    if (action === 'delete') {
+      for (const child of INVESTMENTS.filter(x => x.parent_investment_id === p.id)) {
+        const ci = INVESTMENTS.findIndex(x => x.id === child.id); if (ci >= 0) INVESTMENTS.splice(ci, 1);
+      }
+      const i = INVESTMENTS.findIndex(x => x.id === p.id); if (i >= 0) INVESTMENTS.splice(i, 1);
+      return { ok: true };
+    }
     if (action === 'save_event') {
       const list = INVESTMENT_EVENTS[p.investment_id] = INVESTMENT_EVENTS[p.investment_id] || [];
       const inv = INVESTMENTS.find(x => x.id === p.investment_id);
@@ -349,6 +359,8 @@ const RPC_HANDLERS = {
   await page.evaluate(() => document.getElementById('modal')?.close());
   await page.waitForTimeout(50);
   await clickAndCheckModal('account "＋ Thêm" (Tiền mặt & ngân hàng column)', '.money-column.income .column-settings', '[name="name"]');
+  await clickAndCheckModal('account row "Sửa" mini-btn (UFJ)', '.money-column.income .mini-btn[title="Sửa"]', '[name="name"]');
+  results.push(`  Account row also has an "Ẩn" mini-btn (was add-only before): ${await page.locator('.money-column.income .mini-btn[title="Ẩn"]').count() > 0}`);
 
   // Nợ phải trả: view, adjust, add.
   await page.click('.money-column.debt .money-line:has-text("Vay mua xe")');
@@ -356,6 +368,9 @@ const RPC_HANDLERS = {
   await page.evaluate(() => document.getElementById('modal')?.close());
   await page.waitForTimeout(50);
   await clickAndCheckModal('Nợ inline "Tăng" button', '.money-column.debt .mini-btn[title="Tăng"]', '[name="amount"]');
+  await clickAndCheckModal('Nợ row "Sửa" mini-btn', '.money-column.debt .mini-btn[title="Sửa"]', '[name="name"]');
+  results.push(`  Nợ row also has an "Ẩn" mini-btn (was add-only before): ${await page.locator('.money-column.debt .mini-btn[title="Ẩn"]').count() > 0}`);
+  results.push(`  Đầu tư row (Tài sản page) has a "Xóa" mini-btn (was Sửa-only before): ${await page.locator('.money-column.credit .mini-btn[title^="Xóa"]').count() > 0}`);
   await clickAndCheckModal('Nợ column "＋ Thêm"', '.money-column.debt .column-settings', '[name="name"]');
   await page.click('.money-column.debt .column-settings');
   await page.waitForSelector('#modal[open]', { timeout: 1500 });
@@ -387,6 +402,8 @@ const RPC_HANDLERS = {
   results.push(`  NISA card shows simulated growth separate from real value: ${investText.includes('mô phỏng')}`);
   results.push(`  Securities card shows quantity × price and vốn/giá vốn TB: ${investText.includes('Giá vốn TB')}`);
   results.push(`  Savings card shows "Lãi thực nhận" distinct from principal: ${investText.includes('Lãi thực nhận')}`);
+  const gridCols = await page.evaluate(() => { const el = document.querySelector('.account-grid'); return el ? getComputedStyle(el).gridTemplateColumns.trim().split(/\s+/).length : null; });
+  results.push(`  Investment cards stack in a single vertical column (account-grid has exactly 1 track): ${gridCols === 1}`);
   await page.screenshot({ path: path.join(SHOT_DIR, 'shot-investments-1440.png'), fullPage: true });
 
   await clickAndCheckModal('investments "+ Đầu tư mới"', 'button:has-text("＋ Đầu tư mới")', '[name="name"]');
@@ -402,8 +419,25 @@ const RPC_HANDLERS = {
   await page.evaluate(() => document.getElementById('modal')?.close());
   await page.waitForTimeout(50);
 
-  // NISA plan: confirm this month's contribution.
+  // NISA holdings ("chế độ chi tiết"): a quỹ/ETF nested inside the NISA
+  // account, with its own buy price -> current price -> % (per user's
+  // "NISA doesn't show % like chứng khoán does" feedback), rolling the
+  // account's own headline value/vốn ròng up from its holdings.
   const nisaCard = page.locator('.item-card', { hasText: 'NISA Rakuten' });
+  const nisaCardText = await nisaCard.textContent();
+  results.push(`  NISA card shows nested quỹ/ETF with buy price, current price and %: ${nisaCardText.includes('eMAXIS Slim') && nisaCardText.includes('15,000') && nisaCardText.includes('%')}`);
+  results.push(`  NISA headline value rolls up from its holding (¥165,000 = 10 × 16,500), not the stale account-level ¥550,000: ${nisaCardText.includes('165,000') && !nisaCardText.includes('550,000')}`);
+  results.push(`  Account-level "Cập nhật giá trị" is hidden once NISA has a quỹ/ETF (can't silently double-count): ${await nisaCard.locator('button:has-text("Cập nhật giá trị")').count() === 0}`);
+  await nisaCard.locator('button:has-text("＋ Thêm quỹ/ETF")').click();
+  await page.waitForSelector('[name="ticker"]', { timeout: 1500 }).then(() => results.push('CLICK NISA "+ Thêm quỹ/ETF": form opened with mã chứng khoán field - OK')).catch(() => results.push('CLICK "+ Thêm quỹ/ETF": form did NOT open - FAIL'));
+  await page.evaluate(() => document.getElementById('modal')?.close());
+  await page.waitForTimeout(50);
+  await nisaCard.locator('button:has-text("Mua")').click();
+  await page.waitForSelector('[name="quantity"]', { timeout: 1500 }).then(() => results.push('CLICK nested quỹ "Mua": trade form opened - OK')).catch(() => results.push('CLICK nested quỹ "Mua": form did NOT open - FAIL'));
+  await page.evaluate(() => document.getElementById('modal')?.close());
+  await page.waitForTimeout(50);
+
+  // NISA plan: confirm this month's contribution.
   const pendingBtn = nisaCard.locator('button:has-text("Xác nhận đã góp")');
   if (await pendingBtn.count()) {
     await pendingBtn.click();

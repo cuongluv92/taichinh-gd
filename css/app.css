@@ -171,7 +171,7 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 .money-line strong.muted{color:var(--text-faint);font-weight:600;font-size:12.5px}
 .money-line .pct{display:block;color:var(--text-faint);font-weight:600;font-size:10.5px;text-align:right}
 .money-empty{color:var(--text-faint);font-size:12px;padding:14px 6px;text-align:center}
-.money-line-wrap{display:flex;align-items:center;gap:6px}
+.money-line-wrap{display:flex;align-items:center;gap:6px;flex-wrap:wrap;row-gap:4px}
 .money-line-wrap .money-line{flex:1 1 auto;min-width:0}
 .money-line-wrap .mini-btn{flex:none}
 .money-total{
@@ -206,6 +206,7 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 .tx-main strong{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tx-main span{color:var(--text-dim);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tx-actions{display:flex;align-items:center;gap:8px;flex:none}
+.tx-actions.wrap{flex-wrap:wrap;justify-content:flex-end}
 .tx-actions .amount{font-size:13.5px;font-weight:700;font-variant-numeric:tabular-nums}
 .tx-row-btn{background:none;border:none;padding:0;cursor:pointer;text-align:left;width:100%;display:flex}
 .category-trend-row{display:flex;align-items:center;gap:12px;padding:10px 4px;border-bottom:1px solid var(--border)}
@@ -342,7 +343,7 @@ input[type=color]{padding:3px;height:36px}
 .card.item-card{position:relative;padding:14px}
 .item-menu{position:absolute;top:10px;right:10px;display:flex;gap:6px}
 .big{font-size:18px;font-weight:700;margin:6px 0}
-.account-grid{grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
+.account-grid{grid-template-columns:1fr}
 .account-dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:6px}
 .account-dot.cash{background:#8fd15e}.account-dot.bank{background:#5aa9e6}
 .account-dot.savings{background:#c67af0}.account-dot.investment{background:#f5a623}
