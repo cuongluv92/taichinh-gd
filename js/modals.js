@@ -21,12 +21,14 @@ function openQuickEntry(defaults = {}) {
   let type = ['income', 'expense'].includes(defaults.transaction_type) ? defaults.transaction_type : 'expense';
   const prefs = readQuickPrefs();
   let categoryId = defaults.category_id || prefs[type]?.category_id || '';
-  // Prefill from the category's planned amount (kế hoạch) when the caller
-  // didn't already give an explicit amount — most entries match the plan
-  // exactly, so this saves re-typing the same number every month; the user
-  // can still overwrite it when the actual amount differs.
-  const plannedAmount = categoryId ? n(F.categoryVersionAt(categoryId, selectedMonthDate())?.planned_amount) : 0;
-  const initialAmount = defaults.amount != null && defaults.amount !== '' ? defaults.amount : (plannedAmount > 0 ? plannedAmount : '');
+  // Auto-fill "Số tiền" from the selected category's kế hoạch (planned
+  // amount) — on open AND every time the category changes inside the modal
+  // (tab switch, chip, or dropdown), not just when it was opened for one
+  // specific category — so a month with no surprises never needs re-typing
+  // the same number. Stops once the user types or taps an amount
+  // suggestion themselves, so it never overwrites a deliberate entry.
+  let amountTouched = defaults.amount != null && defaults.amount !== '';
+  const initialAmount = amountTouched ? defaults.amount : '';
   const dlg = $('#modal'), mb = $('#modalBody'), form = $('#modalForm');
   mb.innerHTML = `<div class="modal-head"><h3>Nhập nhanh</h3><button class="mini-btn" type="button" aria-label="Đóng" ${act('closeModal')}>✕</button></div>
   <div class="modal-content quick-entry">
@@ -54,6 +56,11 @@ function openQuickEntry(defaults = {}) {
     const fallback = state.base === 'VND' ? [50000, 100000, 200000, 500000] : [500, 1000, 3000, 5000, 10000];
     return [...uniq, ...fallback].filter((v, i, a) => a.indexOf(v) === i).slice(0, 5);
   }
+  function applyPlannedAmount() {
+    if (amountTouched) return;
+    const plan = categoryId ? n(F.categoryVersionAt(categoryId, selectedMonthDate())?.planned_amount) : 0;
+    amount.value = plan > 0 ? plan : '';
+  }
   function sync() {
     $('#qeType').value = type; currencyField.value = state.base; currencyLabel.textContent = state.base;
     $$('#qeTypeTabs button').forEach(b => b.classList.toggle('active', b.dataset.t === type));
@@ -63,10 +70,12 @@ function openQuickEntry(defaults = {}) {
     catSel.innerHTML = options(cats, categoryId);
     $('#qeCategoryChips').innerHTML = cats.slice(0, 8).map(c => `<button type="button" class="chip ${c.id === categoryId ? 'active' : ''}" data-cat="${esc(c.id)}">${esc(c.name)}</button>`).join('');
     $('#qeAmountChips').innerHTML = amountSuggestions().map(v => `<button type="button" class="chip" data-amt="${v}">${money(v, state.base)}</button>`).join('');
+    applyPlannedAmount();
   }
+  amount.addEventListener('input', () => { amountTouched = true; });
   $('#qeTypeTabs').addEventListener('click', e => { const b = e.target.closest('[data-t]'); if (!b) return; type = b.dataset.t; categoryId = readQuickPrefs()[type]?.category_id || ''; sync(); amount.focus(); });
   $('#qeCategoryChips').addEventListener('click', e => { const b = e.target.closest('[data-cat]'); if (!b) return; categoryId = b.dataset.cat; catSel.value = categoryId; sync(); });
-  $('#qeAmountChips').addEventListener('click', e => { const b = e.target.closest('[data-amt]'); if (!b) return; amount.value = b.dataset.amt; amount.focus(); });
+  $('#qeAmountChips').addEventListener('click', e => { const b = e.target.closest('[data-amt]'); if (!b) return; amount.value = b.dataset.amt; amountTouched = true; amount.focus(); });
   catSel.addEventListener('change', () => { categoryId = catSel.value; sync(); });
   sync();
   form.onsubmit = async e => {

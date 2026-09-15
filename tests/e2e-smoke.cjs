@@ -335,11 +335,21 @@ const RPC_HANDLERS = {
     await page.waitForTimeout(50);
   }
 
-  // ---- Quick entry ----
+  // ---- Quick entry: opened generically (no preset category), the amount
+  // must auto-fill from whichever category's kế hoạch is picked INSIDE the
+  // modal (chip click), not just when opened already pointed at one. ----
   await page.click('[data-view="dashboard"]');
   await page.click('#quickAdd');
   await page.waitForSelector('#modal[open]', { timeout: 1500 });
+  await page.click('#qeTypeTabs button:has-text("Thu")');
+  await page.click('#qeCategoryChips .chip:has-text("Lương C")');
+  results.push(`  Quick-entry (opened generically): picking "Lương C" chip fills its kế hoạch (300,000): ${(await page.inputValue('#qeAmount')) === '300000'}`);
+  await page.click('#qeTypeTabs button:has-text("Chi")');
+  await page.click('#qeCategoryChips .chip:has-text("Ăn uống")');
+  results.push(`  Switching to "Ăn uống" chip re-fills its own kế hoạch (60,000): ${(await page.inputValue('#qeAmount')) === '60000'}`);
   await page.fill('#qeAmount', '3000');
+  await page.click('#qeCategoryChips .chip:has-text("Đi lại")');
+  results.push(`  Typing over the prefilled amount is never overwritten again by a later category click: ${(await page.inputValue('#qeAmount')) === '3000'}`);
   await resetToast();
   await page.click('#modalForm [type=submit]');
   await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`SUBMIT quick-entry expense: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('SUBMIT quick-entry expense: no toast - FAIL'));
