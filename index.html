@@ -8,34 +8,7 @@
   <title>Tài chính gia đình</title>
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="icon" href="/icon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/styles.css" />
-  <link rel="stylesheet" href="/mobile-fixes.css" />
-  <link rel="stylesheet" href="/polish.css" />
-  <link rel="stylesheet" href="/budget-board.css" />
-  <link rel="stylesheet" href="/pro-app.css" />
-  <link rel="stylesheet" href="/analytics-investments.css" />
-  <link rel="stylesheet" href="/finance-v3.css" />
-  <link rel="stylesheet" href="/finance-v4.css" />
-  <link rel="stylesheet" href="/finance-v6.css" />
-  <link rel="stylesheet" href="/finance-v7.css" />
-  <link rel="stylesheet" href="/recurring.css" />
-  <link rel="stylesheet" href="/credit-cards.css" />
-  <link rel="stylesheet" href="/credit-card-advanced.css" />
-  <link rel="stylesheet" href="/reconciliation.css" />
-  <link rel="stylesheet" href="/exceptional.css" />
-  <link rel="stylesheet" href="/fx-history.css" />
-  <link rel="stylesheet" href="/investment-advanced.css" />
-  <link rel="stylesheet" href="/family-split.css" />
-  <link rel="stylesheet" href="/statement-import.css" />
-  <link rel="stylesheet" href="/audit-hardening.css" />
-  <link rel="stylesheet" href="/ui-nkt-dark.css" />
-  <link rel="stylesheet" href="/ui-nkt-modules.css" />
-  <link rel="stylesheet" href="/ui-nkt-final.css" />
-  <link rel="stylesheet" href="/ux-simple.css" />
-  <link rel="stylesheet" href="/ux-simple-v3.css" />
-  <link rel="stylesheet" href="/budget-inline-settings.css" />
-  <link rel="stylesheet" href="/dashboard-analysis-final.css" />
-  <link rel="stylesheet" href="/ux-balance-final.css" />
+  <link rel="stylesheet" href="/css/app.css" />
 </head>
 <body>
   <div id="unlock" class="unlock hidden">
@@ -58,7 +31,7 @@
     <aside class="sidebar">
       <div class="brand"><div class="brand-mark">₫</div><div><strong>Tài chính GD</strong><span id="familyNameSide">Gia đình</span></div></div>
       <nav id="nav" class="nav">
-        <button data-view="dashboard" class="active">⌂ <span>Tổng quan</span></button>
+        <button data-view="dashboard" class="active">⌘ <span>Tổng quan</span></button>
         <button data-view="budget">▤ <span>Chi tiêu</span></button>
         <button data-view="accounts">◫ <span>Tài sản</span></button>
         <button data-view="settings">⚙ <span>Cài đặt</span></button>
@@ -81,50 +54,23 @@
     </main>
 
     <nav id="mobileNav" class="mobile-nav">
-      <button data-view="dashboard" class="active"><b>⌂</b><span>Tổng quan</span></button>
+      <button data-view="dashboard" class="active"><b>⌘</b><span>Tổng quan</span></button>
       <button data-view="budget"><b>▤</b><span>Chi tiêu</span></button>
       <button data-view="accounts"><b>◫</b><span>Tài sản</span></button>
-      <button type="button" onclick="openMoreMenu()"><b>•••</b><span>Khác</span></button>
+      <button data-view="settings"><b>⚙</b><span>Cài đặt</span></button>
     </nav>
   </div>
 
   <dialog id="modal"><form method="dialog" id="modalForm" class="modal-card"><div id="modalBody"></div></form></dialog>
-  <script src="/core.js" defer></script>
-  <script src="/views.js" defer></script>
-  <script src="/forms.js" defer></script>
-  <script src="/linked-finance.js" defer></script>
-  <script src="/pro-app.js" defer></script>
-  <script src="/pro-guard.js" defer></script>
-  <script src="/analytics-investments.js" defer></script>
-  <script src="/v3-core.js" defer></script>
-  <script src="/v3-ui.js" defer></script>
-  <script src="/v3-forms.js" defer></script>
-  <script src="/finance-v4.js" defer></script>
-  <script src="/finance-v5.js" defer></script>
-  <script src="/finance-v6.js" defer></script>
-  <script src="/finance-v7.js" defer></script>
-  <script src="/recurring.js" defer></script>
-  <script src="/credit-cards.js" defer></script>
-  <script src="/reconciliation.js" defer></script>
-  <script src="/exceptional.js" defer></script>
-  <script src="/fx-history.js" defer></script>
-  <script src="/investment-advanced.js" defer></script>
-  <script src="/family-split.js" defer></script>
-  <script src="/statement-import.js" defer></script>
-  <script src="/actions.js" defer></script>
-  <script src="/audit-hardening.js" defer></script>
-  <script src="/recurring-version-ui.js" defer></script>
-  <script src="/credit-card-advanced.js" defer></script>
-  <script src="/final-hardening.js" defer></script>
-  <script src="/ui-2026.js" defer></script>
-  <script src="/ux-simple-v2.js" defer></script>
-  <script src="/ux-simple-v3.js" defer></script>
-  <script src="/ux-credit-guard.js" defer></script>
-  <script src="/budget-inline-settings.js" defer></script>
-  <script src="/settings-cleanup.js" defer></script>
-  <script src="/finance-flow-final.js" defer></script>
-  <script src="/dashboard-analysis-final.js" defer></script>
-  <script src="/ux-balance-final.js" defer></script>
-  <script src="/ux-balance-hotfix.js" defer></script>
+
+  <script src="/js/lib.js" defer></script>
+  <script src="/js/api.js" defer></script>
+  <script src="/js/finance.js" defer></script>
+  <script src="/js/modals.js" defer></script>
+  <script src="/js/views/budget.js" defer></script>
+  <script src="/js/views/dashboard.js" defer></script>
+  <script src="/js/views/accounts.js" defer></script>
+  <script src="/js/views/settings.js" defer></script>
+  <script src="/js/app.js" defer></script>
 </body>
 </html>
