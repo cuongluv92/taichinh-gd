@@ -33,7 +33,7 @@ function txListHtml(rows) {
     const canEdit = editable.has(t.transaction_type);
     return `<div class="tx"><button class="tx-row-btn${canEdit ? '' : ' no-cursor'}" ${canEdit ? act('openTransactionEdit', t.id) : 'disabled'}>
       <div class="tx-icon">${icon}</div>
-      <div class="tx-main"><strong>${esc(txLabel(t))}</strong><span>${esc(String(t.transaction_date).slice(0, 10))}${t.account_name ? ` · ${esc(t.account_name)}` : ''}${t.note ? ` · ${esc(t.note)}` : ''}</span></div>
+      <div class="tx-main"><strong>${esc(txLabel(t))}${F.isExceptional(t) ? ' <span class="status-chip warn">Bất thường</span>' : ''}</strong><span>${esc(String(t.transaction_date).slice(0, 10))}${t.account_name ? ` · ${esc(t.account_name)}` : ''}${t.note ? ` · ${esc(t.note)}` : ''}</span></div>
       </button>
       <div class="tx-actions"><strong class="amount ${cls}">${sign}${money(t.amount, t.currency)}</strong>${canEdit ? `<button class="mini-btn" aria-label="Xóa" ${act('deleteTransaction', t.id)}>×</button>` : ''}</div>
     </div>`;
@@ -67,14 +67,14 @@ const momText = (cur, prev) => compareText(cur, prev, 'tháng trước');
 const yoyText = (cur, prev) => compareText(cur, prev, 'cùng kỳ năm trước');
 
 function categoryTrendHtml() {
-  const cats = F.topExpenseCategories(5);
-  if (!cats.length) return '<div class="empty">Chưa có dữ liệu chi tiêu để so sánh xu hướng.</div>';
-  return `<div class="list">${cats.map(name => {
-    const series = F.categoryTrendSeries(name, 6);
-    const cur = series[series.length - 1].value, prev = series[series.length - 2]?.value || 0;
+  const rows = F.categoryTrendData(5, 6);
+  if (!rows.length) return '<div class="empty">Chưa có dữ liệu chi tiêu để so sánh xu hướng.</div>';
+  const sharedMax = Math.max(1, ...rows.flatMap(r => r.series.map(x => x.value)));
+  return `<div class="list">${rows.map(r => {
+    const cur = r.series[r.series.length - 1].value, prev = r.series[r.series.length - 2]?.value || 0;
     return `<div class="category-trend-row">
-      <div class="tx-main"><strong>${esc(name)}</strong><span>${money(cur)}${momText(cur, prev)}</span></div>
-      ${sparklineSvg(series)}
+      <div class="tx-main"><strong>${esc(r.name)}</strong><span>${money(cur)}${momText(cur, prev)}</span></div>
+      ${sparklineSvg(r.series, 108, 28, sharedMax)}
     </div>`;
   }).join('')}</div>`;
 }

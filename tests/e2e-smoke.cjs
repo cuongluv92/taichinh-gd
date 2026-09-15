@@ -68,7 +68,11 @@ const ACCOUNTS = [
   { id: 'card', name: 'Rakuten Card', account_type: 'credit', currency: 'JPY', opening_balance: 0, is_active: true }
 ];
 const LOANS = [
-  { id: 'loan1', counterparty: 'Vay mua xe', loan_type: 'borrowed', currency: 'JPY', principal: 1000000, remaining_amount: 850000, start_date: '2026-01-10', due_date: '2028-01-10' }
+  { id: 'loan1', counterparty: 'Vay mua xe', loan_type: 'borrowed', currency: 'JPY', principal: 1000000, remaining_amount: 850000, start_date: '2026-01-10', due_date: '2028-01-10' },
+  { id: 'loan2', counterparty: 'Vay ngân hàng ABC', loan_type: 'borrowed', currency: 'JPY', principal: 5000000, remaining_amount: 4800000, start_date: '2025-06-10', due_date: '2030-06-10' }
+];
+const LOAN_TERMS = [
+  { loan_id: 'loan2', loan_kind: 'bank', institution_name: 'Ngân hàng ABC', product_name: 'Vay tiêu dùng', annual_rate: 3, repayment_method: 'equal_payment', term_months: 60, payment_day: 15 }
 ];
 let txSeq = 0;
 function tx(o) { return { id: 'tx' + (++txSeq), currency: 'JPY', fx_rate: 1, note: '', account_name: (ACCOUNTS.find(a => a.id === o.account_id) || {}).name, transfer_account_name: (ACCOUNTS.find(a => a.id === o.transfer_account_id) || {}).name, category_name: (CATEGORIES.find(c => c.id === o.category_id) || {}).name, ...o }; }
@@ -92,9 +96,13 @@ const RPC_HANDLERS = {
   taichinh_gd_api: (action) => {
     if (action === 'bootstrap' || action === 'month') return { household: { name: 'Nguyễn Gia', base_currency: 'JPY' }, accounts: ACCOUNTS, categories: CATEGORIES, category_versions: [], transactions: MONTH_TX, goals: [], loans: LOANS, monthly_summary: [] };
     if (action === 'export') return { transactions: FULL_TX };
-    return { ok: true };
+    if (action === 'save_account') return { ok: true, id: 'newacct1' };
+    return { ok: true, id: 'x' };
   },
-  taichinh_gd_extension_api: () => ({ reporting: { show_vnd_conversion: false, jpy_vnd_rate: null }, loan_terms: [] }),
+  taichinh_gd_extension_api: (action) => {
+    if (action === 'save_reporting' || action === 'bank_payment') return { ok: true };
+    return { reporting: { show_vnd_conversion: false, jpy_vnd_rate: null }, loan_terms: LOAN_TERMS };
+  },
   taichinh_gd_allocation_api: () => ({ month: `${MONTH}-01`, fixed_pct: 25, variable_pct: 20, interest_pct: 2, saving_pct: 10, investment_pct: 10, debt_pct: 8, reserve_pct: 25, inherited: false, source_month: `${MONTH}-01` }),
   taichinh_gd_recurring_api: () => ({ items: [] }),
   taichinh_gd_credit_card_api: (action) => {
@@ -104,13 +112,14 @@ const RPC_HANDLERS = {
     return { ok: true };
   },
   taichinh_gd_credit_card_month_api: () => ({ items: [{ account_id: 'card', card_name: 'Rakuten Card', currency: 'JPY', payment_month: `${MONTH}-01`, payment_date: `${MONTH}-27`, regular_amount: 8000, installment_principal: 0, installment_fee: 0, expected_amount: 8000, paid: false }] }),
-  taichinh_gd_exceptional_api: () => ({ ids: [] }),
+  taichinh_gd_exceptional_api: (action) => action === 'set' ? { ok: true } : { ids: [] },
   taichinh_gd_fx_history_api: () => ({ items: [] }),
   taichinh_gd_backup_api: () => ({ ok: true }),
   taichinh_gd_debt_api: () => ({ ok: true, id: 'x' }),
   taichinh_gd_bank_loan_api: () => ({ ok: true, id: 'x' }),
   taichinh_gd_budget_column_api: () => ({ ok: true }),
-  taichinh_gd_investment_api: () => ({ ok: true, id: 'x' })
+  taichinh_gd_investment_api: () => ({ ok: true, id: 'x' }),
+  taichinh_gd_credit_card_plan_api: () => ({ ok: true, id: 'x' })
 };
 
 (async () => {
@@ -206,6 +215,12 @@ const RPC_HANDLERS = {
   await page.reload();
   await page.waitForSelector('#app:not(.hidden)', { timeout: 8000 });
 
+  // toast.show can linger up to 2.4s (see lib.js toast()); without clearing
+  // it first, waitForSelector('#toast.show') right after a click can match
+  // a STALE toast left over from an earlier step instead of a new one,
+  // making a silently-failed action look like it succeeded.
+  async function resetToast() { await page.evaluate(() => { const t = document.getElementById('toast'); if (t) t.className = 'toast'; }); }
+
   async function clickAndCheckModal(label, selector, checkSelector) {
     await page.click(selector);
     try {
@@ -227,6 +242,36 @@ const RPC_HANDLERS = {
   const upcomingBtn = page.locator('section.card.section', { hasText: 'Sắp đến hạn' }).locator('.tx-row-btn').first();
   if (await upcomingBtn.count()) { await upcomingBtn.click(); await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK upcoming-due row (Sắp đến hạn): modal opened - OK')).catch(() => results.push('CLICK upcoming-due row: modal did NOT open - FAIL')); await page.evaluate(() => document.getElementById('modal')?.close()); }
 
+  // "Chi tiêu bất thường" checkbox: visible for expense, hidden for income,
+  // and the write path (api.exceptional 'set') doesn't throw on submit.
+  await page.click('#quickAdd');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 });
+  await page.click('.details-summary');
+  const excVisibleExpense = await page.isVisible('#qeExceptionalField');
+  results.push(`QUICK ENTRY "bất thường" checkbox visible for Chi (expense): ${excVisibleExpense}`);
+  await page.click('#qeTypeTabs button[data-t="income"]');
+  const excVisibleIncome = await page.isVisible('#qeExceptionalField');
+  results.push(`QUICK ENTRY "bất thường" checkbox hidden for Thu (income): ${!excVisibleIncome}`);
+  await page.click('#qeTypeTabs button[data-t="expense"]');
+  await page.fill('#qeAmount', '12345');
+  await page.check('#qeExceptional');
+  await resetToast();
+  await page.click('#modalForm [type=submit]');
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`SUBMIT quick-entry with "bất thường" checked: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('SUBMIT quick-entry with "bất thường" checked: no toast - FAIL'));
+  await page.evaluate(() => document.getElementById('modal')?.close());
+  await page.waitForTimeout(50);
+
+  // Delete a transaction: confirm() stubbed true just for this click, same
+  // pattern as the loan delete below.
+  await page.evaluate(() => { window.confirm = () => true; });
+  const deleteTxBtn = await page.$('.tx-actions .mini-btn[aria-label="Xóa"]');
+  if (deleteTxBtn) {
+    await resetToast();
+    await deleteTxBtn.click();
+    await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`CLICK delete transaction (×): saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('CLICK delete transaction: no toast - FAIL'));
+  }
+  await page.evaluate(() => { window.confirm = () => false; });
+
   await page.click('[data-view="budget"]');
   await page.waitForSelector('.money-board');
   await clickAndCheckModal('budget Thu-nhập column-settings', '.money-column.income .column-settings', '#columnRows');
@@ -244,10 +289,36 @@ const RPC_HANDLERS = {
   } catch { results.push('CLICK "+ Thêm khoản nợ" inside manager: loan form did NOT open - FAIL'); }
   await page.evaluate(() => document.getElementById('modal')?.close());
   await page.waitForTimeout(50);
+
+  // Delete an unlinked loan from inside the debt manager (loan2 has no
+  // transactions in the fixture, so deleteLoan's own "has history" guard
+  // doesn't block it) — confirm() is stubbed false everywhere else in this
+  // run, so flip it true just for this one click and put it back after.
+  await page.click('.money-column.debt .column-settings');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 });
+  await page.evaluate(() => { window.confirm = () => true; });
+  await resetToast();
+  await page.click('.tx:has-text("ABC") [aria-label="Xóa khoản nợ"]');
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`CLICK delete unlinked loan (debt manager ×): saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('CLICK delete unlinked loan: no toast - FAIL'));
+  const modalClosedAfterDelete = !(await page.$('#modal[open]'));
+  results.push(`Debt manager modal closes itself after a successful delete: ${modalClosedAfterDelete}`);
+  await page.evaluate(() => { window.confirm = () => false; });
+  await page.evaluate(() => document.getElementById('modal')?.close());
+  await page.waitForTimeout(50);
+
   const incomeLine = await page.$('.money-column.income .money-line');
   if (incomeLine) { await incomeLine.click(); await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK income money-line: quick-entry opened - OK')).catch(() => results.push('CLICK income money-line: modal did NOT open - FAIL')); await page.evaluate(() => document.getElementById('modal')?.close()); }
   const debtLine = await page.$('.money-column.debt .money-line');
   if (debtLine) { await debtLine.click(); await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK debt money-line (openLoanPayment): modal opened - OK')).catch(() => results.push('CLICK debt money-line: modal did NOT open - FAIL')); await page.evaluate(() => document.getElementById('modal')?.close()); }
+  // loan2 is a bank-kind loan (has loan_terms) — its row must route to
+  // openBankPayment (gốc/lãi split), not the plain personal-loan modal.
+  const bankLoanLine = page.locator('.money-column.debt .money-line', { hasText: 'ABC' });
+  if (await bankLoanLine.count()) {
+    await bankLoanLine.click();
+    await page.waitForSelector('#bpPrincipal', { timeout: 1500 }).then(() => results.push('CLICK bank-loan money-line (openBankPayment, gốc/lãi split): modal opened - OK')).catch(() => results.push('CLICK bank-loan money-line: openBankPayment did NOT open - FAIL'));
+    await page.evaluate(() => document.getElementById('modal')?.close());
+    await page.waitForTimeout(50);
+  }
   const creditLine = await page.$('.money-column.credit .money-line');
   if (creditLine) { await creditLine.click(); await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK credit money-line (statement payment): modal opened - OK')).catch(() => results.push('CLICK credit money-line: modal did NOT open - FAIL')); await page.evaluate(() => document.getElementById('modal')?.close()); }
   const creditQuickAdd = await page.$('.money-column.credit .money-line-wrap .mini-btn');
@@ -258,21 +329,58 @@ const RPC_HANDLERS = {
     results.push(`CLICK credit ＋ quick-add pre-selects the card as account: ${accSelVal === 'card'}`);
     await page.evaluate(() => document.getElementById('modal')?.close());
   }
+  await page.waitForTimeout(50);
+
+  // "+ Thẻ tín dụng" and "+ Khoản trả góp" inside the credit column manager
+  // — never actually clicked before this round, unlike the debt column's
+  // equivalent "+ Thêm khoản nợ".
+  await page.click('.money-column.credit .column-settings');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 });
+  await page.click('button:has-text("Thẻ tín dụng")');
+  await page.waitForSelector('[name="closing_day"]', { timeout: 1500 }).then(() => results.push('CLICK "+ Thẻ tín dụng" inside manager (reopenAfterModal): new-card form opened - OK')).catch(() => results.push('CLICK "+ Thẻ tín dụng": new-card form did NOT open - FAIL'));
+  await page.evaluate(() => document.getElementById('modal')?.close());
+  await page.waitForTimeout(50);
+
+  await page.click('.money-column.credit .column-settings');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 });
+  await page.click('button:has-text("Khoản trả góp")');
+  await page.waitForSelector('[name="principal_amount"]', { timeout: 1500 }).then(() => results.push('CLICK "+ Khoản trả góp" inside manager (reopenAfterModal): new-installment form opened - OK')).catch(() => results.push('CLICK "+ Khoản trả góp": new-installment form did NOT open - FAIL'));
+  await page.evaluate(() => document.getElementById('modal')?.close());
+  await page.waitForTimeout(50);
 
   await page.click('[data-view="accounts"]');
   await clickAndCheckModal('accounts "+ Tài khoản"', 'button:has-text("＋ Tài khoản")', '[name="name"]');
   await clickAndCheckModal('accounts "Chuyển tiền"', 'button:has-text("Chuyển tiền")');
   const acctEditBtn = await page.$('.item-card .mini-btn');
   if (acctEditBtn) { await acctEditBtn.click(); await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK account card edit (pencil): modal opened - OK')).catch(() => results.push('CLICK account edit: modal did NOT open - FAIL')); await page.evaluate(() => document.getElementById('modal')?.close()); }
-  const investCard = await page.$('.item-card:has-text("NISA")');
-  if (investCard) {
-    const nap = await investCard.$('button:has-text("＋ Nạp")');
-    if (nap) { await nap.click(); await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK investment "+ Nạp": modal opened - OK')).catch(() => results.push('CLICK investment Nạp: modal did NOT open - FAIL')); await page.evaluate(() => document.getElementById('modal')?.close()); }
-    const dinhGia = await investCard.$('button:has-text("Định giá")');
-    if (dinhGia) { await dinhGia.click(); await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK investment "Định giá": modal opened - OK')).catch(() => results.push('CLICK investment Định giá: modal did NOT open - FAIL')); await page.evaluate(() => document.getElementById('modal')?.close()); }
+  const archiveBtn = await page.$('.item-card [aria-label="Ẩn tài khoản"]');
+  if (archiveBtn) {
+    await page.evaluate(() => { window.confirm = () => true; });
+    await resetToast();
+    await archiveBtn.click();
+    await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`CLICK account "Ẩn tài khoản" (archiveAccount): saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('CLICK account "Ẩn tài khoản": no toast - FAIL'));
+    await page.evaluate(() => { window.confirm = () => false; });
+  } else { results.push('CLICK account "Ẩn tài khoản": button not found - FAIL'); }
+  // Locators (not page.$() element handles) — the archive click above
+  // re-renders #content, which detaches any handle grabbed beforehand;
+  // locators re-resolve against the live DOM on every action instead.
+  const investCard = page.locator('.item-card', { hasText: 'NISA' });
+  if (await investCard.count()) {
+    const nap = investCard.locator('button:has-text("＋ Nạp")');
+    if (await nap.count()) { await nap.click(); await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK investment "+ Nạp": modal opened - OK')).catch(() => results.push('CLICK investment Nạp: modal did NOT open - FAIL')); await page.evaluate(() => document.getElementById('modal')?.close()); }
+    const dinhGia = investCard.locator('button:has-text("Định giá")');
+    if (await dinhGia.count()) { await dinhGia.click(); await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK investment "Định giá": modal opened - OK')).catch(() => results.push('CLICK investment Định giá: modal did NOT open - FAIL')); await page.evaluate(() => document.getElementById('modal')?.close()); }
   }
 
   await page.click('[data-view="settings"]');
+  // Actual form submits (save_household / save_reporting), not just that
+  // the buttons exist — wireSettingsView()'s listeners must have attached.
+  await resetToast();
+  await page.click('#householdForm button[type=submit]');
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`SUBMIT "Gia đình" form (saveHousehold): saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('SUBMIT "Gia đình" form: no toast - FAIL'));
+  await resetToast();
+  await page.click('#reportingForm button[type=submit]');
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`SUBMIT "Tỷ giá" form (saveReporting): saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('SUBMIT "Tỷ giá" form: no toast - FAIL'));
   await page.click('button:has-text("Sao chép link riêng")').catch(() => {});
   results.push('CLICK settings "Sao chép link riêng": no crash - OK');
   const csvBtn = await page.$('button:has-text("Xuất CSV")');

@@ -85,9 +85,12 @@ function openCreditColumnManager() {
     <div class="list">${rows || '<div class="empty compact">Chưa có thẻ tín dụng.</div>'}</div>
     <div class="row mt-14"><button class="btn primary" ${act('reopenAfterModal', 'openCreditCard')}>＋ Thẻ tín dụng</button><button class="btn" ${cards.length ? '' : 'disabled'} ${act('reopenAfterModal', 'openInstallment')}>＋ Khoản trả góp</button></div>`);
 }
+async function deleteLoanFromManager(id) {
+  if (await deleteLoan(id)) closeModal();
+}
 function openDebtColumnManager() {
   const loans = (state.loans || []).filter(l => l.loan_type === 'borrowed');
-  const rows = loans.map(l => `<div class="tx"><div class="tx-main"><strong>${esc(l.counterparty)}</strong><span>Dư nợ ${esc(money(l.remaining_amount, l.currency))}</span></div><div class="tx-actions"><button class="btn sm" ${act('reopenAfterModal', 'openLoan', l.id)}>Sửa</button></div></div>`).join('');
+  const rows = loans.map(l => `<div class="tx"><div class="tx-main"><strong>${esc(l.counterparty)}</strong><span>Dư nợ ${esc(money(l.remaining_amount, l.currency))}</span></div><div class="tx-actions"><button class="btn sm" ${act('reopenAfterModal', 'openLoan', l.id)}>Sửa</button><button class="mini-btn" aria-label="Xóa khoản nợ" title="Xóa (chỉ khi chưa có giao dịch)" ${act('deleteLoanFromManager', l.id)}>×</button></div></div>`).join('');
   infoModal('Cài đặt · Nợ phải trả', `<p class="note">Cột này chỉ hiện số phải trả trong tháng; tổng dư nợ vẫn được dùng để tính tài sản ròng.</p>
     <div class="list">${rows || '<div class="empty compact">Chưa có khoản nợ.</div>'}</div>
     <button class="btn primary mt-14" ${act('reopenAfterModal', 'openLoan')}>＋ Thêm khoản nợ</button>`);

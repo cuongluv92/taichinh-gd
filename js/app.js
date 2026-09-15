@@ -147,14 +147,23 @@ function csvCell(v) {
   const s = String(v ?? '');
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
+// Signed for a "SUM this column" cash-flow total: + for income-like types,
+// − for expense-like types, blank for transfer/goal_save/goal_withdraw —
+// those move money between the household's own accounts and have no net
+// effect on total cash, so a sign on them would make the sum wrong, not
+// just imprecise.
+function csvSignedAmount(t) {
+  if (F.TRANSFER_TYPES.has(t.transaction_type)) return '';
+  return F.POSITIVE_TYPES.has(t.transaction_type) ? n(t.amount) : -n(t.amount);
+}
 // Every transaction the household has ever recorded, for opening in Excel —
 // no server round-trip needed, state.fullTransactions is already loaded.
 function exportCsv() {
   const rows = [...(state.fullTransactions || [])].sort((a, b) => String(a.transaction_date).localeCompare(String(b.transaction_date)));
-  const header = ['Ngày', 'Loại', 'Danh mục', 'Tài khoản', 'Tài khoản nhận', 'Số tiền', 'Tiền tệ', 'Ghi chú'];
+  const header = ['Ngày', 'Loại', 'Danh mục', 'Tài khoản', 'Tài khoản nhận', 'Số tiền', 'Dòng tiền (dấu +/-)', 'Tiền tệ', 'Ghi chú'];
   const lines = rows.map(t => [
     String(t.transaction_date).slice(0, 10), CSV_TYPE_LABEL[t.transaction_type] || t.transaction_type,
-    t.category_name || '', t.account_name || '', t.transfer_account_name || '', t.amount, t.currency, t.note || ''
+    t.category_name || '', t.account_name || '', t.transfer_account_name || '', t.amount, csvSignedAmount(t), t.currency, t.note || ''
   ].map(csvCell).join(','));
   const csv = '﻿' + [header.join(','), ...lines].join('\r\n'); // BOM so Excel reads UTF-8 Vietnamese correctly
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });

@@ -51,6 +51,7 @@ function openQuickEntry(defaults = {}) {
         <div class="field"><label>Tài khoản</label><select id="qeAccountSelect" name="account_id"></select></div>
         <div class="field" id="qeTargetSelectField"><label>Chuyển đến</label><select id="qeTargetSelect" name="transfer_account_id"></select></div>
         <div class="field full"><label>Ghi chú</label><input name="note" value="${esc(defaults.note || '')}" placeholder="Tùy chọn"></div>
+        <div class="field full hidden" id="qeExceptionalField"><label class="checkbox-label"><input type="checkbox" id="qeExceptional"> Chi tiêu bất thường (không tính vào ngân sách Chi cố định/Chi biến động tháng này)</label></div>
       </div>
     </details>
     <input type="hidden" id="qeType" name="transaction_type" value="${esc(type)}"><input type="hidden" id="qeCurrencyField" name="currency" value="${esc(state.base)}">
@@ -74,6 +75,7 @@ function openQuickEntry(defaults = {}) {
     $$('#qeTypeTabs button').forEach(b => b.classList.toggle('active', b.dataset.t === type));
     $('#qeCategoryBlock').classList.toggle('hidden', type === 'transfer');
     catSel.closest('.field').classList.toggle('hidden', type === 'transfer');
+    $('#qeExceptionalField').classList.toggle('hidden', type !== 'expense');
     const cats = type === 'transfer' ? [] : F.orderedCategories(type);
     if (type !== 'transfer' && !cats.some(c => c.id === categoryId)) categoryId = cats[0]?.id || '';
     catSel.innerHTML = type === 'transfer' ? '' : options(cats, categoryId);
@@ -107,7 +109,8 @@ function openQuickEntry(defaults = {}) {
       if (!fd.account_id) throw new Error('Hãy chọn tài khoản.');
       if (fd.transaction_type !== 'transfer' && !fd.category_id) throw new Error('Hãy chọn danh mục.');
       if (fd.transaction_type === 'transfer' && !fd.transfer_account_id) throw new Error('Hãy chọn tài khoản nhận.');
-      await api.core('save_transaction', { ...fd, id: null, fx_rate: 1, category_id: fd.transaction_type === 'transfer' ? null : fd.category_id, transfer_account_id: fd.transaction_type === 'transfer' ? fd.transfer_account_id : null });
+      const saved = await api.core('save_transaction', { ...fd, id: null, fx_rate: 1, category_id: fd.transaction_type === 'transfer' ? null : fd.category_id, transfer_account_id: fd.transaction_type === 'transfer' ? fd.transfer_account_id : null });
+      if (fd.transaction_type === 'expense' && $('#qeExceptional').checked) await api.exceptional('set', { id: saved.id, is_exceptional: true });
       writeQuickPref(fd.transaction_type, { account_id: fd.account_id, category_id: fd.category_id || null });
       dlg.close(); await window.refresh(); toast('Đã lưu');
     } catch (err) { toast(err.message, true); } finally { submitBtn.disabled = false; }
@@ -130,13 +133,16 @@ function openTransactionEdit(id) {
     <div class="field" id="etCatField"><label>Danh mục</label><select name="category_id" id="etCat"></select></div>
     <div class="field hidden" id="etTgtField"><label>Chuyển đến</label><select name="transfer_account_id" id="etTgt"></select></div>
     <div class="field full"><label>Ghi chú</label><input name="note" value="${esc(t.note || '')}"></div>
+    <div class="field full${type === 'expense' ? '' : ' hidden'}" id="etExceptionalField"><label class="checkbox-label"><input type="checkbox" id="etExceptional" ${F.isExceptional(t) ? 'checked' : ''}> Chi tiêu bất thường (không tính vào ngân sách Chi cố định/Chi biến động tháng này)</label></div>
   </div>`, async fd => {
     await api.core('save_transaction', { ...fd, id, fx_rate: 1, currency: F.accountById(fd.account_id)?.currency || state.base, category_id: fd.transaction_type === 'transfer' ? null : fd.category_id, transfer_account_id: fd.transaction_type === 'transfer' ? fd.transfer_account_id : null });
+    if (fd.transaction_type === 'expense') await api.exceptional('set', { id, is_exceptional: $('#etExceptional').checked });
   });
   const typeEl = $('#etType'), catEl = $('#etCat'), tgtEl = $('#etTgt');
   const sync = () => {
     const tr = typeEl.value === 'transfer';
     $('#etCatField').classList.toggle('hidden', tr); $('#etTgtField').classList.toggle('hidden', !tr);
+    $('#etExceptionalField').classList.toggle('hidden', typeEl.value !== 'expense');
     if (!tr) catEl.innerHTML = options(F.activeCategories(typeEl.value), t.category_id);
     else tgtEl.innerHTML = options(F.activeAccounts().filter(a => a.id !== t.account_id), t.transfer_account_id);
   };
@@ -328,11 +334,15 @@ function openLoan(id = '', defaults = {}) {
   };
   if (kindEl) kindEl.onchange = sync; if (curEl) curEl.onchange = sync; sync();
 }
+// Returns true only once the loan is actually gone — callers that have a
+// modal open on top (e.g. the debt column manager list) use this to decide
+// whether to close/refresh it, instead of doing so unconditionally.
 async function deleteLoan(id) {
   const linked = (state.fullTransactions || []).some(t => t.loan_id === id);
-  if (linked) return toast('Khoản này đã có lịch sử nên không xóa trực tiếp. Hãy tất toán để giữ đúng lịch sử tài sản.', true);
-  if (!confirm('Xóa khoản nợ chưa có giao dịch này?')) return;
-  try { await api.core('delete_loan', { id }); await window.refresh(); toast('Đã xóa khoản nợ'); } catch (e) { toast(e.message, true); }
+  if (linked) { toast('Khoản này đã có lịch sử nên không xóa trực tiếp. Hãy tất toán để giữ đúng lịch sử tài sản.', true); return false; }
+  if (!confirm('Xóa khoản nợ chưa có giao dịch này?')) return false;
+  try { await api.core('delete_loan', { id }); await window.refresh(); toast('Đã xóa khoản nợ'); return true; }
+  catch (e) { toast(e.message, true); return false; }
 }
 function openLoanPayment(id) {
   const l = (state.loans || []).find(x => x.id === id); if (!l) return toast('Không tìm thấy khoản nợ.', true);

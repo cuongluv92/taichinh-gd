@@ -83,6 +83,30 @@ function tx(overrides) { return { id: overrides.id || Math.random().toString(36)
 }
 
 // ---------------------------------------------------------------------
+// B2. A transaction flagged exceptional (taichinh_gd_exceptional_api 'set')
+//     must drop out of Chi cố định/Chi biến động and expenseByCategory, but
+//     still count in net worth / account balances — it happened, it just
+//     shouldn't skew the recurring monthly budget comparison.
+// ---------------------------------------------------------------------
+{
+  resetState({
+    accounts: [acc('bank', 'bank', 'JPY', 500000)],
+    categories: [{ id: 'repair', direction: 'expense', cost_type: 'variable', name: 'Sửa nhà', is_active: true }],
+  });
+  const normal = tx({ id: 'tx-normal', account_id: 'bank', category_id: 'repair', transaction_type: 'expense', amount: 5000, transaction_date: '2026-09-05' });
+  const oneOff = tx({ id: 'tx-oneoff', account_id: 'bank', category_id: 'repair', transaction_type: 'expense', amount: 300000, transaction_date: '2026-09-10' });
+  sandbox.state.fullTransactions = [normal, oneOff];
+  sandbox.state.transactions = [normal, oneOff];
+  sandbox.state.exceptionalIds = ['tx-oneoff'];
+  const stats = F.statsFor([normal, oneOff]);
+  eq('B2. Exceptional expense excluded from variable-expense total', stats.variable, 5000);
+  eq('B2. Exceptional expense tracked in its own bucket, not lost', stats.exceptional, 300000);
+  eq('B2. categoryActualBase (budget column actuals) excludes the exceptional amount', F.categoryActualBase('repair', 'expense'), 5000);
+  eq('B2. expenseByCategory (dashboard donut) excludes the exceptional amount', F.expenseByCategory([normal, oneOff]).find(x => x.label === 'Sửa nhà')?.value, 5000);
+  eq('B2. Net worth still falls by the FULL amount incl. the exceptional expense', F.financialPosition('2026-09-30').netWorth, 500000 - 5000 - 300000);
+}
+
+// ---------------------------------------------------------------------
 // C. Bank loan repayment 50,000 = 40,000 principal + 10,000 interest.
 //    Principal must NOT count as household expense; interest must.
 //    Net worth must fall by exactly the interest portion.
@@ -147,6 +171,30 @@ function tx(overrides) { return { id: overrides.id || Math.random().toString(36)
   eq('F. September still resolves to the old 280,000 plan', F.categoryVersionAt('salary', '2026-09-20').planned_amount, 280000);
   eq('F. October resolves to the new 300,000 plan', F.categoryVersionAt('salary', '2026-10-02').planned_amount, 300000);
   eq('F. November inherits forward (still 300,000, no new edit needed)', F.categoryVersionAt('salary', '2026-11-01').planned_amount, 300000);
+}
+
+// ---------------------------------------------------------------------
+// F2. Category trend widget must survive a rename: it groups by
+//     category_id, not the display name, so spend from before a rename
+//     doesn't silently read as zero once the name changes.
+// ---------------------------------------------------------------------
+{
+  resetState({
+    categories: [{ id: 'eat1', direction: 'expense', cost_type: 'variable', name: 'Ăn uống ngoài', is_active: true }],
+    categoryVersions: [
+      { category_id: 'eat1', effective_month: '2026-07-01', name: 'Ăn uống', cost_type: 'variable' },
+      { category_id: 'eat1', effective_month: '2026-09-01', name: 'Ăn uống ngoài', cost_type: 'variable' }
+    ]
+  });
+  sandbox.state.fullTransactions = [
+    tx({ account_id: 'bank', category_id: 'eat1', transaction_type: 'expense', amount: 40000, transaction_date: '2026-07-15' }),
+    tx({ account_id: 'bank', category_id: 'eat1', transaction_type: 'expense', amount: 50000, transaction_date: '2026-09-15' })
+  ];
+  const trend = F.categoryTrendData(5, 3, '2026-09'); // window = Jul, Aug, Sep
+  eq('F2. Renamed category collapses to exactly one trend row, not two', trend.length, 1);
+  eq('F2. Pre-rename month (July, old name) still shows its real spend', trend[0]?.series[0]?.value, 40000);
+  eq('F2. Post-rename month (September, new name) shows its spend', trend[0]?.series[2]?.value, 50000);
+  eq('F2. Row label uses the current name', trend[0]?.name, 'Ăn uống ngoài');
 }
 
 // ---------------------------------------------------------------------

@@ -224,17 +224,29 @@ F.expenseByCategory = txs => {
   });
   return [...map.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
 };
-// Names of the top-N expense categories for the month being viewed, most
-// spent first — used to pick which categories get a trend sparkline.
-F.topExpenseCategories = (count = 5, month = state.month) => F.expenseByCategory(F.periodTransactions(month)).slice(0, count).map(x => x.label);
-// One category's spend per month for the last `months` months (oldest
-// first), by the same category-name grouping as F.expenseByCategory.
-F.categoryTrendSeries = (categoryName, months = 6, month = state.month) => {
+// Per-category monthly series for the last `months` months, for the N
+// categories with the highest TOTAL spend over that whole window (not just
+// the month being viewed — otherwise the row set would reshuffle every
+// month and you could never watch one category's trend across a tab).
+// Grouped by category_id, not name: a renamed category keeps its history
+// instead of the old-name months silently reading as zero.
+F.categoryTrendData = (count = 5, months = 6, month = state.month) => {
   const keys = Array.from({ length: months }, (_, i) => addMonths(month, i - (months - 1)));
-  return keys.map(k => {
-    const value = F.expenseByCategory(F.periodTransactions(k)).find(x => x.label === categoryName)?.value || 0;
-    return { month: k, value };
+  const byId = new Map();
+  keys.forEach((k, idx) => {
+    F.periodTransactions(k).filter(t => F.baseTx(t) && t.transaction_type === 'expense' && !F.isExceptional(t)).forEach(t => {
+      const c = F.categoryVersionAt(t.category_id, t.transaction_date);
+      const id = t.category_id || `_${c.name || t.category_name || 'Khác'}`;
+      if (!byId.has(id)) byId.set(id, { name: c.name || t.category_name || 'Khác', values: Array(months).fill(0) });
+      const entry = byId.get(id);
+      entry.values[idx] += F.baseAmount(t);
+      entry.name = c.name || t.category_name || entry.name; // keep the most recently seen name for display
+    });
   });
+  return [...byId.entries()]
+    .map(([id, v]) => ({ id, name: v.name, total: v.values.reduce((s, x) => s + x, 0), series: keys.map((k, i) => ({ month: k, value: v.values[i] })) }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, count);
 };
 // ---------------- FX (JPY -> VND, manual current rate only) ----------------
 // Settings only lets the user set a single "current" rate (reporting_settings),
@@ -267,14 +279,16 @@ F.loanMonthDue = (l, month = state.month) => {
   const rows = F.periodTransactions(month).filter(t => t.loan_id === l.id);
   const principal = rows.filter(t => t.transaction_type === 'loan_pay').reduce((s, t) => s + n(t.amount), 0);
   const interest = rows.filter(t => t.transaction_type === 'loan_interest').reduce((s, t) => s + n(t.amount), 0);
-  const paid = principal + interest;
-  if (paid > 0) return { amount: paid, note: 'Đã trả tháng này' };
-  if (monthKey(l.due_date) === month) return { amount: n(l.remaining_amount), note: 'Đến hạn trong tháng này' };
+  const paidAmount = principal + interest;
+  // `paid` is the field callers should branch on — the `note` text is
+  // display copy only and must never be pattern-matched for logic.
+  if (paidAmount > 0) return { amount: paidAmount, note: 'Đã trả tháng này', paid: true };
+  if (monthKey(l.due_date) === month) return { amount: n(l.remaining_amount), note: 'Đến hạn trong tháng này', paid: false };
   if (F.isBankLoan(l)) {
     const est = F.bankEstimate(l, endOfMonthDate(month));
-    if (n(est.total) > 0) return { amount: n(est.total), note: 'Dự kiến kỳ này' };
+    if (n(est.total) > 0) return { amount: n(est.total), note: 'Dự kiến kỳ này', paid: false };
   }
-  return { amount: 0, note: `Dư nợ ${money(l.remaining_amount, l.currency || state.base)}` };
+  return { amount: 0, note: `Dư nợ ${money(l.remaining_amount, l.currency || state.base)}`, paid: false };
 };
 F.debtMonthTotalBase = (month = state.month) => (state.loans || [])
   .filter(l => l.loan_type === 'borrowed' && n(l.remaining_amount) > 0 && (l.currency || state.base) === state.base)
@@ -286,7 +300,7 @@ F.upcomingDue = (month = state.month) => {
   const items = [];
   (state.loans || []).filter(l => l.loan_type === 'borrowed' && n(l.remaining_amount) > 0).forEach(l => {
     const due = F.loanMonthDue(l, month);
-    if (n(due.amount) > 0 && due.note !== 'Đã trả tháng này') {
+    if (n(due.amount) > 0 && !due.paid) {
       items.push({ kind: 'loan', id: l.id, label: l.counterparty, amount: due.amount, currency: l.currency || state.base, note: due.note, date: monthKey(l.due_date) === month ? l.due_date : null });
     }
   });
@@ -334,9 +348,11 @@ function legendHtml(items, mode = 'value', income = 0) {
   return `<div class="chart-legend">${items.filter(x => n(x.value) > 0).map((x, i) => `<div><span><i class="legend-dot legend-c${i % 10}"></i>${esc(x.label)}</span><strong>${money(x.value)}${mode === 'income' && income > 0 ? `<small>${pctText(x.value, income)}</small>` : ''}</strong></div>`).join('')}</div>`;
 }
 // Small per-category trend widget — bars via SVG attributes (never inline
-// style="...", which the production CSP silently drops).
-function sparklineSvg(data, w = 108, h = 28) {
-  const max = Math.max(1, ...data.map(x => n(x.value)));
+// style="...", which the production CSP silently drops). Pass `sharedMax`
+// when rendering several sparklines together so their bar heights stay
+// comparable to each other instead of each one filling to its own max.
+function sparklineSvg(data, w = 108, h = 28, sharedMax = 0) {
+  const max = Math.max(1, sharedMax, ...data.map(x => n(x.value)));
   const slot = w / data.length, bw = Math.max(1, slot - 2);
   const bars = data.map((x, i) => {
     const bh = Math.max(1, (h - 2) * n(x.value) / max);
