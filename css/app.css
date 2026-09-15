@@ -381,6 +381,8 @@ input[type=color]{padding:3px;height:36px}
    layout tweak has to be a real class instead. */
 .row{display:flex;align-items:center;gap:8px}
 .row-6{display:flex;align-items:center;gap:6px}
+.row-6 select,.row-6 input{flex:1;min-width:0}
+.row-6 .mini-btn{flex:none}
 .row-14{display:flex;align-items:center;gap:14px}
 .text-right{text-align:right}
 .no-cursor{cursor:default}

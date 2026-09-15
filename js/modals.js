@@ -425,14 +425,18 @@ function openCardSettings(id) {
   </div>`, fd => api.card('save', { ...fd, account_id: id }), 'Lưu chu kỳ');
 }
 function openInstallment() {
-  const cards = F.configuredCards(); if (!cards.length) return toast('Hãy thiết lập chu kỳ cho ít nhất một thẻ trước.', true);
+  const cards = F.configuredCards();
+  // No card set up yet? Don't dead-end — open the "add card" form directly
+  // instead of just refusing (that form also covers PayPay/AuPay/"ngân
+  // hàng ABC" style entries, since it's just a name + a payment cycle).
+  if (!cards.length) { toast('Chưa có thẻ nào — hãy thêm một thẻ trước.', true); return reopenAfterModal('openCreditCard'); }
   const cats = F.activeCategories('expense'); if (!cats.length) return toast('Hãy tạo danh mục chi trước.', true);
   modal('Thêm khoản trả góp', `<div class="note"><b>Nguyên tắc:</b> toàn bộ giá mua ghi chi tại ngày mua. Mỗi tháng chỉ trả nghĩa vụ; phí trả góp mới là chi phí phát sinh thêm.</div>
   <div class="form-grid">
     <div class="field full"><label>Tên khoản</label><input name="name" placeholder="VD: iPhone / Máy giặt" required autofocus></div>
     <div class="field"><label>Loại khoản</label><select name="entry_mode"><option value="purchase">Mua mới</option><option value="existing">Đang trả dở</option></select></div>
     <div class="field"><label>Lịch thanh toán</label><select name="schedule_mode"><option value="equal">Đều hàng tháng</option><option value="custom">Từng tháng / Bonus</option></select></div>
-    <div class="field"><label>Thẻ</label><select name="card_account_id" required>${options(cards, cards[0].id, a => `${a.name} · ${a.currency}`)}</select></div>
+    <div class="field"><label>Thẻ</label><div class="row-6"><select name="card_account_id" required>${options(cards, cards[0].id, a => `${a.name} · ${a.currency}`)}</select><button type="button" class="mini-btn" aria-label="Thêm thẻ mới" title="Thêm thẻ khác (Rakuten, PayPay, AuPay, ngân hàng...)" ${act('reopenAfterModal', 'openCreditCard')}>＋</button></div></div>
     <div class="field"><label>Giá mua / gốc</label><input name="principal_amount" type="number" min="1" step="1" required></div>
     <div class="field"><label>Tổng số kỳ</label><input id="instTotal" name="total_installments" type="number" min="2" max="60" value="12" required></div>
     <div class="field"><label>Phí/lãi tổng</label><input name="fee_total" type="number" min="0" step="1" value="0"></div>
@@ -488,11 +492,30 @@ function openInstallment() {
     box.addEventListener('input', updateInstallmentSummary);
     updateInstallmentSummary();
   };
+  // Mua mới: backend requires the rows' gốc/phí to sum to EXACTLY
+  // principal_amount/fee_total (custom_principal_total_mismatch /
+  // custom_fee_total_mismatch) — so when you hand-edit a bonus month up,
+  // the fix isn't obvious from a plain running total. Show the gap live.
+  // Đang trả dở only requires the total to not exceed the original price
+  // (remaining_principal_exceeds_original), which is a looser check.
   function updateInstallmentSummary() {
     const rows = $$('#instRows [data-row]');
     const p = rows.reduce((s, r) => s + n(r.querySelector('[data-principal]').value), 0);
     const f = rows.reduce((s, r) => s + n(r.querySelector('[data-fee]').value), 0);
-    $('#instSummary').textContent = `Tổng còn lại: gốc ${money(p)} · phí ${money(f)} · ${rows.length} kỳ`;
+    const s = form(), isNew = s.entry === 'purchase';
+    const diffP = s.principal - p;
+    const okP = isNew ? Math.abs(diffP) < 1 : diffP >= -0.5;
+    const pLine = okP
+      ? `<span class="green">Gốc ${money(p)} ✓ khớp giá mua</span>`
+      : `<span class="red">Gốc ${money(p)} — ${isNew ? `${diffP > 0 ? 'còn thiếu' : 'đang thừa'} ${money(Math.abs(diffP))} so với giá mua ${money(s.principal)}` : `vượt giá mua ban đầu ${money(s.principal)}`}</span>`;
+    let feeLine = '';
+    if (isNew) {
+      const diffF = s.fee - f, okF = Math.abs(diffF) < 1;
+      feeLine = ` · ${okF ? `<span class="green">phí ${money(f)} ✓</span>` : `<span class="red">phí ${money(f)} — ${diffF > 0 ? 'còn thiếu' : 'đang thừa'} ${money(Math.abs(diffF))}</span>`}`;
+    } else if (f > 0) {
+      feeLine = ` · phí ${money(f)}`;
+    }
+    $('#instSummary').innerHTML = `${pLine}${feeLine} · ${rows.length} kỳ`;
   }
   const sync = () => {
     $('#instExisting').classList.toggle('hidden', entryEl.value !== 'existing');

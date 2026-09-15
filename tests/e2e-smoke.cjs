@@ -392,6 +392,25 @@ const RPC_HANDLERS = {
   await page.waitForSelector('#modal[open]', { timeout: 1500 });
   await page.click('button:has-text("Khoản trả góp")');
   await page.waitForSelector('[name="principal_amount"]', { timeout: 1500 }).then(() => results.push('CLICK "+ Khoản trả góp" inside manager (reopenAfterModal): new-installment form opened - OK')).catch(() => results.push('CLICK "+ Khoản trả góp": new-installment form did NOT open - FAIL'));
+
+  // Custom/Bonus schedule: hand-editing one row's amount must show whether
+  // the total still matches the purchase price, not just a plain sum.
+  await page.selectOption('[name="schedule_mode"]', 'custom');
+  await page.fill('[name="principal_amount"]', '120000');
+  await page.fill('#instTotal', '12');
+  await page.click('#instGenerate');
+  await page.waitForSelector('#instRows [data-row]', { timeout: 1500 });
+  const summaryBalanced = await page.textContent('#instSummary');
+  results.push(`INSTALLMENT custom schedule starts balanced (12 × 10,000 = 120,000): ${/✓/.test(summaryBalanced)}`);
+  const firstPrincipalInput = page.locator('#instRows [data-row]').first().locator('[data-principal]');
+  await firstPrincipalInput.fill('20000'); // bump row 1 up by +10,000 without compensating elsewhere
+  const summaryMismatched = await page.textContent('#instSummary');
+  results.push(`INSTALLMENT shows a clear mismatch after a manual bonus-month edit (red, not just a silent total): ${/còn thiếu|đang thừa/.test(summaryMismatched)}`);
+
+  // "+ Thêm thẻ mới" next to the Thẻ dropdown — must not be stuck with only
+  // whatever card happened to be configured first (Rakuten in the fixture).
+  await page.click('[aria-label="Thêm thẻ mới"]');
+  await page.waitForSelector('[name="closing_day"]', { timeout: 1500 }).then(() => results.push('CLICK "+ Thêm thẻ mới" next to Thẻ dropdown: new-card form opened - OK')).catch(() => results.push('CLICK "+ Thêm thẻ mới": new-card form did NOT open - FAIL'));
   await page.evaluate(() => document.getElementById('modal')?.close());
   await page.waitForTimeout(50);
 
