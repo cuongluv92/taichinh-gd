@@ -45,7 +45,13 @@ function creditColumn() {
     const amount = n(cm?.expected_amount || 0);
     if ((card.currency || state.base) === state.base) total += amount;
     const note = !s ? 'Chưa thiết lập chu kỳ' : amount > 0 ? `${cm.paid ? 'Đã trả' : 'Cần trả'} · ${String(cm.payment_date || '').slice(0, 10)}` : 'Không có kỳ phải trả tháng này';
-    return `<button class="money-line" ${!s ? act('openCardSettings', card.id) : act('openStatementPayment', card.id)}><span class="line-label">${esc(card.name)}<small>${esc(note)}</small></span><span class="line-amount"><strong class="${amount > 0 ? '' : 'muted'}">${money(amount, card.currency)}</strong>${(card.currency || state.base) === state.base ? `<span class="pct">${pctText(amount, basis)}</span>` : '<span class="pct">ngoại tệ</span>'}</span></button>`;
+    // Main button opens cycle setup / statement payment; the separate ＋
+    // button is a shortcut into Nhập nhanh with this card pre-selected, so
+    // logging a purchase doesn't require hunting for the card in a dropdown.
+    return `<div class="money-line-wrap">
+      <button class="money-line" ${!s ? act('openCardSettings', card.id) : act('openStatementPayment', card.id)}><span class="line-label">${esc(card.name)}<small>${esc(note)}</small></span><span class="line-amount"><strong class="${amount > 0 ? '' : 'muted'}">${money(amount, card.currency)}</strong>${(card.currency || state.base) === state.base ? `<span class="pct">${pctText(amount, basis)}</span>` : '<span class="pct">ngoại tệ</span>'}</span></button>
+      <button class="mini-btn" type="button" aria-label="Ghi chi tiêu bằng ${esc(card.name)}" title="Ghi chi tiêu bằng ${esc(card.name)}" ${act('openQuickEntry', { transaction_type: 'expense', account_id: card.id })}>＋</button>
+    </div>`;
   });
   return moneyColumn({ title: 'Thẻ & trả góp', tone: 'credit', items, total: `${money(total)} <span class="pct">${pctText(total, basis)}</span>`, settingsAction: act('openCreditColumnManager'), emptyText: 'Chưa có thẻ tín dụng' });
 }
