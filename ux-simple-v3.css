@@ -40,5 +40,18 @@ body.ui-2026 .ux-credit-choice>button span{font-size:10px;line-height:1.45;color
 body.ui-2026 .ux-credit-choice>button:disabled{opacity:.45;cursor:not-allowed}
 body.ui-2026 .ux-credit-choice>small{grid-column:1/-1;color:var(--nkt-dim);font-size:10px}
 
+/* Existing installments: the current month amount is first-class, then each month can be edited. */
+body.ui-2026 .cc-adv-existing-grid .cc-adv-current-pay{grid-column:1/-1;padding:10px 11px;border:1px solid rgba(245,166,35,.35);border-radius:11px;background:rgba(245,166,35,.06)}
+body.ui-2026 .cc-adv-current-pay label{color:var(--nkt-ink)!important;font-weight:800!important}
+body.ui-2026 .cc-adv-current-pay small{display:block;margin-top:5px;color:var(--nkt-dim)!important;font-size:9.5px;line-height:1.4}
+body.ui-2026 .cc-adv-custom{border-top-color:var(--nkt-border)!important}
+body.ui-2026 .cc-adv-row{border-color:var(--nkt-border)!important;background:var(--nkt-panel2)!important}
+body.ui-2026 .cc-adv-no,body.ui-2026 .cc-adv-money>span{color:var(--nkt-dim)!important}
+body.ui-2026 .cc-adv-summary{background:rgba(245,166,35,.08)!important;color:var(--nkt-accent)!important}
+body.ui-2026 .cc-adv-custom-head small{color:var(--nkt-dim)!important}
+body.ui-2026 .cc-adv-history-row{border-color:var(--nkt-border)!important;background:var(--nkt-panel2)!important}
+body.ui-2026 .cc-adv-history-row strong{color:var(--nkt-ink)!important}
+body.ui-2026 .cc-adv-history-row span,body.ui-2026 .cc-adv-history-row small{color:var(--nkt-dim)!important}
+
 @media(max-width:1100px){body.ui-2026 .v3-budget-board{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
 @media(max-width:760px){body.ui-2026 .v3-budget-board,body.ui-2026 .ux-debt-grid,body.ui-2026 .ux-debt-summary,body.ui-2026 .ux-credit-choice{grid-template-columns:1fr!important}}
