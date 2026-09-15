@@ -138,5 +138,30 @@ async function exportData() {
   } catch (e) { toast(e.message, true); }
 }
 
-Object.assign(window, { boot, refresh, loadMonth, changeMonth, navigate, render, exportData });
+const CSV_TYPE_LABEL = {
+  income: 'Thu nhập', expense: 'Chi tiêu', transfer: 'Chuyển khoản', loan_borrow: 'Vay',
+  loan_lend: 'Cho vay', loan_pay: 'Trả nợ', loan_collect: 'Thu hồi nợ', loan_interest: 'Lãi vay',
+  investment_gain: 'Tăng giá trị đầu tư', investment_loss: 'Giảm giá trị đầu tư', goal_save: 'Góp mục tiêu', goal_withdraw: 'Rút mục tiêu'
+};
+function csvCell(v) {
+  const s = String(v ?? '');
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+// Every transaction the household has ever recorded, for opening in Excel —
+// no server round-trip needed, state.fullTransactions is already loaded.
+function exportCsv() {
+  const rows = [...(state.fullTransactions || [])].sort((a, b) => String(a.transaction_date).localeCompare(String(b.transaction_date)));
+  const header = ['Ngày', 'Loại', 'Danh mục', 'Tài khoản', 'Tài khoản nhận', 'Số tiền', 'Tiền tệ', 'Ghi chú'];
+  const lines = rows.map(t => [
+    String(t.transaction_date).slice(0, 10), CSV_TYPE_LABEL[t.transaction_type] || t.transaction_type,
+    t.category_name || '', t.account_name || '', t.transfer_account_name || '', t.amount, t.currency, t.note || ''
+  ].map(csvCell).join(','));
+  const csv = '﻿' + [header.join(','), ...lines].join('\r\n'); // BOM so Excel reads UTF-8 Vietnamese correctly
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `taichinh-gd-giao-dich-${localToday()}.csv`; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  toast('Đã xuất CSV giao dịch');
+}
+
+Object.assign(window, { boot, refresh, loadMonth, changeMonth, navigate, render, exportData, exportCsv });
 boot();

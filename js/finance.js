@@ -224,6 +224,18 @@ F.expenseByCategory = txs => {
   });
   return [...map.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
 };
+// Names of the top-N expense categories for the month being viewed, most
+// spent first — used to pick which categories get a trend sparkline.
+F.topExpenseCategories = (count = 5, month = state.month) => F.expenseByCategory(F.periodTransactions(month)).slice(0, count).map(x => x.label);
+// One category's spend per month for the last `months` months (oldest
+// first), by the same category-name grouping as F.expenseByCategory.
+F.categoryTrendSeries = (categoryName, months = 6, month = state.month) => {
+  const keys = Array.from({ length: months }, (_, i) => addMonths(month, i - (months - 1)));
+  return keys.map(k => {
+    const value = F.expenseByCategory(F.periodTransactions(k)).find(x => x.label === categoryName)?.value || 0;
+    return { month: k, value };
+  });
+};
 // ---------------- FX (JPY -> VND, manual current rate only) ----------------
 // Settings only lets the user set a single "current" rate (reporting_settings),
 // not a month-by-month history, so conversion is always today's rate — the
@@ -321,6 +333,17 @@ function donutSvg(items, size = 168, thickness = 22) {
 function legendHtml(items, mode = 'value', income = 0) {
   return `<div class="chart-legend">${items.filter(x => n(x.value) > 0).map((x, i) => `<div><span><i class="legend-dot legend-c${i % 10}"></i>${esc(x.label)}</span><strong>${money(x.value)}${mode === 'income' && income > 0 ? `<small>${pctText(x.value, income)}</small>` : ''}</strong></div>`).join('')}</div>`;
 }
+// Small per-category trend widget — bars via SVG attributes (never inline
+// style="...", which the production CSP silently drops).
+function sparklineSvg(data, w = 108, h = 28) {
+  const max = Math.max(1, ...data.map(x => n(x.value)));
+  const slot = w / data.length, bw = Math.max(1, slot - 2);
+  const bars = data.map((x, i) => {
+    const bh = Math.max(1, (h - 2) * n(x.value) / max);
+    return `<rect x="${(i * slot).toFixed(1)}" y="${(h - bh).toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="1.5"><title>${esc(x.month)}: ${money(x.value)}</title></rect>`;
+  }).join('');
+  return `<svg class="sparkline" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="Xu hướng">${bars}</svg>`;
+}
 function trendSvg() {
   const keys = Array.from({ length: 12 }, (_, i) => addMonths(state.month, i - 11));
   const data = keys.map(k => { const s = F.statsFor(F.periodTransactions(k)); return { k, inc: s.income, exp: s.expense }; });
@@ -340,4 +363,4 @@ function netWorthLine(rows) {
   const path = pts.map((q, i) => `${i ? 'L' : 'M'} ${q.x.toFixed(1)} ${q.y.toFixed(1)}`).join(' ');
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Tài sản ròng 12 tháng">${[0, 1, 2, 3].map(i => { const y = p + (H - p * 2) * i / 3; return `<line class="v-gridline" x1="${p}" y1="${y}" x2="${W - p}" y2="${y}"/>`; }).join('')}<path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2.5"/>${pts.map((q, i) => `<circle cx="${q.x}" cy="${q.y}" r="3.5" fill="var(--accent)"><title>${q.month}: ${money(q.value)}</title></circle>${i % 2 === 0 ? `<text class="axis-label" x="${q.x}" y="${H - 8}" text-anchor="middle">${q.month.slice(5)}</text>` : ''}`).join('')}</svg>`;
 }
-Object.assign(window, { CHART_COLORS, donutSvg, legendHtml, trendSvg, netWorthLine });
+Object.assign(window, { CHART_COLORS, donutSvg, legendHtml, sparklineSvg, trendSvg, netWorthLine });

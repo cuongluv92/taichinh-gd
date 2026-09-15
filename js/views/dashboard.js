@@ -56,12 +56,27 @@ function compareRow(label, sub, target, actual, basis, mode) {
   </div>`;
 }
 
-// "" when there's no prior-month data to compare against (avoids /0).
-function momText(cur, prev) {
+// "" when there's no data for the comparison period (avoids /0).
+function compareText(cur, prev, label) {
   if (!(prev > 0)) return '';
   const diff = (cur - prev) / prev * 100;
-  if (Math.abs(diff) < 0.5) return ' · Bằng tháng trước';
-  return ` · ${diff > 0 ? '▲' : '▼'}${Math.abs(diff).toFixed(0)}% so với tháng trước`;
+  if (Math.abs(diff) < 0.5) return ` · Bằng ${label}`;
+  return ` · ${diff > 0 ? '▲' : '▼'}${Math.abs(diff).toFixed(0)}% so với ${label}`;
+}
+const momText = (cur, prev) => compareText(cur, prev, 'tháng trước');
+const yoyText = (cur, prev) => compareText(cur, prev, 'cùng kỳ năm trước');
+
+function categoryTrendHtml() {
+  const cats = F.topExpenseCategories(5);
+  if (!cats.length) return '<div class="empty">Chưa có dữ liệu chi tiêu để so sánh xu hướng.</div>';
+  return `<div class="list">${cats.map(name => {
+    const series = F.categoryTrendSeries(name, 6);
+    const cur = series[series.length - 1].value, prev = series[series.length - 2]?.value || 0;
+    return `<div class="category-trend-row">
+      <div class="tx-main"><strong>${esc(name)}</strong><span>${money(cur)}${momText(cur, prev)}</span></div>
+      ${sparklineSvg(series)}
+    </div>`;
+  }).join('')}</div>`;
 }
 
 function upcomingDueHtml(items) {
@@ -96,7 +111,9 @@ function renderDashboard() {
   const vnd = state.reporting?.show_vnd_conversion ? F.positionInVND(pos) : null;
   const netWorthSub = vnd ? `Tổng nợ ${money(pos.totalLiabilities)} · ≈ ${money(vnd.netWorth, 'VND')}` : `Tổng nợ ${money(pos.totalLiabilities)}`;
   const prevStats = F.statsFor(F.periodTransactions(addMonths(state.month, -1)));
+  const prevYearStats = F.statsFor(F.periodTransactions(addMonths(state.month, -12)));
   const upcoming = F.upcomingDue(state.month);
+  const yoy = (cur, prev) => { const t = yoyText(cur, prev); return t ? `<small class="muted">${t.replace(/^ · /, '')}</small>` : ''; };
 
   // Spending-pace note: only meaningful while the month is still in progress.
   const isCurrentMonth = state.month === localMonth();
@@ -121,10 +138,10 @@ function renderDashboard() {
   <section class="card mt-16">
     <div class="section-head"><div><h2>Kế hoạch tháng ${fmtMonthKey(state.month)}</h2><p class="${paceCls === 'bad' ? 'red' : paceCls === 'warn' ? 'amber' : ''}">${esc(paceNote)}</p></div></div>
     <div class="compare-table">
-      <div class="compare-head"><span>Nhóm</span><span>Kế hoạch</span><span>Thực tế</span><span></span></div>
-      <div class="compare-row"><div class="label"><b>Thu nhập</b></div><div>${money(incomePlan)}</div><div>${money(s.income)}</div><div></div></div>
-      <div class="compare-row"><div class="label"><b>Chi cố định</b></div><div>${money(fixedPlan)}<br><small class="muted">${pctText(fixedPlan, incomePlan)}</small></div><div>${money(s.fixed)}<br><small class="muted">${pctText(s.fixed, incomePlan)}</small></div><div></div></div>
-      <div class="compare-row"><div class="label"><b>Chi biến động</b></div><div>${money(variablePlan)}<br><small class="muted">${pctText(variablePlan, incomePlan)}</small></div><div>${money(s.variable)}<br><small class="muted">${pctText(s.variable, incomePlan)}</small></div><div></div></div>
+      <div class="compare-head"><span>Nhóm</span><span>Kế hoạch</span><span>Thực tế</span><span>Cùng kỳ năm trước</span></div>
+      <div class="compare-row"><div class="label"><b>Thu nhập</b></div><div>${money(incomePlan)}</div><div>${money(s.income)}</div><div>${yoy(s.income, prevYearStats.income)}</div></div>
+      <div class="compare-row"><div class="label"><b>Chi cố định</b></div><div>${money(fixedPlan)}<br><small class="muted">${pctText(fixedPlan, incomePlan)}</small></div><div>${money(s.fixed)}<br><small class="muted">${pctText(s.fixed, incomePlan)}</small></div><div>${yoy(s.fixed, prevYearStats.fixed)}</div></div>
+      <div class="compare-row"><div class="label"><b>Chi biến động</b></div><div>${money(variablePlan)}<br><small class="muted">${pctText(variablePlan, incomePlan)}</small></div><div>${money(s.variable)}<br><small class="muted">${pctText(s.variable, incomePlan)}</small></div><div>${yoy(s.variable, prevYearStats.variable)}</div></div>
     </div>
   </section>
 
@@ -139,6 +156,11 @@ function renderDashboard() {
     <section class="card section"><div class="section-head"><div><h2>Tiền đang nằm ở đâu</h2><p>Không tính nợ</p></div></div>
       <div class="donut-layout">${donutSvg(assets)}${legendHtml(assets)}</div></section>
   </div>
+
+  <section class="card section mt-16">
+    <div class="section-head"><div><h2>Xu hướng theo danh mục</h2><p>5 danh mục chi nhiều nhất tháng này · 6 tháng gần nhất</p></div></div>
+    ${categoryTrendHtml()}
+  </section>
 
   <section class="card section mt-16">
     <div class="section-head"><div><h2>Kế hoạch vs Thực tế</h2><p>Toàn bộ dòng tiền được phân bổ trong tháng</p></div><button class="btn sm" ${act('openAllocationPlan')}>Sửa chỉ tiêu %</button></div>
