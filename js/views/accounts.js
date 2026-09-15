@@ -128,18 +128,20 @@ function renderAccounts() {
   ${foreign.length ? foreignGroups : ''}
   ${hidden.length ? `<section class="card section mt-16"><div class="section-head"><h2>Tài khoản đã ẩn</h2><span class="count-tag">${hidden.length} tài khoản</span></div><div class="list">${hidden.map(hiddenAccountRow).join('')}</div></section>` : ''}
 
-  <section class="card section chart-card mt-16"><div class="section-head"><div><h2>Cơ cấu tài sản</h2><p>Số dư hiện tại theo nhóm</p></div></div>${barChartSvg(composition)}</section>
+  <div class="grid section-grid mt-16">
+    <section class="card section chart-card"><div class="section-head"><div><h2>Cơ cấu tài sản</h2><p>Số dư hiện tại theo nhóm</p></div></div>${barChartSvg(composition)}</section>
 
-  <section class="card section chart-card mt-16">
-    <div class="section-head"><div><h2>Lịch sử theo tháng</h2><p>Tổng tài sản, tổng nợ, tài sản ròng và đầu tư</p></div>
-      <div class="row">
-        <button class="btn sm ${assetChartMode === 6 ? 'primary' : ''}" ${act('setAssetChartMode', 6)}>6 tháng</button>
-        <button class="btn sm ${assetChartMode === 12 ? 'primary' : ''}" ${act('setAssetChartMode', 12)}>12 tháng</button>
-        <button class="btn sm ${assetChartMode === 'year' ? 'primary' : ''}" ${act('setAssetChartMode', 'year')}>Theo năm</button>
+    <section class="card section chart-card">
+      <div class="section-head"><div><h2>Lịch sử theo tháng</h2><p>Tổng tài sản, tổng nợ, tài sản ròng và đầu tư</p></div>
+        <div class="row">
+          <button class="btn sm ${assetChartMode === 6 ? 'primary' : ''}" ${act('setAssetChartMode', 6)}>6 tháng</button>
+          <button class="btn sm ${assetChartMode === 12 ? 'primary' : ''}" ${act('setAssetChartMode', 12)}>12 tháng</button>
+          <button class="btn sm ${assetChartMode === 'year' ? 'primary' : ''}" ${act('setAssetChartMode', 'year')}>Theo năm</button>
+        </div>
       </div>
-    </div>
-    ${multiLineSvg(historyRows, historySeries)}
-  </section>`;
+      ${multiLineSvg(historyRows, historySeries)}
+    </section>
+  </div>`;
 }
 
 Object.assign(window, { renderAccounts, setAssetChartMode });

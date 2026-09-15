@@ -391,6 +391,8 @@ const RPC_HANDLERS = {
   results.push(`  No "Chuyển tiền" button anywhere on Tài sản: ${!assetsText.includes('Chuyển tiền')}`);
   results.push(`  Cơ cấu tài sản (composition) chart present: ${await page.locator('.chart-card', { hasText: 'Cơ cấu tài sản' }).count() > 0}`);
   results.push(`  Lịch sử theo tháng (history) chart present with period toggle: ${await page.locator('.chart-card', { hasText: 'Lịch sử theo tháng' }).count() > 0 && await page.locator('button:has-text("6 tháng")').count() > 0}`);
+  const assetChartHeights = await rowHeightsEqual('#content .section-grid .chart-card');
+  results.push(`  Tài sản's two charts sit side-by-side (2 equal-height columns), not stacked full-width: ${assetChartHeights.heights.length === 2 && assetChartHeights.ok} ${JSON.stringify(assetChartHeights.heights)}`);
   await page.click('button:has-text("6 tháng")');
   await page.waitForTimeout(150);
   results.push('CLICK "6 tháng" period toggle: no crash - OK');

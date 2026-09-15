@@ -409,7 +409,7 @@ function trendSvg() {
 }
 // Vertical bar chart — used for Tài sản's composition chart (§11). Negative
 // values (Tổng nợ) render downward from the zero baseline in red.
-function barChartSvg(items, w = 720, h = 240) {
+function barChartSvg(items, w = 720, h = 190) {
   const clean = items.filter(x => n(x.value) !== 0);
   if (!clean.length) return '<div class="empty compact">Chưa có dữ liệu</div>';
   const pad = 34, max = Math.max(1, ...items.map(x => n(x.value))), min = Math.min(0, ...items.map(x => n(x.value)));
@@ -427,7 +427,7 @@ function barChartSvg(items, w = 720, h = 240) {
 // Multi-line chart — Tài sản's monthly history (§11): Tổng tài sản, Tổng nợ,
 // Tài sản ròng, Tổng vốn đầu tư, Tổng giá trị đầu tư hiện tại.
 function multiLineSvg(rows, series) {
-  const W = 720, H = 260, p = 34;
+  const W = 720, H = 190, p = 30;
   if (!rows.length) return '<div class="empty compact">Chưa có dữ liệu</div>';
   const allVals = rows.flatMap(r => series.map(s => n(r[s.key])));
   const min = Math.min(0, ...allVals), max = Math.max(0, ...allVals), span = Math.max(1, max - min);
