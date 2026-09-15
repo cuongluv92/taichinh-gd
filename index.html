@@ -58,7 +58,6 @@
       <nav id="nav" class="nav">
         <button data-view="dashboard" class="active">⌂ <span>Tổng quan</span></button>
         <button data-view="budget">▤ <span>Chi tiêu</span></button>
-        <button data-view="transactions">↕ <span>Giao dịch</span></button>
         <button data-view="accounts">◫ <span>Tài sản</span></button>
         <button data-view="settings">⚙ <span>Cài đặt</span></button>
       </nav>
@@ -73,7 +72,7 @@
             <input id="monthPicker" type="month" />
             <button class="btn month-step" type="button" onclick="changeMonth(1)" title="Tháng sau">›</button>
           </div>
-          <button id="quickAdd" class="btn primary">＋ Giao dịch</button>
+          <button id="quickAdd" class="btn primary">＋ Nhập nhanh</button>
         </div>
       </header>
       <div id="content" class="content"></div>
@@ -82,7 +81,6 @@
     <nav id="mobileNav" class="mobile-nav">
       <button data-view="dashboard" class="active"><b>⌂</b><span>Tổng quan</span></button>
       <button data-view="budget"><b>▤</b><span>Chi tiêu</span></button>
-      <button data-view="transactions"><b>↕</b><span>Giao dịch</span></button>
       <button data-view="accounts"><b>◫</b><span>Tài sản</span></button>
       <button type="button" onclick="openMoreMenu()"><b>•••</b><span>Khác</span></button>
     </nav>
@@ -122,5 +120,6 @@
   <script src="/ux-credit-guard.js" defer></script>
   <script src="/budget-inline-settings.js" defer></script>
   <script src="/settings-cleanup.js" defer></script>
+  <script src="/finance-flow-final.js" defer></script>
 </body>
 </html>
