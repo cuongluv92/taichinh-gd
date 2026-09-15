@@ -10,32 +10,36 @@ function applyBootstrap(d) {
   state.categories = d.categories || [];
   state.categoryVersions = d.category_versions || [];
   state.transactions = d.transactions || [];
-  state.loans = d.loans || [];
   $('#familyNameSide').textContent = state.household.name || 'Gia đình';
 }
 
 async function loadExtras(month = state.month) {
-  const [ext, exceptional, adjustments, cardExpenses, installments, investments] = await Promise.all([
+  const [ext, exceptional, adjustments, cardExpenses, installments, investments, debts] = await Promise.all([
     api.extension('get'),
     api.exceptional('list'),
     api.accountAdjustment('list'),
     api.cardLedger('list_expenses'),
     api.cardLedger('list_installments'),
-    api.investment('list')
+    api.investment('list'),
+    api.debtLedger('list')
   ]);
   state.reporting = { show_vnd_conversion: false, jpy_vnd_rate: null, ...(ext?.reporting || {}) };
-  state.loanTerms = ext?.loan_terms || [];
   state.exceptionalIds = exceptional?.ids || [];
   state.accountAdjustments = adjustments?.items || [];
   state.cardExpenses = cardExpenses?.items || [];
   state.installments = installments?.items || [];
   state.investments = investments?.items || [];
+  state.debts = debts?.items || [];
   // Per-investment event history — small dataset for a personal app, needed
-  // (not just today's totals) so the Tài sản net-worth chart can show an
+  // (not just today's totals) so the Tài sản history chart can show an
   // accurate point-in-time invested value for past months.
   const eventLists = await Promise.all(state.investments.map(inv => api.investment('list_events', { investment_id: inv.id })));
   state.investmentEvents = {};
   state.investments.forEach((inv, i) => { state.investmentEvents[inv.id] = eventLists[i]?.items || []; });
+  // Same idea for debt adjustment history (needed for "Xem lịch sử" +
+  // point-in-time balances in the history chart).
+  const debtAdjLists = await Promise.all(state.debts.map(d => api.debtLedger('list_adjustments', { debt_id: d.id })));
+  state.debtAdjustments = debtAdjLists.flatMap(r => r?.items || []);
 }
 
 async function boot() {

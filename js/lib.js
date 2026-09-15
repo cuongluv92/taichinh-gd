@@ -30,13 +30,16 @@ const state = {
   loanTerms: [],
   reporting: { show_vnd_conversion: false, jpy_vnd_rate: null },
   exceptionalIds: [],
-  // Tài sản (manual-only balances) and Đầu tư (its own ledger) — see
-  // finance.js for the formulas these feed. Neither is derived from
-  // `transactions`/`fullTransactions` anymore.
+  // Tài sản (manual-only balances), Nợ/Khoản phải thu (manual-only debt
+  // ledger), and Đầu tư (its own ledger) — see finance.js for the formulas
+  // these feed. None of these is derived from `transactions`/
+  // `fullTransactions` anymore.
   accountAdjustments: [],
   cardExpenses: [],
   installments: [],
-  investments: []
+  debts: [],
+  investments: [],
+  investmentEvents: {}
 };
 
 const $ = (s, root = document) => root.querySelector(s);

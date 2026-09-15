@@ -87,17 +87,6 @@ function creditColumn() {
   });
   return moneyColumn({ title: 'Thẻ & trả góp', tone: 'credit', items, total: `${money(total)} <span class="pct">${pctText(total, basis)}</span>`, settingsAction: act('openCreditColumnManager'), emptyText: 'Chưa có thẻ tín dụng' });
 }
-function debtColumn() {
-  const loans = (state.loans || []).filter(l => l.loan_type === 'borrowed' && n(l.remaining_amount) > 0);
-  const basis = incomePlanTotal();
-  let total = 0;
-  const items = loans.map(l => {
-    const due = F.loanMonthDue(l);
-    if ((l.currency || state.base) === state.base) total += n(due.amount);
-    return `<button class="money-line" ${act('openLoanPayment', l.id)}><span class="line-label">${esc(l.counterparty)}<small>${esc(due.note)}</small></span><span class="line-amount"><strong class="${due.amount > 0 ? '' : 'muted'}">${money(due.amount, l.currency)}</strong>${(l.currency || state.base) === state.base ? `<span class="pct">${pctText(due.amount, basis)}</span>` : '<span class="pct">ngoại tệ</span>'}</span></button>`;
-  });
-  return moneyColumn({ title: 'Nợ phải trả', tone: 'debt', items, total: loans.length ? `${money(total)} <span class="pct">${pctText(total, basis)}</span>` : money(0), settingsAction: act('openDebtColumnManager'), emptyText: 'Chưa có khoản nợ' });
-}
 function moneyColumn({ title, tone, items, total, settingsAction, settingsLabel = '⚙ Cài đặt', emptyText }) {
   return `<section class="card money-column ${tone}">
     <div class="money-column-head"><h3>${esc(title)}</h3><button class="column-settings" type="button" ${settingsAction} aria-label="${esc(settingsLabel)} ${esc(title)}">${esc(settingsLabel)}</button></div>
@@ -116,20 +105,9 @@ function openCreditColumnManager() {
     <div class="list">${rows || '<div class="empty compact">Chưa có thẻ tín dụng.</div>'}</div>
     <button class="btn primary mt-14" ${act('reopenAfterModal', 'openCreditCard')}>＋ Thẻ tín dụng mới</button>`);
 }
-async function deleteLoanFromManager(id) {
-  if (await deleteLoan(id)) closeModal();
-}
-function openDebtColumnManager() {
-  const loans = (state.loans || []).filter(l => l.loan_type === 'borrowed');
-  const rows = loans.map(l => `<div class="tx"><div class="tx-main"><strong>${esc(l.counterparty)}</strong><span>Dư nợ ${esc(money(l.remaining_amount, l.currency))}</span></div><div class="tx-actions"><button class="btn sm" ${act('reopenAfterModal', 'openLoan', l.id)}>Sửa</button><button class="btn sm" aria-label="Xóa khoản nợ" title="Xóa (chỉ khi chưa có giao dịch)" ${act('deleteLoanFromManager', l.id)}>Xóa</button></div></div>`).join('');
-  infoModal('Cài đặt · Nợ phải trả', `<p class="note">Cột này chỉ hiện số phải trả trong tháng; tổng dư nợ vẫn được dùng để tính tài sản ròng ở Tài sản.</p>
-    <div class="list">${rows || '<div class="empty compact">Chưa có khoản nợ.</div>'}</div>
-    <button class="btn primary mt-14" ${act('reopenAfterModal', 'openLoan')}>＋ Thêm khoản nợ</button>`);
-}
-
 function renderBudget() {
-  return `<div class="view-head"><div><h2>Tháng ${fmtMonthKey(state.month)}</h2><p>Mỗi cột độc lập — một giao dịch chỉ nằm trong đúng một cột. Nhấn một mục để nhập tiền.</p></div></div>
-  <div class="money-board">${incomeColumn()}${expenseColumn('fixed', 'Chi cố định')}${expenseColumn('variable', 'Chi biến động')}${creditColumn()}${debtColumn()}</div>`;
+  return `<div class="view-head"><div><h2>Tháng ${fmtMonthKey(state.month)}</h2><p>Mỗi cột độc lập — một giao dịch chỉ nằm trong đúng một cột. Nợ được quản lý riêng ở Tài sản. Nhấn một mục để nhập tiền.</p></div></div>
+  <div class="money-board">${incomeColumn()}${expenseColumn('fixed', 'Chi cố định')}${expenseColumn('variable', 'Chi biến động')}${creditColumn()}</div>`;
 }
 
-Object.assign(window, { renderBudget, openCreditColumnManager, openDebtColumnManager });
+Object.assign(window, { renderBudget, openCreditColumnManager });

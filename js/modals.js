@@ -249,38 +249,101 @@ function openAccountAdjustmentHistory(accountId) {
   });
 }
 
-// ---------------- Đầu tư ----------------
-const INVESTMENT_TYPE_PRESETS = ['NISA', 'S&P500', 'Cổ phiếu', 'Quỹ', 'Vàng', 'Crypto', 'Bất động sản'];
+// ---------------- Đầu tư: NISA / Chứng khoán / Tiết kiệm sinh lời / Khác ----------------
+const INVESTMENT_KIND_LABEL = { nisa: 'NISA', securities: 'Chứng khoán', savings_interest: 'Tiết kiệm sinh lời', other: 'Khác (Vàng, Quỹ, tự đặt tên...)' };
+const OTHER_ASSET_TYPE_PRESETS = ['Vàng', 'Quỹ', 'Crypto', 'Bất động sản'];
+const NISA_FRAME_LABEL = { tsumitate: 'つみたて投資枠 · Khung tích lũy', growth: '成長投資枠 · Khung tăng trưởng', both: 'Cả hai khung' };
+const INTEREST_METHOD_LABEL = { monthly: 'Hàng tháng', quarterly: 'Hàng quý', maturity: 'Cuối kỳ', compound: 'Lãi nhập gốc', simple: 'Lãi không nhập gốc' };
+
+function investmentFormFieldGroups(inv) {
+  return `
+    <div class="field-group" data-kind-group="other">
+      <div class="field"><label>Loại tài sản</label><select name="asset_type_preset" id="invAssetPreset">${OTHER_ASSET_TYPE_PRESETS.map(t => `<option value="${esc(t)}" ${inv?.asset_type === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}<option value="__custom" ${inv && !OTHER_ASSET_TYPE_PRESETS.includes(inv.asset_type) ? 'selected' : ''}>Loại khác…</option></select></div>
+      <div class="field hidden" id="invAssetCustomField"><label>Tên loại tự đặt</label><input name="asset_type_custom" value="${esc(inv && !OTHER_ASSET_TYPE_PRESETS.includes(inv.asset_type) ? (inv?.asset_type || '') : '')}"></div>
+      <div class="field"><label>Vốn ban đầu</label><input name="initial_capital" type="number" min="0" step="1" value="${esc(inv?.initial_capital ?? 0)}"></div>
+    </div>
+    <div class="field-group hidden" data-kind-group="nisa">
+      <div class="field"><label>Công ty chứng khoán</label><input name="broker_name" value="${esc(inv?.broker_name || '')}"></div>
+      <div class="field"><label>Loại khung NISA</label><select name="nisa_frame">${Object.entries(NISA_FRAME_LABEL).map(([v, l]) => `<option value="${v}" ${inv?.nisa_frame === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
+      <div class="field"><label>Hạn mức hàng năm (tham khảo)</label><input name="nisa_annual_limit" type="number" min="0" step="1" value="${esc(inv?.nisa_annual_limit ?? '')}" placeholder="VD: 3,600,000"></div>
+      <div class="field"><label>Vốn ban đầu</label><input name="initial_capital" type="number" min="0" step="1" value="${esc(inv?.initial_capital ?? 0)}"></div>
+    </div>
+    <div class="field-group hidden" data-kind-group="securities">
+      <div class="field"><label>Công ty chứng khoán</label><input name="broker_name" value="${esc(inv?.broker_name || '')}"></div>
+      <div class="field"><label>Mã chứng khoán</label><input name="ticker" value="${esc(inv?.ticker || '')}"></div>
+      <div class="field"><label>Thị trường</label><input name="market" value="${esc(inv?.market || '')}" placeholder="VD: TSE, NASDAQ"></div>
+      <small class="muted full">Số lượng / giá vốn được tính tự động từ lịch sử Mua/Bán — không nhập tay ở đây.</small>
+    </div>
+    <div class="field-group hidden" data-kind-group="savings_interest">
+      <div class="field"><label>Tên ngân hàng</label><input name="bank_name" value="${esc(inv?.bank_name || '')}"></div>
+      <div class="field"><label>Lãi suất năm (%)</label><input name="interest_rate_annual" type="number" min="0" step="0.01" value="${esc(inv?.interest_rate_annual ?? '')}"></div>
+      <div class="field"><label>Cách trả lãi</label><select name="interest_payment_method">${Object.entries(INTEREST_METHOD_LABEL).map(([v, l]) => `<option value="${v}" ${inv?.interest_payment_method === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
+      <div class="field"><label>Ngày đáo hạn</label><input name="term_end_date" type="date" value="${esc(inv?.term_end_date || '')}"></div>
+      <div class="field"><label>Tiền gốc ban đầu</label><input name="initial_capital" type="number" min="0" step="1" value="${esc(inv?.initial_capital ?? 0)}"></div>
+    </div>
+    <div class="field-group hidden" data-kind-group="plan">
+      <p class="note full">Kế hoạch góp cố định hàng tháng (tùy chọn) — chỉ là kế hoạch, không tự trừ tài khoản; mỗi tháng cần bấm "Xác nhận đã góp" mới tính vào vốn thực tế.</p>
+      <div class="field"><label>Số tiền mỗi tháng</label><input name="monthly_amount" type="number" min="0" step="1" value="${esc(inv?.monthly_amount ?? '')}"></div>
+      <div class="field"><label>Ngày góp hàng tháng</label><input name="monthly_day" type="number" min="1" max="31" value="${esc(inv?.monthly_day ?? '')}"></div>
+      <div class="field"><label>Tháng bắt đầu</label><input name="plan_start_month" type="month" value="${esc(monthKey(inv?.plan_start_month) || '')}"></div>
+      <div class="field"><label>Tháng kết thúc (bỏ trống = không giới hạn)</label><input name="plan_end_month" type="month" value="${esc(monthKey(inv?.plan_end_month) || '')}"></div>
+      <div class="field full"><label class="checkbox-label"><input type="checkbox" id="invPlanPaused" ${inv?.plan_paused ? 'checked' : ''}> Tạm dừng kế hoạch góp</label></div>
+    </div>
+    <div class="field-group" data-kind-group="always">
+      <p class="note full">Tăng trưởng kỳ vọng chỉ là MÔ PHỎNG — hiển thị riêng, không cộng vào giá trị/lãi-lỗ thực tế.</p>
+      <div class="field"><label>Tỷ lệ tăng trưởng kỳ vọng (%)</label><input name="expected_return_rate" type="number" step="0.01" value="${esc(inv?.expected_return_rate ?? '')}"></div>
+      <div class="field"><label>Theo</label><select name="expected_return_period"><option value="annual" ${(inv?.expected_return_period || 'annual') === 'annual' ? 'selected' : ''}>Năm</option><option value="monthly" ${inv?.expected_return_period === 'monthly' ? 'selected' : ''}>Tháng</option></select></div>
+      <div class="field"><label>Chế độ tái đầu tư</label><select name="reinvest_mode"><option value="none" ${(inv?.reinvest_mode || 'none') === 'none' ? 'selected' : ''}>Không tái đầu tư</option><option value="compound" ${inv?.reinvest_mode === 'compound' ? 'selected' : ''}>Tăng trưởng kép hàng tháng</option><option value="dividend" ${inv?.reinvest_mode === 'dividend' ? 'selected' : ''}>Tái đầu tư cổ tức</option></select></div>
+    </div>`;
+}
 function openInvestmentNew(id = '') {
   const inv = id ? F.investments().find(x => x.id === id) : null;
-  const isPreset = inv && INVESTMENT_TYPE_PRESETS.includes(inv.asset_type);
+  const kind = inv?.kind || 'other';
   modal(id ? 'Sửa khoản đầu tư' : 'Đầu tư mới', `<div class="form-grid">
-    <div class="field full"><label>Tên</label><input name="name" value="${esc(inv?.name || '')}" placeholder="VD: NISA tăng trưởng" required autofocus></div>
-    <div class="field"><label>Loại</label><select name="asset_type_preset" id="invTypePreset">${INVESTMENT_TYPE_PRESETS.map(t => `<option value="${esc(t)}" ${inv?.asset_type === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}<option value="__custom" ${!isPreset && inv?.asset_type ? 'selected' : ''}>Loại khác…</option></select></div>
-    <div class="field hidden" id="invTypeCustomField"><label>Tên loại tự đặt</label><input name="asset_type_custom" id="invTypeCustom" value="${esc(!isPreset ? (inv?.asset_type || '') : '')}"></div>
+    <div class="field full"><label>Tên</label><input name="name" value="${esc(inv?.name || '')}" placeholder="VD: NISA Rakuten" required autofocus></div>
+    <div class="field"><label>Loại đầu tư</label><select name="kind" id="invKind">${Object.entries(INVESTMENT_KIND_LABEL).map(([v, l]) => `<option value="${v}" ${kind === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
     <div class="field"><label>Tiền tệ</label><select name="currency"><option value="JPY" ${(inv?.currency || state.base) === 'JPY' ? 'selected' : ''}>JPY</option><option value="VND" ${(inv?.currency || state.base) === 'VND' ? 'selected' : ''}>VND</option></select></div>
-    <div class="field"><label>Vốn ban đầu</label><input name="initial_capital" type="number" min="0" step="1" value="${esc(inv?.initial_capital ?? 0)}"></div>
-    <div class="field full"><label>Ghi chú</label><input name="note" value="${esc(inv?.note || '')}" placeholder="Tùy chọn"></div>
-  </div>`, fd => api.investment('save', {
-    id: id || null, name: fd.name, currency: fd.currency, initial_capital: fd.initial_capital, note: fd.note || '',
-    asset_type: fd.asset_type_preset === '__custom' ? (fd.asset_type_custom || '') : fd.asset_type_preset
+    <div class="field"><label>Ngày bắt đầu</label><input name="start_date" type="date" value="${esc(inv?.start_date || '')}"></div>
+  </div>
+  <div class="form-grid mt-10">${investmentFormFieldGroups(inv)}</div>
+  <div class="field full mt-10"><label>Ghi chú</label><input name="note" value="${esc(inv?.note || '')}" placeholder="Tùy chọn"></div>`,
+  fd => api.investment('save', {
+    id: id || null, name: fd.name, kind: fd.kind, currency: fd.currency, start_date: fd.start_date || null,
+    initial_capital: fd.initial_capital || 0, note: fd.note || '',
+    asset_type: fd.kind === 'other' ? (fd.asset_type_preset === '__custom' ? (fd.asset_type_custom || '') : fd.asset_type_preset) : null,
+    broker_name: fd.broker_name || '', nisa_frame: fd.nisa_frame || null, nisa_annual_limit: fd.nisa_annual_limit || null,
+    ticker: fd.ticker || '', market: fd.market || '',
+    bank_name: fd.bank_name || '', interest_rate_annual: fd.interest_rate_annual || null, interest_payment_method: fd.interest_payment_method || null, term_end_date: fd.term_end_date || null,
+    monthly_amount: fd.monthly_amount || null, monthly_day: fd.monthly_day || null,
+    plan_start_month: fd.plan_start_month ? `${fd.plan_start_month}-01` : null, plan_end_month: fd.plan_end_month ? `${fd.plan_end_month}-01` : null,
+    plan_paused: $('#invPlanPaused').checked,
+    expected_return_rate: fd.expected_return_rate || null, expected_return_period: fd.expected_return_period, reinvest_mode: fd.reinvest_mode
   }), id ? 'Lưu' : 'Tạo');
-  const presetEl = $('#invTypePreset');
-  const sync = () => $('#invTypeCustomField').classList.toggle('hidden', presetEl.value !== '__custom');
-  presetEl.onchange = sync; sync();
+  const kindEl = $('#invKind'), presetEl = $('#invAssetPreset');
+  const sync = () => {
+    const k = kindEl.value;
+    $$('[data-kind-group]').forEach(g => g.classList.toggle('hidden', !['always', k, (k === 'nisa' || k === 'savings_interest') ? 'plan' : null].includes(g.dataset.kindGroup)));
+  };
+  const syncPreset = () => $('#invAssetCustomField').classList.toggle('hidden', presetEl.value !== '__custom');
+  kindEl.onchange = sync; presetEl.onchange = syncPreset; sync(); syncPreset();
 }
 async function deleteInvestment(id) {
   if (!confirm('Xóa khoản đầu tư này? Lịch sử vẫn được giữ lại nhưng khoản này sẽ không còn hiển thị.')) return;
   try { await api.investment('delete', { id }); await window.refresh(); toast('Đã xóa khoản đầu tư'); } catch (e) { toast(e.message, true); }
 }
-const INVESTMENT_EVENT_LABEL = { contribution: 'Thêm vốn', withdrawal: 'Rút vốn', valuation: 'Cập nhật giá trị' };
+
+// ---- Generic events (contribution / withdrawal / valuation / interest) — NISA, Tiết kiệm sinh lời, Khác ----
+const INVESTMENT_EVENT_LABEL = {
+  contribution: 'Thêm vốn', withdrawal: 'Rút vốn', valuation: 'Cập nhật giá trị', interest: 'Nhận lãi',
+  buy: 'Mua', sell: 'Bán', dividend: 'Nhận cổ tức', fee: 'Cộng phí', plan_skip: 'Bỏ qua tháng', plan_confirm: 'Xác nhận đã góp'
+};
 function openInvestmentEvent(investmentId, eventType, id = '') {
   const inv = F.investments().find(x => x.id === investmentId); if (!inv) return toast('Không tìm thấy khoản đầu tư.', true);
   const events = (state.investmentEvents || {})[investmentId] || [];
   const existing = id ? events.find(x => x.id === id) : null;
   const type = existing?.event_type || eventType;
   const currentValue = F.investmentCurrentValue(inv);
-  const defaultAmount = existing ? existing.amount : (type === 'valuation' ? currentValue : '');
+  const defaultAmount = existing ? existing.amount : (type === 'valuation' ? currentValue : (type === 'contribution' && inv.monthly_amount ? inv.monthly_amount : ''));
   modal(existing ? 'Sửa lần ghi nhận' : `${esc(INVESTMENT_EVENT_LABEL[type])} · ${esc(inv.name)}`, `<div class="form-grid">
     <div class="field full"><label>${esc(inv.name)}</label><input value="${esc(money(currentValue, inv.currency))}" disabled><small>Giá trị hiện tại</small></div>
     <div class="field"><label>${type === 'valuation' ? 'Giá trị hiện tại mới' : 'Số tiền'}</label><input name="amount" type="number" min="0" step="1" value="${esc(defaultAmount)}" required autofocus></div>
@@ -298,113 +361,161 @@ async function deleteInvestmentEvent(id, investmentId) {
     openInvestmentEventHistory(investmentId);
   } catch (e) { toast(e.message, true); }
 }
-function investmentEventRow(x, investmentId) {
-  const sign = x.event_type === 'withdrawal' ? '−' : '+';
-  const cls = x.event_type === 'withdrawal' ? 'red' : x.event_type === 'valuation' ? '' : 'green';
-  return `<div class="tx"><div class="tx-main"><strong class="${cls}">${esc(INVESTMENT_EVENT_LABEL[x.event_type])}${x.event_type === 'valuation' ? '' : ` ${sign}`}${money(x.amount)}</strong><span>${esc(String(x.event_date).slice(0, 10))}${x.note ? ` · ${esc(x.note)}` : ''}</span></div>
-    <div class="tx-actions"><button class="btn sm" ${act('reopenAfterModal', 'openInvestmentEvent', investmentId, x.event_type, x.id)}>Sửa</button><button class="btn sm" ${act('deleteInvestmentEvent', x.id, investmentId)}>Xóa</button></div></div>`;
+
+// ---- Chứng khoán: Mua/Bán (số lượng + giá), Nhận cổ tức, Cộng phí, Cập nhật giá ----
+function openSecurityTrade(investmentId, eventType, id = '') {
+  const inv = F.investments().find(x => x.id === investmentId); if (!inv) return toast('Không tìm thấy khoản đầu tư.', true);
+  const events = (state.investmentEvents || {})[investmentId] || [];
+  const existing = id ? events.find(x => x.id === id) : null;
+  const type = existing?.event_type || eventType;
+  if (type === 'buy' || type === 'sell') {
+    modal(existing ? `Sửa lệnh ${type === 'buy' ? 'mua' : 'bán'}` : `${type === 'buy' ? 'Mua' : 'Bán'} · ${esc(inv.name)}`, `<div class="form-grid">
+      <div class="field full"><label>${esc(inv.name)}</label><input value="Đang giữ ${esc(String(inv.quantity))} · Giá vốn TB ${esc(money(inv.avg_cost, inv.currency))}" disabled></div>
+      <div class="field"><label>Số lượng</label><input name="quantity" type="number" min="0.0001" step="any" value="${esc(existing?.quantity || '')}" required autofocus></div>
+      <div class="field"><label>Giá / đơn vị</label><input name="price" type="number" min="0" step="any" value="${esc(existing?.price || inv.current_price || '')}" required></div>
+      <div class="field"><label>Ngày</label><input name="event_date" type="date" value="${esc(existing?.event_date || localToday())}" required></div>
+      <div class="field full"><label>Ghi chú</label><input name="note" value="${esc(existing?.note || '')}" placeholder="Tùy chọn"></div>
+      <input type="hidden" name="event_type" value="${esc(type)}">
+    </div>`, fd => api.investment('save_event', { ...fd, id: id || null, investment_id: investmentId }), existing ? 'Lưu' : (type === 'buy' ? 'Xác nhận mua' : 'Xác nhận bán'));
+  } else if (type === 'valuation') {
+    modal(existing ? 'Sửa giá cập nhật' : `Cập nhật giá · ${esc(inv.name)}`, `<div class="form-grid">
+      <div class="field full"><label>${esc(inv.name)}</label><input value="Đang giữ ${esc(String(inv.quantity))}" disabled></div>
+      <div class="field"><label>Giá hiện tại / đơn vị</label><input name="price" type="number" min="0" step="any" value="${esc(existing?.price ?? inv.current_price ?? '')}" required autofocus></div>
+      <div class="field"><label>Ngày</label><input name="event_date" type="date" value="${esc(existing?.event_date || localToday())}" required></div>
+      <div class="field full"><label>Ghi chú</label><input name="note" value="${esc(existing?.note || '')}" placeholder="Tùy chọn"></div>
+      <input type="hidden" name="event_type" value="valuation">
+    </div>`, fd => api.investment('save_event', { ...fd, id: id || null, investment_id: investmentId }), existing ? 'Lưu' : 'Cập nhật');
+  } else {
+    modal(existing ? 'Sửa lần ghi nhận' : `${esc(INVESTMENT_EVENT_LABEL[type])} · ${esc(inv.name)}`, `<div class="form-grid">
+      <div class="field"><label>Số tiền</label><input name="amount" type="number" min="0" step="1" value="${esc(existing?.amount || '')}" required autofocus></div>
+      <div class="field"><label>Ngày</label><input name="event_date" type="date" value="${esc(existing?.event_date || localToday())}" required></div>
+      <div class="field full"><label>Ghi chú</label><input name="note" value="${esc(existing?.note || '')}" placeholder="Tùy chọn"></div>
+      <input type="hidden" name="event_type" value="${esc(type)}">
+    </div>`, fd => api.investment('save_event', { ...fd, id: id || null, investment_id: investmentId }), existing ? 'Lưu' : 'Xác nhận');
+  }
+}
+
+function investmentEventRow(x, investmentId, isSecurities) {
+  const openFn = isSecurities ? 'openSecurityTrade' : 'openInvestmentEvent';
+  let label, amountText, cls;
+  if (x.event_type === 'buy' || x.event_type === 'sell') {
+    label = `${INVESTMENT_EVENT_LABEL[x.event_type]} ${x.quantity} @ ${money(x.price)}`; amountText = money(n(x.quantity) * n(x.price)); cls = x.event_type === 'buy' ? 'green' : 'red';
+  } else if (x.event_type === 'valuation') {
+    label = INVESTMENT_EVENT_LABEL[x.event_type]; amountText = isSecurities ? money(x.price) + '/đv' : money(x.amount); cls = '';
+  } else {
+    const sign = x.event_type === 'withdrawal' || x.event_type === 'sell' || x.event_type === 'fee' ? '−' : '+';
+    label = INVESTMENT_EVENT_LABEL[x.event_type] || x.event_type; amountText = `${sign}${money(x.amount)}`;
+    cls = x.event_type === 'withdrawal' || x.event_type === 'fee' ? 'red' : 'green';
+  }
+  return `<div class="tx"><div class="tx-main"><strong class="${cls}">${esc(label)}</strong><span>${esc(String(x.event_date).slice(0, 10))} · ${amountText}${x.note ? ` · ${esc(x.note)}` : ''}</span></div>
+    <div class="tx-actions"><button class="btn sm" ${act(openFn, investmentId, x.event_type, x.id)}>Sửa</button><button class="btn sm" ${act('deleteInvestmentEvent', x.id, investmentId)}>Xóa</button></div></div>`;
 }
 function openInvestmentEventHistory(investmentId) {
   const inv = F.investments().find(x => x.id === investmentId); if (!inv) return toast('Không tìm thấy khoản đầu tư.', true);
+  const isSecurities = inv.kind === 'securities';
   const rows = ((state.investmentEvents || {})[investmentId] || []).slice().sort((a, b) => String(b.event_date).localeCompare(String(a.event_date)));
+  const actions = isSecurities
+    ? `<button class="btn primary" ${act('reopenAfterModal', 'openSecurityTrade', investmentId, 'buy')}>Mua</button>
+       <button class="btn" ${act('reopenAfterModal', 'openSecurityTrade', investmentId, 'sell')}>Bán</button>
+       <button class="btn" ${act('reopenAfterModal', 'openSecurityTrade', investmentId, 'dividend')}>Nhận cổ tức</button>
+       <button class="btn" ${act('reopenAfterModal', 'openSecurityTrade', investmentId, 'fee')}>Cộng phí</button>
+       <button class="btn" ${act('reopenAfterModal', 'openSecurityTrade', investmentId, 'valuation')}>Cập nhật giá</button>`
+    : `<button class="btn primary" ${act('reopenAfterModal', 'openInvestmentEvent', investmentId, 'contribution')}>Thêm vốn</button>
+       <button class="btn" ${act('reopenAfterModal', 'openInvestmentEvent', investmentId, 'withdrawal')}>Rút vốn</button>
+       ${inv.kind === 'savings_interest' ? `<button class="btn" ${act('reopenAfterModal', 'openInvestmentEvent', investmentId, 'interest')}>Nhận lãi</button>` : ''}
+       <button class="btn" ${act('reopenAfterModal', 'openInvestmentEvent', investmentId, 'valuation')}>Cập nhật giá trị</button>`;
   infoModal(`Lịch sử · ${esc(inv.name)}`, `
-    <div class="list">${rows.map(x => investmentEventRow(x, investmentId)).join('') || '<div class="empty compact">Chưa có lịch sử nào.</div>'}</div>
-    <div class="row mt-14">
-      <button class="btn primary" ${act('reopenAfterModal', 'openInvestmentEvent', investmentId, 'contribution')}>Thêm vốn</button>
-      <button class="btn" ${act('reopenAfterModal', 'openInvestmentEvent', investmentId, 'withdrawal')}>Rút vốn</button>
-      <button class="btn" ${act('reopenAfterModal', 'openInvestmentEvent', investmentId, 'valuation')}>Cập nhật giá trị</button>
-    </div>`);
+    <div class="list">${rows.map(x => investmentEventRow(x, investmentId, isSecurities)).join('') || '<div class="empty compact">Chưa có lịch sử nào.</div>'}</div>
+    <div class="row mt-14">${actions}</div>`);
 }
 
-// ---------------- Loans (personal + bank, unified — unchanged, out of scope for this rewrite) ----------------
-function openLoan(id = '', defaults = {}) {
-  const l = (state.loans || []).find(x => x.id === id) || {};
-  const t = F.loanTerms(id) || {};
-  const isNew = !id, linked = !!id && (state.fullTransactions || []).some(x => x.loan_id === id);
-  const initialKind = defaults.loan_kind || t.loan_kind || 'personal';
-  const currency = l.currency || defaults.currency || state.base;
-  modal(id ? 'Sửa khoản nợ' : 'Thêm khoản nợ', `<div class="form-grid">
-    <div class="field"><label>Nhóm</label><select name="loan_kind" id="loanKind" ${linked ? 'disabled' : ''}><option value="personal" ${initialKind === 'personal' ? 'selected' : ''}>Cá nhân / khoản khác</option><option value="bank" ${initialKind === 'bank' ? 'selected' : ''}>Vay ngân hàng</option></select>${linked ? `<input type="hidden" name="loan_kind" value="${esc(initialKind)}">` : ''}</div>
-    <div class="field"><label>Loại</label><select name="loan_type" id="loanType" ${!isNew ? 'disabled' : ''}><option value="borrowed" ${(l.loan_type || 'borrowed') === 'borrowed' ? 'selected' : ''}>Đi vay · mình phải trả</option><option value="lent" ${l.loan_type === 'lent' ? 'selected' : ''}>Cho vay · mình phải thu</option></select>${!isNew ? `<input type="hidden" name="loan_type" value="${esc(l.loan_type)}">` : ''}</div>
-    <div class="field full"><label>Tên khoản / người liên quan</label><input name="counterparty" value="${esc(l.counterparty || '')}" required autofocus></div>
-    <div class="field"><label>Tiền tệ</label><select name="currency" id="loanCurrency" ${!isNew ? 'disabled' : ''}><option value="JPY" ${currency === 'JPY' ? 'selected' : ''}>JPY</option><option value="VND" ${currency === 'VND' ? 'selected' : ''}>VND</option></select>${!isNew ? `<input type="hidden" name="currency" value="${esc(currency)}">` : ''}</div>
-    <div class="field"><label>Số tiền gốc</label><input name="principal" type="number" min="1" step="1" value="${esc(l.principal || '')}" ${!isNew ? 'readonly' : ''} required></div>
-    ${!isNew ? `<div class="field"><label>Dư còn lại</label><input value="${esc(money(l.remaining_amount || 0, currency))}" disabled><input type="hidden" name="remaining_amount" value="${esc(l.remaining_amount || 0)}"></div>` : ''}
-    <div class="field"><label>Ngày bắt đầu</label><input name="start_date" type="date" value="${esc(l.start_date || localToday())}" ${linked ? 'readonly' : ''}></div>
-    <div class="field"><label>Hạn cuối</label><input name="due_date" type="date" value="${esc(l.due_date || '')}"></div>
-  </div>
-  <div id="bankFields" class="hidden mt-12">
+// ---- Kế hoạch góp hàng tháng (NISA + Tiết kiệm sinh lời) ----
+function openInvestmentPlanConfirm(investmentId, month) {
+  const inv = F.investments().find(x => x.id === investmentId); if (!inv) return toast('Không tìm thấy khoản đầu tư.', true);
+  const day = String(inv.monthly_day || 1).padStart(2, '0');
+  modal(`Xác nhận đã góp · ${esc(fmtMonthKey(month))}`, `<div class="form-grid">
+    <div class="field"><label>Số tiền</label><input name="amount" type="number" min="0" step="1" value="${esc(inv.monthly_amount || 0)}" required autofocus></div>
+    <div class="field"><label>Ngày góp</label><input name="event_date" type="date" value="${esc(month)}-${day}" required></div>
+    <div class="field full"><label>Ghi chú</label><input name="note" placeholder="Tùy chọn"></div>
+  </div>`, fd => api.investment('save_event', { investment_id: investmentId, event_type: 'contribution', amount: fd.amount, event_date: fd.event_date, note: fd.note || '' }), 'Xác nhận đã góp');
+}
+async function skipInvestmentPlan(investmentId, month) {
+  if (!confirm(`Bỏ qua kế hoạch góp tháng ${fmtMonthKey(month)}?`)) return;
+  try {
+    await api.investment('save_event', { investment_id: investmentId, event_type: 'plan_skip', amount: 0, event_date: `${month}-01` });
+    await window.refresh();
+    toast('Đã bỏ qua tháng này');
+  } catch (e) { toast(e.message, true); }
+}
+
+// ---------------- Nợ phải trả / Khoản phải thu (manual ledger, lives on Tài sản only) ----------------
+function openDebt(id = '', direction = 'payable') {
+  const d = id ? F.debts().find(x => x.id === id) : null;
+  const dir = d?.direction || direction;
+  modal(id ? 'Sửa khoản nợ' : (dir === 'payable' ? 'Thêm khoản nợ phải trả' : 'Thêm khoản phải thu'), `<div class="form-grid">
+    <div class="field full"><label>Tên khoản nợ</label><input name="name" value="${esc(d?.name || '')}" placeholder="VD: Vay mua xe" required autofocus></div>
+    <div class="field"><label>Loại</label><select name="direction" id="debtDirection"><option value="payable" ${dir === 'payable' ? 'selected' : ''}>Nợ phải trả</option><option value="receivable" ${dir === 'receivable' ? 'selected' : ''}>Khoản phải thu</option></select></div>
+    <div class="field"><label>Chủ nợ / người liên quan</label><input name="counterparty" value="${esc(d?.counterparty || '')}"></div>
+    <div class="field"><label>Tiền tệ</label><select name="currency"><option value="JPY" ${(d?.currency || state.base) === 'JPY' ? 'selected' : ''}>JPY</option><option value="VND" ${(d?.currency || state.base) === 'VND' ? 'selected' : ''}>VND</option></select></div>
+    <div class="field"><label>Dư nợ ban đầu</label><input name="opening_amount" type="number" min="0" step="1" value="${esc(d?.opening_amount ?? 0)}"></div>
+    <div class="field"><label>Ngày bắt đầu</label><input name="start_date" type="date" value="${esc(d?.start_date || '')}"></div>
+    <div class="field"><label>Ngày đáo hạn</label><input name="due_date" type="date" value="${esc(d?.due_date || '')}"></div>
+    <div class="field"><label>Lãi suất (%/năm, nếu có)</label><input name="interest_rate" type="number" min="0" step="0.01" value="${esc(d?.interest_rate ?? '')}"></div>
+    <div class="field full"><label>Ghi chú</label><input name="note" value="${esc(d?.note || '')}" placeholder="Tùy chọn"></div>
+  </div>`, fd => api.debtLedger('save', { ...fd, id: id || null }), id ? 'Lưu' : 'Tạo');
+}
+async function archiveDebt(id) {
+  if (!confirm('Ẩn khoản nợ này? Dữ liệu vẫn được giữ lại.')) return;
+  try { await api.debtLedger('archive', { id }); await window.refresh(); toast('Đã ẩn khoản nợ'); } catch (e) { toast(e.message, true); }
+}
+async function deleteDebt(id) {
+  if (!confirm('Xóa khoản nợ này? Chỉ xóa được khi chưa có lịch sử điều chỉnh.')) return;
+  try { await api.debtLedger('delete', { id }); await window.refresh(); toast('Đã xóa khoản nợ'); } catch (e) { toast(e.message, true); }
+}
+function openDebtAdjustment(debtId, direction = 'increase', id = '') {
+  const d = F.debts().find(x => x.id === debtId); if (!d) return toast('Không tìm thấy khoản nợ.', true);
+  const existing = id ? F.debtAdjustmentsFor(d).find(x => x.id === id) : null;
+  const dir = existing?.direction || direction;
+  modal(existing ? 'Sửa lần điều chỉnh' : (dir === 'increase' ? `Tăng dư nợ · ${d.name}` : `Giảm dư nợ · ${d.name}`), `<div class="form-grid">
+    <div class="field full"><label>${esc(d.name)}</label><input value="${esc(money(F.debtBalance(d), d.currency))}" disabled><small>Dư nợ hiện tại</small></div>
+    <div class="field"><label>Loại</label><select name="direction" id="debtAdjDirection"><option value="increase" ${dir === 'increase' ? 'selected' : ''}>Tăng dư nợ</option><option value="decrease" ${dir === 'decrease' ? 'selected' : ''}>Giảm dư nợ</option></select></div>
+    <div class="field"><label>Số tiền</label><input name="amount" type="number" min="1" step="1" value="${esc(existing?.amount || '')}" required autofocus></div>
+    <div class="field"><label>Ngày</label><input name="adjustment_date" type="date" value="${esc(existing?.adjustment_date || localToday())}" required></div>
+    <div class="field full"><label>Ghi chú</label><input name="note" value="${esc(existing?.note || '')}" placeholder="Tùy chọn"></div>
+  </div>`, fd => api.debtLedger('save_adjustment', { ...fd, id: id || null, debt_id: debtId }), existing ? 'Lưu' : 'Xác nhận');
+}
+async function deleteDebtAdjustment(id, debtId) {
+  if (!confirm('Xóa lần điều chỉnh này? Dư nợ sẽ được tính lại.')) return;
+  try {
+    await api.debtLedger('delete_adjustment', { id });
+    await window.refresh();
+    toast('Đã xóa');
+    openDebtAdjustmentHistory(debtId);
+  } catch (e) { toast(e.message, true); }
+}
+function debtAdjustmentRow(x) {
+  return `<div class="tx"><div class="tx-main"><strong class="${x.direction === 'increase' ? 'red' : 'green'}">${x.direction === 'increase' ? '+' : '−'}${money(x.amount)}</strong><span>${esc(String(x.adjustment_date).slice(0, 10))}${x.note ? ` · ${esc(x.note)}` : ''}</span></div>
+    <div class="tx-actions"><button class="btn sm" ${act('reopenAfterModal', 'openDebtAdjustment', x.debt_id, x.direction, x.id)}>Sửa</button><button class="btn sm" ${act('deleteDebtAdjustment', x.id, x.debt_id)}>Xóa</button></div></div>`;
+}
+function openDebtAdjustmentHistory(debtId) {
+  const d = F.debts().find(x => x.id === debtId); if (!d) return toast('Không tìm thấy khoản nợ.', true);
+  const rows = F.debtAdjustmentsFor(d).slice().sort((x, y) => String(y.adjustment_date).localeCompare(String(x.adjustment_date)));
+  const months = [...new Set(rows.map(x => monthKey(x.adjustment_date)))].sort().reverse();
+  const years = [...new Set(rows.map(x => yearKey(x.adjustment_date)))].sort().reverse();
+  infoModal(`Lịch sử · ${esc(d.name)}`, `
     <div class="form-grid">
-      <div class="field"><label>Ngân hàng / tổ chức</label><input name="institution_name" value="${esc(t.institution_name || '')}" placeholder="VD: MUFG, SMBC"></div>
-      <div class="field"><label>Tên sản phẩm</label><input name="product_name" value="${esc(t.product_name || '')}" placeholder="VD: 住宅ローン"></div>
-      <div class="field"><label>Lãi suất năm (%)</label><input name="annual_rate" type="number" min="0" step="0.001" value="${esc(t.annual_rate ?? 0)}"></div>
-      <div class="field"><label>Cách trả</label><select name="repayment_method"><option value="manual" ${(t.repayment_method || 'manual') === 'manual' ? 'selected' : ''}>Nhập theo sao kê</option><option value="equal_payment" ${t.repayment_method === 'equal_payment' ? 'selected' : ''}>元利均等 · tổng đều</option><option value="equal_principal" ${t.repayment_method === 'equal_principal' ? 'selected' : ''}>元金均等 · gốc đều</option></select></div>
-      <div class="field"><label>Thời hạn (tháng)</label><input name="term_months" type="number" min="1" step="1" value="${esc(t.term_months || '')}"></div>
-      <div class="field"><label>Ngày trả hàng tháng</label><input name="payment_day" type="number" min="1" max="31" value="${esc(t.payment_day || '')}"></div>
+      <div class="field"><label>Lọc theo tháng</label><select id="debtAdjFilterMonth"><option value="">Tất cả</option>${months.map(m => `<option value="${m}">${fmtMonthKey(m)}</option>`).join('')}</select></div>
+      <div class="field"><label>Lọc theo năm</label><select id="debtAdjFilterYear"><option value="">Tất cả</option>${years.map(y => `<option value="${y}">${y}</option>`).join('')}</select></div>
     </div>
-    <small class="muted">Số kỳ tới chỉ là ước tính. Khi trả thật, luôn nhập đúng gốc/lãi theo sao kê ngân hàng.</small>
-  </div>
-  <div class="field full mt-12"><label>Ghi chú</label><input name="note" value="${esc(l.note || '')}"></div>`,
-  async fd => {
-    const kind = fd.loan_kind || initialKind;
-    if (kind === 'bank') {
-      await api.bankLoan('save', {
-        loan_id: id || null, counterparty: fd.counterparty, principal: fd.principal, currency: fd.currency,
-        annual_rate: fd.annual_rate, repayment_method: fd.repayment_method, term_months: fd.term_months, payment_day: fd.payment_day,
-        start_date: fd.start_date, due_date: fd.due_date, note: fd.note || '', funding_account_id: null
-      });
-      return;
-    }
-    fd.loan_type = fd.loan_type || 'borrowed';
-    await api.core('save_loan', { id: id || null, counterparty: fd.counterparty, loan_type: fd.loan_type, principal: fd.principal, remaining_amount: isNew ? fd.principal : l.remaining_amount, currency: fd.currency, start_date: fd.start_date, due_date: fd.due_date, note: fd.note || '' });
-  });
-  const kindEl = $('#loanKind'), bankBox = $('#bankFields');
-  const sync = () => bankBox.classList.toggle('hidden', (kindEl?.value || initialKind) !== 'bank');
-  if (kindEl) kindEl.onchange = sync; sync();
-}
-async function deleteLoan(id) {
-  const linked = (state.fullTransactions || []).some(t => t.loan_id === id);
-  if (linked) { toast('Khoản này đã có lịch sử nên không xóa trực tiếp. Hãy tất toán để giữ đúng lịch sử.', true); return false; }
-  if (!confirm('Xóa khoản nợ chưa có giao dịch này?')) return false;
-  try { await api.core('delete_loan', { id }); await window.refresh(); toast('Đã xóa khoản nợ'); return true; }
-  catch (e) { toast(e.message, true); return false; }
-}
-function openLoanPayment(id) {
-  const l = (state.loans || []).find(x => x.id === id); if (!l) return toast('Không tìm thấy khoản nợ.', true);
-  if (F.isBankLoan(l)) return openBankPayment(id);
-  if (n(l.remaining_amount) <= 0) return toast('Khoản này đã tất toán.');
-  const borrowed = l.loan_type === 'borrowed';
-  const ac = F.activeAccounts().filter(a => (a.currency || state.base) === (l.currency || state.base) && ['cash', 'bank', 'savings'].includes(a.account_type));
-  if (!ac.length) return toast(`Cần tài khoản ${l.currency} để ${borrowed ? 'trả' : 'nhận'} tiền.`, true);
-  modal(borrowed ? 'Trả nợ' : 'Thu hồi khoản cho vay', `<div class="form-grid">
-    <div class="field full"><label>${borrowed ? 'Khoản phải trả' : 'Khoản phải thu'}</label><input value="${esc(l.counterparty)} · ${esc(money(l.remaining_amount, l.currency))}" disabled></div>
-    <div class="field"><label>Số tiền</label><input name="amount" type="number" min="1" max="${esc(l.remaining_amount)}" value="${esc(l.remaining_amount)}" required autofocus></div>
-    <div class="field"><label>Tài khoản</label><select name="account_id" required>${options(ac, ac[0].id, a => `${a.name} · ${a.currency}`)}</select></div>
-    <div class="field"><label>Ngày</label><input name="transaction_date" type="date" value="${localToday()}" required></div>
-    <div class="field full"><label>Ghi chú</label><input name="note"></div>
-  </div>`, fd => api.debt('payment', { loan_id: id, ...fd }), borrowed ? 'Ghi trả nợ' : 'Ghi thu tiền');
-}
-function openBankPayment(id) {
-  const l = (state.loans || []).find(x => x.id === id); if (!l) return toast('Không tìm thấy khoản vay.', true);
-  if (n(l.remaining_amount) <= 0) return toast('Khoản vay đã tất toán.');
-  const t = F.loanTerms(id) || {}, est = F.bankEstimate(l);
-  const ac = F.activeAccounts().filter(a => (a.currency || state.base) === (l.currency || state.base) && ['cash', 'bank', 'savings'].includes(a.account_type));
-  if (!ac.length) return toast(`Cần tài khoản ${l.currency} để trả khoản vay.`, true);
-  const p0 = t.repayment_method === 'manual' ? 0 : Math.round(est.principal), i0 = Math.round(est.interest);
-  modal('Trả khoản vay ngân hàng', `<div class="balance-card"><span>${esc(t.institution_name || 'Ngân hàng')} · ${esc(l.counterparty)}</span><strong>Dư nợ ${esc(money(l.remaining_amount, l.currency))}</strong></div>
-  <div class="form-grid">
-    <div class="field"><label>Trả gốc</label><input id="bpPrincipal" name="principal_amount" type="number" min="0" max="${esc(l.remaining_amount)}" step="1" value="${p0}" required></div>
-    <div class="field"><label>Lãi / phí kỳ này</label><input id="bpInterest" name="interest_amount" type="number" min="0" step="1" value="${i0}" required></div>
-    <div class="field"><label>Tài khoản trả</label><select name="account_id" required>${options(ac, ac[0].id, a => `${a.name} · ${a.currency}`)}</select></div>
-    <div class="field"><label>Ngày trả</label><input name="transaction_date" type="date" value="${localToday()}" required></div>
-    <div class="field full"><label>Tổng tiền ra</label><div id="bpTotal" class="balance-card m-0"><strong>${esc(money(p0 + i0, l.currency))}</strong></div></div>
-    <div class="field full"><label>Ghi chú</label><input name="note" value="${esc(t.institution_name || '')} ${esc(l.counterparty)}"></div>
-  </div>
-  <small class="muted">Gốc làm giảm dư nợ. Lãi/phí là chi phí và làm giảm tài sản ròng, nhưng không giảm gốc.</small>`,
-  fd => api.extension('bank_payment', { loan_id: id, account_id: fd.account_id, principal_amount: fd.principal_amount, interest_amount: fd.interest_amount, transaction_date: fd.transaction_date, note: fd.note || '' }), 'Ghi thanh toán');
-  const p = $('#bpPrincipal'), i = $('#bpInterest'), tot = $('#bpTotal');
-  const sync = () => tot.innerHTML = `<strong>${esc(money(n(p.value) + n(i.value), l.currency))}</strong>`;
-  p.oninput = sync; i.oninput = sync;
+    <div class="list mt-10" id="debtAdjHistList">${rows.map(debtAdjustmentRow).join('') || '<div class="empty compact">Chưa có lần điều chỉnh nào.</div>'}</div>
+    <div class="row mt-14"><button class="btn primary" ${act('reopenAfterModal', 'openDebtAdjustment', debtId, 'increase')}>Tăng dư nợ</button><button class="btn" ${act('reopenAfterModal', 'openDebtAdjustment', debtId, 'decrease')}>Giảm dư nợ</button></div>`);
+  const applyFilter = () => {
+    const m = $('#debtAdjFilterMonth').value, y = $('#debtAdjFilterYear').value;
+    const filtered = rows.filter(x => (!m || monthKey(x.adjustment_date) === m) && (!y || yearKey(x.adjustment_date) === y));
+    $('#debtAdjHistList').innerHTML = filtered.map(debtAdjustmentRow).join('') || '<div class="empty compact">Không có lần điều chỉnh nào phù hợp.</div>';
+  };
+  $('#debtAdjFilterMonth').addEventListener('change', applyFilter);
+  $('#debtAdjFilterYear').addEventListener('change', applyFilter);
 }
 
 // ---------------- Thẻ & trả góp (own ledger — no cycle, no statement, no account link) ----------------
@@ -520,8 +631,9 @@ async function toggleInstallmentPaid(scheduleRowId, cardId) {
 Object.assign(window, {
   openQuickEntry, openTransactionEdit, deleteTransaction, openColumnSettings, openAccount, archiveAccount, unarchiveAccount,
   openAccountAdjustment, deleteAccountAdjustment, openAccountAdjustmentHistory,
+  openDebt, archiveDebt, deleteDebt, openDebtAdjustment, deleteDebtAdjustment, openDebtAdjustmentHistory,
   openInvestmentNew, deleteInvestment, openInvestmentEvent, deleteInvestmentEvent, openInvestmentEventHistory,
-  openLoan, deleteLoan, openLoanPayment, openBankPayment,
+  openSecurityTrade, openInvestmentPlanConfirm, skipInvestmentPlan,
   openCreditCard, openCardLedger, openCardExpenseForm, deleteCardExpense,
   openInstallment, deleteInstallment, openInstallmentSchedule, toggleInstallmentPaid
 });

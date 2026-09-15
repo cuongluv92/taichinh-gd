@@ -1,87 +1,138 @@
 // ==========================================================================
-// Tài sản — cash / bank / savings, each balance changed ONLY by manual
-// +Tiền/−Tiền adjustments. Fully independent of Chi tiêu; the one number
-// that flows in automatically is Đầu tư's total current value ("Đang đầu tư").
+// Tài sản — four balanced columns like Chi tiêu: Tiền mặt & ngân hàng /
+// Đầu tư / Khoản phải thu / Nợ phải trả. Every balance here changes ONLY
+// through a manual action (+Tiền/-Tiền, Tăng/Giảm dư nợ, or an Đầu tư
+// event) — nothing in Chi tiêu ever touches this page.
 // ==========================================================================
 'use strict';
 
 const ACCOUNT_TYPE_LABEL = { cash: 'Tiền mặt', bank: 'Ngân hàng', savings: 'Tiết kiệm' };
 
-function accountCard(a) {
+function assetAccountRow(a) {
   const bal = F.accountBalance(a);
-  const isLockedSavings = a.account_type === 'savings' && a.is_liquid === false;
-  const eyebrowBits = [ACCOUNT_TYPE_LABEL[a.account_type] || a.account_type, a.currency || state.base];
-  if (isLockedSavings) eyebrowBits.push('dài hạn');
-  return `<article class="card item-card">
-    <div class="item-menu"><button class="mini-btn" aria-label="Sửa" ${act('openAccount', a.id)}>✎</button><button class="mini-btn" aria-label="Ẩn tài khoản" title="Ẩn tài khoản" ${act('archiveAccount', a.id)}>🗑</button></div>
-    <div class="eyebrow">${eyebrowBits.map(esc).join(' · ')}</div>
-    <div class="big ${bal < 0 ? 'red' : ''}">${money(bal, a.currency)}</div>
-    <strong>${esc(a.name)}</strong>
-    ${isLockedSavings ? '<small class="muted">Không tính vào Tiền thanh khoản</small>' : ''}
-    <div class="card-actions wrap">
-      <button class="btn sm primary" ${act('openAccountAdjustment', a.id, 'increase')}>＋ Tiền</button>
-      <button class="btn sm" ${act('openAccountAdjustment', a.id, 'decrease')}>− Tiền</button>
-      <button class="btn sm" ${act('openAccountAdjustmentHistory', a.id)}>Xem lịch sử</button>
-    </div>
-  </article>`;
+  return `<div class="money-line-wrap">
+    <button class="money-line" ${act('openAccountAdjustmentHistory', a.id)}><span class="line-label">${esc(a.name)}<small>${esc(ACCOUNT_TYPE_LABEL[a.account_type] || a.account_type)}</small></span><strong class="${bal < 0 ? 'red' : ''}">${money(bal, a.currency)}</strong></button>
+    <button class="mini-btn" type="button" aria-label="Tăng tiền ${esc(a.name)}" title="＋ Tiền" ${act('openAccountAdjustment', a.id, 'increase')}>＋</button>
+    <button class="mini-btn" type="button" aria-label="Giảm tiền ${esc(a.name)}" title="− Tiền" ${act('openAccountAdjustment', a.id, 'decrease')}>−</button>
+  </div>`;
 }
-function accountGroup(title, list, note = '') {
-  if (!list.length) return '';
-  return `<section class="card section mt-16"><div class="section-head"><h2>${esc(title)}</h2><span class="count-tag">${list.length} tài khoản</span></div>${note ? `<p class="note">${esc(note)}</p>` : ''}<div class="grid account-grid">${list.map(accountCard).join('')}</div></section>`;
+function investmentRow(inv) {
+  const val = F.investmentCurrentValue(inv);
+  return `<div class="money-line-wrap">
+    <button class="money-line" ${act('openInvestmentEventHistory', inv.id)}><span class="line-label">${esc(inv.name)}<small>${esc(INVESTMENT_KIND_LABEL[inv.kind] || '')}</small></span><strong>${money(val, inv.currency)}</strong></button>
+    <button class="mini-btn" type="button" aria-label="Sửa ${esc(inv.name)}" title="Sửa" ${act('openInvestmentNew', inv.id)}>✎</button>
+  </div>`;
+}
+function receivableRow(d) {
+  const bal = F.debtBalance(d);
+  return `<div class="money-line-wrap">
+    <button class="money-line" ${act('openDebtAdjustmentHistory', d.id)}><span class="line-label">${esc(d.name)}${d.counterparty ? `<small>${esc(d.counterparty)}</small>` : ''}</span><strong class="green">${money(bal, d.currency)}</strong></button>
+    <button class="mini-btn" type="button" aria-label="Tăng ${esc(d.name)}" title="Tăng" ${act('openDebtAdjustment', d.id, 'increase')}>＋</button>
+    <button class="mini-btn" type="button" aria-label="Giảm ${esc(d.name)}" title="Giảm" ${act('openDebtAdjustment', d.id, 'decrease')}>−</button>
+  </div>`;
+}
+function payableRow(d) {
+  const bal = F.debtBalance(d);
+  return `<div class="money-line-wrap">
+    <button class="money-line" ${act('openDebtAdjustmentHistory', d.id)}><span class="line-label">${esc(d.name)}${d.counterparty ? `<small>${esc(d.counterparty)}</small>` : ''}</span><strong class="red">${money(bal, d.currency)}</strong></button>
+    <button class="mini-btn" type="button" aria-label="Tăng ${esc(d.name)}" title="Tăng" ${act('openDebtAdjustment', d.id, 'increase')}>＋</button>
+    <button class="mini-btn" type="button" aria-label="Giảm ${esc(d.name)}" title="Giảm" ${act('openDebtAdjustment', d.id, 'decrease')}>−</button>
+  </div>`;
 }
 function hiddenAccountRow(a) {
   return `<div class="tx"><div class="tx-main"><strong>${esc(a.name)}</strong><span>${esc(ACCOUNT_TYPE_LABEL[a.account_type] || a.account_type)} · ${esc(a.currency || state.base)}</span></div>
     <div class="tx-actions"><button class="btn sm" ${act('unarchiveAccount', a.id)}>Khôi phục</button></div></div>`;
 }
-function receivableRow(l) {
-  const remaining = F.historicalLoanRemaining(l, '9999-12-31');
-  return `<button class="money-line" ${act('openLoanPayment', l.id)}><span class="line-label">${esc(l.counterparty)}<small>Khoản phải thu</small></span><strong>${money(remaining, l.currency)}</strong></button>`;
+
+function assetColumn() {
+  const items = F.assetAccounts().map(assetAccountRow);
+  const total = F.assetAccounts().reduce((s, a) => s + F.accountBalance(a), 0);
+  return moneyColumn({ title: 'Tiền mặt & ngân hàng', tone: 'income', items, total: money(total), settingsAction: act('openAccount'), settingsLabel: '＋ Thêm', emptyText: 'Chưa có tài khoản' });
 }
-function debtRow(l) {
-  const remaining = F.historicalLoanRemaining(l, '9999-12-31');
-  return `<button class="money-line" ${act('openLoanPayment', l.id)}><span class="line-label">${esc(l.counterparty)}<small>Nợ phải trả · quản lý ở Chi tiêu → cột Nợ</small></span><strong class="red">${money(remaining, l.currency)}</strong></button>`;
+function investmentColumn() {
+  const list = F.investments().filter(inv => (inv.currency || state.base) === state.base);
+  const items = list.map(investmentRow);
+  const total = F.investmentTotalValue();
+  return moneyColumn({ title: 'Đầu tư', tone: 'credit', items, total: money(total), settingsAction: act('openInvestmentNew'), settingsLabel: '＋ Thêm', emptyText: 'Chưa có khoản đầu tư' });
+}
+function receivablesColumn() {
+  const items = F.receivables().map(receivableRow);
+  const total = F.totalReceivablesAt('9999-12-31');
+  return moneyColumn({ title: 'Khoản phải thu', tone: 'receivable', items, total: money(total), settingsAction: act('openDebt', '', 'receivable'), settingsLabel: '＋ Thêm', emptyText: 'Chưa có khoản phải thu' });
+}
+function payablesColumn() {
+  const items = F.payables().map(payableRow);
+  const total = F.totalPayablesAt('9999-12-31');
+  return moneyColumn({ title: 'Nợ phải trả', tone: 'debt', items, total: money(total), settingsAction: act('openDebt', '', 'payable'), settingsLabel: '＋ Thêm', emptyText: 'Chưa có khoản nợ' });
+}
+
+// "Theo năm" / 6 / 12 tháng toggle for the history chart — module-level so
+// it survives the render() re-render the toggle itself triggers.
+let assetChartMode = 12;
+function setAssetChartMode(mode) { assetChartMode = mode; render(); }
+function assetHistoryMonthKeys() {
+  if (assetChartMode === 'year') return F.yearMonthKeys(state.month.slice(0, 4));
+  return F.trailingMonthKeys(assetChartMode);
 }
 
 function renderAccounts() {
-  const ac = F.baseAccounts();
   const pos = F.financialPosition();
-  const cash = ac.filter(a => a.account_type === 'cash');
-  const bank = ac.filter(a => a.account_type === 'bank');
-  const savings = ac.filter(a => a.account_type === 'savings');
-  const receivables = (state.loans || []).filter(l => l.loan_type === 'lent' && n(l.remaining_amount) > 0);
-  const borrowedLoans = (state.loans || []).filter(l => l.loan_type === 'borrowed' && n(l.remaining_amount) > 0);
-  const hidden = (state.accounts || []).filter(a => a.is_active === false && ['cash', 'bank', 'savings'].includes(a.account_type));
-  // Foreign-currency asset accounts are never summed 1:1 into the base
-  // total — shown separately, always, even when conversion display is off.
-  const foreign = F.activeAccounts().filter(a => ['cash', 'bank', 'savings'].includes(a.account_type) && (a.currency || state.base) !== state.base);
   const vnd = state.reporting?.show_vnd_conversion ? F.positionInVND(pos) : null;
+  const foreign = F.activeAccounts().filter(a => ['cash', 'bank', 'savings'].includes(a.account_type) && (a.currency || state.base) !== state.base);
   const foreignGroups = [...new Set(foreign.map(a => a.currency))].map(cur => {
     const rate = state.reporting?.jpy_vnd_rate;
     const note = state.reporting?.show_vnd_conversion && rate
       ? `Ước tính quy đổi theo tỷ giá đã đặt (1 JPY ≈ ${rate} ${cur}). Số tiền gốc vẫn giữ nguyên bằng ${cur}, chưa tính vào tổng ${esc(state.base)} ở trên.`
       : `Chưa tính vào tổng ${esc(state.base)} ở trên. Bật quy đổi ở Cài đặt để xem ước tính.`;
-    return accountGroup(`Tài khoản ngoại tệ · ${cur}`, foreign.filter(a => a.currency === cur), note);
+    const list = foreign.filter(a => a.currency === cur);
+    return `<section class="card section mt-16"><div class="section-head"><h2>Tài khoản ngoại tệ · ${esc(cur)}</h2><span class="count-tag">${list.length} tài khoản</span></div><p class="note">${esc(note)}</p><div class="money-items">${list.map(assetAccountRow).join('')}</div></section>`;
   }).join('');
-  const nw = F.netWorthSeries(12);
-  return `<div class="view-head"><div><h2>Tài sản gia đình</h2><p>Số dư hiện tại của mọi tài khoản, thay đổi CHỈ qua nút ＋ Tiền / − Tiền. Chi tiêu tháng không tự động làm giảm tài khoản.</p></div>
-    <button class="btn primary" ${act('openAccount')}>＋ Tài khoản</button></div>
+  const hidden = (state.accounts || []).filter(a => a.is_active === false && ['cash', 'bank', 'savings'].includes(a.account_type));
+
+  const investByKind = kind => F.investmentsByKind(kind).filter(inv => (inv.currency || state.base) === state.base).reduce((s, inv) => s + F.investmentCurrentValue(inv), 0);
+  const composition = [
+    { label: 'Tiền mặt & NH', value: pos.liquid },
+    { label: 'NISA', value: investByKind('nisa') },
+    { label: 'Chứng khoán', value: investByKind('securities') },
+    { label: 'Tiết kiệm sinh lời', value: investByKind('savings_interest') },
+    { label: 'Đầu tư khác', value: investByKind('other') },
+    { label: 'Khoản phải thu', value: pos.receivables },
+    { label: 'Tổng nợ', value: -pos.payables }
+  ];
+  const historyRows = F.assetHistorySeries(assetHistoryMonthKeys());
+  const historySeries = [
+    { key: 'totalAssets', label: 'Tổng tài sản', color: '#30d17f' },
+    { key: 'totalDebt', label: 'Tổng nợ', color: '#f25c66' },
+    { key: 'netWorth', label: 'Tài sản ròng', color: '#5aa9e6' },
+    { key: 'investedCapital', label: 'Tổng vốn đầu tư', color: '#c67af0' },
+    { key: 'investedValue', label: 'Giá trị đầu tư hiện tại', color: '#f5a623' }
+  ];
+
+  return `<div class="view-head"><div><h2>Tài sản gia đình</h2><p>Số dư/dư nợ thay đổi CHỈ qua các nút thủ công trong từng cột. Không dữ liệu nào từ Chi tiêu tự động thay đổi trang này.</p></div></div>
   <div class="grid kpi-grid">
-    ${kpiCard('Tiền thanh khoản', money(pos.liquid), 'Tiền mặt + ngân hàng + tiết kiệm có thể rút')}
-    ${kpiCard('Thanh khoản ròng', money(pos.liquidNet), 'Tiền thanh khoản − tổng nợ', pos.liquidNet < 0 ? 'red' : '')}
-    ${kpiCard('Tài sản ròng', money(pos.netWorth), vnd ? `Tổng nợ ${money(pos.totalLiabilities)} · ≈ ${money(vnd.netWorth, 'VND')}` : `Tổng nợ ${money(pos.totalLiabilities)}`, pos.netWorth >= 0 ? 'green' : 'red')}
-    ${kpiCard('Đang đầu tư', money(pos.invested), 'Tự động lấy từ tổng giá trị hiện tại ở Đầu tư · tính vào tài sản ròng, không tính vào thanh khoản')}
+    ${kpiCard('Tiền thanh khoản', money(pos.liquid), 'Tiền mặt + tài khoản ngân hàng')}
+    ${kpiCard('Tổng đầu tư', money(pos.invested), 'NISA + Chứng khoán + Tiết kiệm sinh lời + khác')}
+    ${kpiCard('Tổng nợ', money(pos.payables), 'Nợ phải trả', pos.payables > 0 ? 'red' : '')}
+    ${kpiCard('Tài sản ròng', money(pos.netWorth), vnd ? `≈ ${money(vnd.netWorth, 'VND')}` : 'Thanh khoản + Đầu tư + Phải thu − Tổng nợ', pos.netWorth >= 0 ? 'green' : 'red')}
   </div>
-  <section class="card section chart-card mt-16"><div class="section-head"><div><h2>Tài sản ròng</h2><p>12 tháng gần nhất</p></div></div>${netWorthLine(nw)}</section>
-  ${accountGroup('Tiền mặt', cash)}
-  ${accountGroup('Tài khoản ngân hàng', bank)}
-  ${accountGroup('Tiết kiệm', savings)}
-  ${receivables.length ? `<section class="card section mt-16"><div class="section-head"><h2>Khoản phải thu</h2><span class="count-tag">${receivables.length} khoản</span></div><div class="money-items">${receivables.map(receivableRow).join('')}</div></section>` : ''}
-  ${borrowedLoans.length ? `<section class="card section mt-16"><div class="section-head"><h2>Nợ</h2><span class="count-tag">${borrowedLoans.length} khoản</span></div><div class="money-items">${borrowedLoans.map(debtRow).join('')}</div></section>` : ''}
-  <section class="card section mt-16"><div class="section-head"><div><h2>Tổng đầu tư</h2><p>Quản lý chi tiết ở tab Đầu tư</p></div><button class="btn sm" ${act('navigate', 'investments')}>Mở tab Đầu tư</button></div>
-    <div class="big">${money(pos.invested)}</div></section>
+
+  <section class="card section chart-card mt-16"><div class="section-head"><div><h2>Cơ cấu tài sản</h2><p>Số dư hiện tại theo nhóm</p></div></div>${barChartSvg(composition)}</section>
+
+  <section class="card section chart-card mt-16">
+    <div class="section-head"><div><h2>Lịch sử theo tháng</h2><p>Tổng tài sản, tổng nợ, tài sản ròng và đầu tư</p></div>
+      <div class="row">
+        <button class="btn sm ${assetChartMode === 6 ? 'primary' : ''}" ${act('setAssetChartMode', 6)}>6 tháng</button>
+        <button class="btn sm ${assetChartMode === 12 ? 'primary' : ''}" ${act('setAssetChartMode', 12)}>12 tháng</button>
+        <button class="btn sm ${assetChartMode === 'year' ? 'primary' : ''}" ${act('setAssetChartMode', 'year')}>Theo năm</button>
+      </div>
+    </div>
+    ${multiLineSvg(historyRows, historySeries)}
+  </section>
+
+  <div class="money-board mt-16">${assetColumn()}${investmentColumn()}${receivablesColumn()}${payablesColumn()}</div>
+
   ${foreign.length ? foreignGroups : ''}
-  ${hidden.length ? `<section class="card section mt-16"><div class="section-head"><h2>Tài khoản đã ẩn</h2><span class="count-tag">${hidden.length} tài khoản</span></div><div class="list">${hidden.map(hiddenAccountRow).join('')}</div></section>` : ''}
-  ${!cash.length && !bank.length && !savings.length && !foreign.length ? '<div class="card empty mt-16">Chưa có tài khoản. Nhấn "＋ Tài khoản" để bắt đầu.</div>' : ''}`;
+  ${hidden.length ? `<section class="card section mt-16"><div class="section-head"><h2>Tài khoản đã ẩn</h2><span class="count-tag">${hidden.length} tài khoản</span></div><div class="list">${hidden.map(hiddenAccountRow).join('')}</div></section>` : ''}`;
 }
 
-Object.assign(window, { renderAccounts });
+Object.assign(window, { renderAccounts, setAssetChartMode });

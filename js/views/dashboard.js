@@ -1,8 +1,8 @@
 // ==========================================================================
 // Tổng quan — month-only report. Uses ONLY the selected month's income/
-// expense + Thẻ & trả góp + Nợ data (F.statsFor). Never reads accounts,
-// never reads investments — no bank balance, net worth, liquid cash, total
-// assets, or investment value appears anywhere on this page.
+// expense + Thẻ & trả góp data (F.statsFor). Nợ moved entirely to Tài sản —
+// it never appears here, not in the KPIs, not in Tổng chi tiêu tháng, not
+// in any list. Never reads accounts, never reads investments either.
 // ==========================================================================
 'use strict';
 
@@ -10,18 +10,10 @@ function kpiCard(label, value, sub, cls = '') {
   return `<section class="card kpi"><div class="label">${esc(label)}</div><div class="value ${cls}">${value}</div><div class="sub">${sub}</div></section>`;
 }
 
-const DASH_POSITIVE_TYPES = new Set(['income', 'loan_borrow', 'loan_collect']);
 function txLabel(t) {
-  const type = t.transaction_type;
-  const loan = (state.loans || []).find(l => l.id === t.loan_id);
-  const map = {
-    income: t.category_name || 'Thu nhập', expense: t.category_name || 'Chi tiêu',
-    loan_borrow: `Vay · ${loan?.counterparty || 'Khoản nợ'}`, loan_pay: `Trả nợ · ${loan?.counterparty || ''}`,
-    loan_collect: `Thu hồi nợ · ${loan?.counterparty || ''}`, loan_interest: `Lãi vay · ${loan?.counterparty || ''}`
-  };
-  return map[type] || 'Giao dịch';
+  return t.transaction_type === 'income' ? (t.category_name || 'Thu nhập') : (t.category_name || 'Chi tiêu');
 }
-function txTone(t) { return DASH_POSITIVE_TYPES.has(t.transaction_type) ? 'positive' : 'negative'; }
+function txTone(t) { return t.transaction_type === 'income' ? 'positive' : 'negative'; }
 function txListHtml(rows) {
   if (!rows.length) return '<div class="empty">Chưa có giao dịch thực tế trong tháng này.</div>';
   const editable = new Set(['income', 'expense']);
@@ -77,20 +69,6 @@ function categoryTrendHtml() {
   }).join('')}</div>`;
 }
 
-function upcomingDueHtml(items) {
-  if (!items.length) return '<div class="empty">Không có khoản nợ nào sắp đến hạn.</div>';
-  return `<div class="list">${items.map(x => {
-    const overdue = x.date && daysUntil(x.date) < 0;
-    const dateNote = x.date ? ` · ${overdue ? 'Quá hạn' : 'Hạn'} ${esc(String(x.date).slice(0, 10))}` : '';
-    return `<div class="tx"><button class="tx-row-btn" ${act('openLoanPayment', x.id)}>
-      <div class="tx-icon">↑</div>
-      <div class="tx-main"><strong>${esc(x.label)}</strong><span>${esc(x.note)}${dateNote}</span></div>
-      </button>
-      <div class="tx-actions"><strong class="amount ${overdue ? 'red' : ''}">${money(x.amount, x.currency)}</strong></div>
-    </div>`;
-  }).join('')}</div>`;
-}
-
 // "Tổng theo từng tháng trong năm" — the 12 calendar months of the selected
 // year (Jan..Dec), not a rolling window, so it reads as one fiscal year.
 function yearMonthlyHtml() {
@@ -136,15 +114,14 @@ function renderDashboard() {
   const expenseComposition = F.expenseByCategory(F.periodTransactions(state.month));
   const prevStats = F.statsFor(addMonths(state.month, -1));
   const prevYearStats = F.statsFor(addMonths(state.month, -12));
-  const upcoming = F.upcomingDue(state.month);
   const yoy = (cur, prev) => { const t = yoyText(cur, prev); return t ? `<small class="muted">${t.replace(/^ · /, '')}</small>` : ''; };
-  const hasAnyActivity = (state.transactions || []).some(t => ['income', 'expense'].includes(t.transaction_type)) || s.card > 0 || s.debt > 0;
+  const hasAnyActivity = (state.transactions || []).some(t => ['income', 'expense'].includes(t.transaction_type)) || s.card > 0;
   const ratio = pctText(s.expense, s.income);
 
   return `
   <div class="grid kpi-grid">
     ${kpiCard('Thu nhập tháng', money(s.income), `Kế hoạch ${money(incomePlan)}${momText(s.income, prevStats.income)}`, 'green')}
-    ${kpiCard('Tổng chi tiêu tháng', money(s.expense), `Cố định ${money(s.fixed)} · Biến động ${money(s.variable)} · Thẻ&góp ${money(s.card)} · Nợ ${money(s.debt)}${momText(s.expense, prevStats.expense)}`, '')}
+    ${kpiCard('Tổng chi tiêu tháng', money(s.expense), `Cố định ${money(s.fixed)} · Biến động ${money(s.variable)} · Thẻ&góp ${money(s.card)}${momText(s.expense, prevStats.expense)}`, '')}
     ${kpiCard('Còn lại trong tháng', signedMoney(s.remaining), 'Thu nhập − Tổng chi tiêu tháng', s.remaining < 0 ? 'red' : 'green')}
     ${kpiCard('Tỷ lệ chi tiêu / thu nhập', ratio, s.exceptional > 0 ? `Chưa tính ${money(s.exceptional)} chi bất thường` : 'Tổng chi tiêu so với thu nhập tháng', s.expense > s.income ? 'red' : '')}
   </div>
@@ -158,7 +135,6 @@ function renderDashboard() {
       <div class="compare-row"><div class="label"><b>Chi cố định</b></div><div>${money(fixedPlan)}</div><div>${money(s.fixed)}</div><div>${yoy(s.fixed, prevYearStats.fixed)}</div></div>
       <div class="compare-row"><div class="label"><b>Chi biến động</b></div><div>${money(variablePlan)}</div><div>${money(s.variable)}</div><div>${yoy(s.variable, prevYearStats.variable)}</div></div>
       <div class="compare-row"><div class="label"><b>Thẻ & trả góp</b></div><div>—</div><div>${money(s.card)}</div><div>${yoy(s.card, prevYearStats.card)}</div></div>
-      <div class="compare-row"><div class="label"><b>Nợ phải trả</b></div><div>—</div><div>${money(s.debt)}</div><div>${yoy(s.debt, prevYearStats.debt)}</div></div>
     </div>
   </section>
 
@@ -189,16 +165,10 @@ function renderDashboard() {
     ${categoryTrendHtml()}
   </section>
 
-  <div class="grid section-grid mt-16">
-    <section class="card section">
-      <div class="section-head"><div><h2>Giao dịch gần đây</h2><p>Tháng ${fmtMonthKey(state.month)}</p></div><button class="btn sm primary" ${act('openQuickEntry')}>＋ Nhập nhanh</button></div>
-      ${txListHtml(recent)}
-    </section>
-    <section class="card section">
-      <div class="section-head"><div><h2>Sắp đến hạn</h2><p>Khoản nợ chưa trả</p></div></div>
-      ${upcomingDueHtml(upcoming)}
-    </section>
-  </div>`;
+  <section class="card section mt-16">
+    <div class="section-head"><div><h2>Giao dịch gần đây</h2><p>Tháng ${fmtMonthKey(state.month)}</p></div><button class="btn sm primary" ${act('openQuickEntry')}>＋ Nhập nhanh</button></div>
+    ${txListHtml(recent)}
+  </section>`;
 }
 
 Object.assign(window, { renderDashboard, incomePlanTotal, txListHtml });

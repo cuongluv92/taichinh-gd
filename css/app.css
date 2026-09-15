@@ -179,13 +179,15 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
   border-top:1px solid var(--border);font-size:13px;font-weight:700;
 }
 .money-total span{color:var(--text-dim);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.02em}
-.money-column.income .money-column-head h3{color:var(--positive)}
+.money-column.income .money-column-head h3,.money-column.receivable .money-column-head h3{color:var(--positive)}
 .money-column.debt .money-column-head h3,.money-column.credit .money-column-head h3{color:var(--negative)}
 .money-total .pct{font-size:11px;color:var(--text-faint);font-weight:600;margin-left:6px}
 .line-amount{text-align:right}
 .invest-summary{color:var(--text-dim);font-size:12px;margin-top:6px;display:flex;gap:14px}
 .card-actions{display:flex;gap:8px;margin-top:12px}
 .card-actions.wrap{flex-wrap:wrap}
+.plan-status{background:var(--panel-3);border-radius:var(--radius-sm);padding:8px 10px;margin-top:8px}
+.plan-status small{color:var(--text-dim)}
 .modal-content h4{margin:0 0 8px;font-size:12px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.03em}
 .count-tag{color:var(--text-dim);font-size:12px}
 .text-sm{font-size:12px}
@@ -301,6 +303,8 @@ dialog#modal::backdrop{background:rgba(0,0,0,.55);backdrop-filter:blur(2px)}
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .field{display:flex;flex-direction:column;gap:5px;min-width:0}
 .field.full{grid-column:1/-1}
+.full{grid-column:1/-1}
+.field-group{display:contents}
 .field label{font-size:12px;color:var(--text-dim);font-weight:600}
 .field small{color:var(--text-faint);font-size:11px}
 input,select,textarea{

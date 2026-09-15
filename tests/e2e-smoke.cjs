@@ -54,28 +54,16 @@ const CATEGORIES = [
   cat('vr1', 'expense', 'variable', 'Ăn uống', 60000),
   cat('vr2', 'expense', 'variable', 'Đi lại', 15000)
 ];
-// No account_type 'investment' or 'credit' balance concept anymore — cash/
-// bank/savings only carry a Tài sản balance; the card account is a Chi tiêu
-// identity referenced by card_expenses/installments, nothing more.
 const ACCOUNTS = [
   { id: 'bank', name: 'UFJ', account_type: 'bank', currency: 'JPY', opening_balance: 300000, is_active: true },
   { id: 'cash', name: 'Tiền mặt', account_type: 'cash', currency: 'JPY', opening_balance: 50000, is_active: true },
-  { id: 'sav', name: 'Tiết kiệm', account_type: 'savings', currency: 'JPY', opening_balance: 200000, is_active: true },
   { id: 'card', name: 'Rakuten', account_type: 'credit', currency: 'JPY', opening_balance: 0, is_active: true },
   { id: 'vnbank', name: 'Vietcombank', account_type: 'bank', currency: 'VND', opening_balance: 5000000, is_active: true },
   { id: 'oldwallet', name: 'Ví cũ', account_type: 'cash', currency: 'JPY', opening_balance: 0, is_active: false }
 ];
-const LOANS = [
-  { id: 'loan1', counterparty: 'Vay mua xe', loan_type: 'borrowed', currency: 'JPY', principal: 1000000, remaining_amount: 850000, start_date: '2026-01-10', due_date: '2028-01-10' },
-  { id: 'loan2', counterparty: 'Vay ngân hàng ABC', loan_type: 'borrowed', currency: 'JPY', principal: 5000000, remaining_amount: 4800000, start_date: '2025-06-10', due_date: '2030-06-10' }
-];
-const LOAN_TERMS = [
-  { loan_id: 'loan2', loan_kind: 'bank', institution_name: 'Ngân hàng ABC', product_name: 'Vay tiêu dùng', annual_rate: 3, repayment_method: 'equal_payment', term_months: 60, payment_day: 15 }
-];
 let txSeq = 0;
 function tx(o) { return { id: 'tx' + (++txSeq), currency: 'JPY', note: '', category_name: (CATEGORIES.find(c => c.id === o.category_id) || {}).name, ...o }; }
 const FULL_TX = [];
-// 24 months of history so year-over-year / whole-year analytics have real data.
 for (let i = 23; i >= 0; i--) {
   const m = addMonths(MONTH, -i);
   FULL_TX.push(tx({ category_id: 'inc1', transaction_type: 'income', amount: 300000, transaction_date: `${m}-05` }));
@@ -84,8 +72,6 @@ for (let i = 23; i >= 0; i--) {
   FULL_TX.push(tx({ category_id: 'vr1', transaction_type: 'expense', amount: 42000 + (i % 3) * 4000, transaction_date: `${m}-15` }));
   FULL_TX.push(tx({ category_id: 'vr2', transaction_type: 'expense', amount: 10000 + (i % 4) * 1000, transaction_date: `${m}-20` }));
 }
-FULL_TX.push(tx({ account_id: 'bank', loan_id: 'loan1', transaction_type: 'loan_pay', amount: 30000, transaction_date: `${MONTH}-12` }));
-FULL_TX.push(tx({ account_id: 'bank', loan_id: 'loan1', transaction_type: 'loan_interest', amount: 4500, transaction_date: `${MONTH}-12` }));
 const MONTH_TX = FULL_TX.filter(t => t.transaction_date.startsWith(MONTH));
 
 const ADJUSTMENTS = [
@@ -94,45 +80,46 @@ const ADJUSTMENTS = [
 const CARD_EXPENSES = [
   { id: 'ce1', card_account_id: 'card', card_name: 'Rakuten', entry_mode: 'detail', expense_date: `${MONTH}-15`, description: 'Điện · Ga', amount: 10000, note: '' }
 ];
-const INSTALLMENTS = [
-  {
-    id: 'inst1', card_account_id: 'card', card_name: 'Rakuten', name: 'Máy giặt', purchase_date: `${MONTH}-01`,
-    principal_amount: 60000, fee_total: 0, total_installments: 6, paid_installments_before: 0, first_payment_month: `${MONTH}-01`, currency: 'JPY', note: '',
-    schedule: Array.from({ length: 6 }, (_, i) => ({ id: `sch${i + 1}`, installment_no: i + 1, payment_month: addMonths(MONTH, i) + '-01', principal_amount: 10000, fee_amount: 0, is_paid: i === 0, payment_kind: 'regular' }))
-  }
+const INSTALLMENTS = [];
+const DEBTS = [
+  { id: 'd1', name: 'Vay mua xe', counterparty: 'Ngân hàng ABC', direction: 'payable', currency: 'JPY', opening_amount: 1250000, start_date: `${MONTH}-15`, due_date: '2026-12-01', interest_rate: 0, is_active: true }
 ];
+const DEBT_ADJUSTMENTS = [];
 const INVESTMENTS = [
-  { id: 'nisa', name: 'NISA', asset_type: 'NISA', currency: 'JPY', initial_capital: 400000, note: '', created_at: `${MONTH}-01T00:00:00Z`, total_contributed: 100000, total_withdrawn: 0, latest_value: 550000, latest_value_date: `${MONTH}-10` }
+  { id: 'nisa1', name: 'NISA Rakuten', kind: 'nisa', currency: 'JPY', initial_capital: 400000, note: '', created_at: `${MONTH}-01T00:00:00Z`, start_date: '2026-01-01', broker_name: 'Rakuten Securities', nisa_frame: 'both', nisa_annual_limit: 3600000, monthly_amount: 30000, monthly_day: 5, plan_start_month: `${MONTH}-01`, plan_paused: false, expected_return_rate: 5, expected_return_period: 'annual', reinvest_mode: 'none', total_contributed: 100000, total_withdrawn: 0, latest_value: 550000, latest_value_date: `${MONTH}-10` },
+  { id: 'sec1', name: 'Toyota', kind: 'securities', currency: 'JPY', initial_capital: 0, note: '', created_at: `${MONTH}-01T00:00:00Z`, broker_name: 'SBI', ticker: '7203', market: 'TSE', quantity: 100, avg_cost: 2000, current_price: 2200, realized_pl: 0, total_contributed: 200000, total_withdrawn: 0, total_dividends: 0 },
+  { id: 'sav1', name: 'Tiết kiệm kỳ hạn SBI', kind: 'savings_interest', currency: 'JPY', initial_capital: 500000, note: '', created_at: `${MONTH}-01T00:00:00Z`, bank_name: 'SBI Sumishin', interest_rate_annual: 1, interest_payment_method: 'maturity', term_end_date: '2027-09-15', total_contributed: 0, total_withdrawn: 0, total_interest: 5000 }
 ];
 const INVESTMENT_EVENTS = {
-  nisa: [
+  nisa1: [
     { id: 'ev1', event_type: 'contribution', amount: 100000, event_date: `${MONTH}-02`, note: '' },
     { id: 'ev2', event_type: 'valuation', amount: 550000, event_date: `${MONTH}-10`, note: '' }
+  ],
+  sec1: [
+    { id: 'ev3', event_type: 'buy', quantity: 100, price: 2000, amount: 200000, event_date: `${MONTH}-01`, note: '' },
+    { id: 'ev4', event_type: 'valuation', price: 2200, amount: 0, event_date: `${MONTH}-10`, note: '' }
+  ],
+  sav1: [
+    { id: 'ev5', event_type: 'interest', amount: 5000, event_date: `${MONTH}-15`, note: '' }
   ]
 };
 
-// Stateful mocks — save/delete/toggle actually mutate these fixture arrays,
-// so a created/edited/deleted row is reflected the next time the app
-// refreshes and re-fetches (exactly like the real backend), instead of a
-// static response silently reverting every change.
 let seq = 0;
 function newId(prefix) { return `${prefix}${++seq}`; }
 
 const RPC_HANDLERS = {
   taichinh_gd_api: (action) => {
-    if (action === 'bootstrap' || action === 'month') return { household: { name: 'Nguyễn Gia', base_currency: 'JPY' }, accounts: ACCOUNTS, categories: CATEGORIES, category_versions: [], transactions: MONTH_TX, loans: LOANS };
+    if (action === 'bootstrap' || action === 'month') return { household: { name: 'Nguyễn Gia', base_currency: 'JPY' }, accounts: ACCOUNTS, categories: CATEGORIES, category_versions: [], transactions: MONTH_TX };
     if (action === 'export') return { transactions: FULL_TX };
     if (action === 'save_account') return { ok: true, id: 'newacct1' };
     return { ok: true, id: 'x' };
   },
   taichinh_gd_extension_api: (action) => {
-    if (action === 'save_reporting' || action === 'bank_payment') return { ok: true };
-    return { reporting: { show_vnd_conversion: false, jpy_vnd_rate: null }, loan_terms: LOAN_TERMS };
+    if (action === 'save_reporting') return { ok: true };
+    return { reporting: { show_vnd_conversion: false, jpy_vnd_rate: null }, loan_terms: [] };
   },
   taichinh_gd_exceptional_api: (action) => action === 'set' ? { ok: true } : { ids: [] },
   taichinh_gd_backup_api: () => ({ ok: true }),
-  taichinh_gd_debt_api: () => ({ ok: true, id: 'x' }),
-  taichinh_gd_bank_loan_api: () => ({ ok: true, id: 'x' }),
   taichinh_gd_budget_column_api: () => ({ ok: true }),
   taichinh_gd_account_adjustment_api: (action, body) => {
     const p = body?.p_payload || {};
@@ -144,6 +131,27 @@ const RPC_HANDLERS = {
       return { ok: true, id };
     }
     if (action === 'delete') { const i = ADJUSTMENTS.findIndex(x => x.id === p.id); if (i >= 0) ADJUSTMENTS.splice(i, 1); return { ok: true }; }
+    return { ok: true };
+  },
+  taichinh_gd_debt_ledger_api: (action, body) => {
+    const p = body?.p_payload || {};
+    if (action === 'list') return { items: DEBTS.filter(d => d.is_active !== false) };
+    if (action === 'save') {
+      if (p.id) { const row = DEBTS.find(x => x.id === p.id); if (row) Object.assign(row, p); return { ok: true, id: p.id }; }
+      const id = newId('debt');
+      DEBTS.push({ id, name: p.name, counterparty: p.counterparty || '', direction: p.direction, currency: p.currency || 'JPY', opening_amount: Number(p.opening_amount || 0), start_date: p.start_date || null, due_date: p.due_date || null, interest_rate: p.interest_rate || null, note: p.note || '', is_active: true });
+      return { ok: true, id };
+    }
+    if (action === 'archive') { const row = DEBTS.find(x => x.id === p.id); if (row) row.is_active = false; return { ok: true }; }
+    if (action === 'delete') { const i = DEBTS.findIndex(x => x.id === p.id); if (i >= 0) DEBTS.splice(i, 1); return { ok: true }; }
+    if (action === 'list_adjustments') return { items: DEBT_ADJUSTMENTS.filter(x => x.debt_id === p.debt_id) };
+    if (action === 'save_adjustment') {
+      if (p.id) { const row = DEBT_ADJUSTMENTS.find(x => x.id === p.id); if (row) Object.assign(row, p); return { ok: true, id: p.id }; }
+      const id = newId('dadj');
+      DEBT_ADJUSTMENTS.push({ id, debt_id: p.debt_id, direction: p.direction, amount: Number(p.amount), adjustment_date: p.adjustment_date, note: p.note || '' });
+      return { ok: true, id };
+    }
+    if (action === 'delete_adjustment') { const i = DEBT_ADJUSTMENTS.findIndex(x => x.id === p.id); if (i >= 0) DEBT_ADJUSTMENTS.splice(i, 1); return { ok: true }; }
     return { ok: true };
   },
   taichinh_gd_card_ledger_api: (action, body) => {
@@ -160,12 +168,8 @@ const RPC_HANDLERS = {
     if (action === 'save_installment') {
       const total = Number(p.total_installments), principal = Number(p.principal_amount);
       const schedule = Array.from({ length: total }, (_, i) => ({ id: newId('sch'), installment_no: i + 1, payment_month: addMonths(p.first_payment_month?.slice(0, 7) || MONTH, i) + '-01', principal_amount: Math.round(principal / total), fee_amount: 0, is_paid: false, payment_kind: 'regular' }));
-      if (p.id) {
-        const row = INSTALLMENTS.find(x => x.id === p.id);
-        if (row) { Object.assign(row, p, { total_installments: total, principal_amount: principal, schedule }); return { ok: true, id: p.id }; }
-      }
       const id = newId('inst');
-      INSTALLMENTS.push({ id, card_account_id: p.card_account_id, card_name: (ACCOUNTS.find(a => a.id === p.card_account_id) || {}).name, name: p.name, purchase_date: p.purchase_date, principal_amount: principal, fee_total: Number(p.fee_total || 0), total_installments: total, paid_installments_before: Number(p.paid_installments_before || 0), first_payment_month: p.first_payment_month, currency: p.currency || 'JPY', note: p.note || '', schedule });
+      INSTALLMENTS.push({ id, card_account_id: p.card_account_id, card_name: (ACCOUNTS.find(a => a.id === p.card_account_id) || {}).name, name: p.name, purchase_date: p.purchase_date, principal_amount: principal, fee_total: 0, total_installments: total, paid_installments_before: 0, first_payment_month: p.first_payment_month, currency: 'JPY', note: p.note || '', schedule });
       return { ok: true, id };
     }
     if (action === 'delete_installment') { const i = INSTALLMENTS.findIndex(x => x.id === p.id); if (i >= 0) INSTALLMENTS.splice(i, 1); return { ok: true }; }
@@ -179,21 +183,34 @@ const RPC_HANDLERS = {
     if (action === 'save') {
       if (p.id) { const row = INVESTMENTS.find(x => x.id === p.id); if (row) Object.assign(row, p); return { ok: true, id: p.id }; }
       const id = newId('inv');
-      INVESTMENTS.push({ id, name: p.name, asset_type: p.asset_type || null, currency: p.currency || 'JPY', initial_capital: Number(p.initial_capital || 0), note: p.note || '', created_at: new Date().toISOString(), total_contributed: 0, total_withdrawn: 0, latest_value: null, latest_value_date: null });
+      INVESTMENTS.push({ id, kind: p.kind || 'other', name: p.name, asset_type: p.asset_type || null, currency: p.currency || 'JPY', initial_capital: Number(p.initial_capital || 0), note: p.note || '', created_at: new Date().toISOString(), quantity: 0, avg_cost: 0, realized_pl: 0, total_contributed: 0, total_withdrawn: 0, total_dividends: 0, total_interest: 0, latest_value: null, latest_value_date: null });
       INVESTMENT_EVENTS[id] = [];
       return { ok: true, id };
     }
     if (action === 'delete') { const i = INVESTMENTS.findIndex(x => x.id === p.id); if (i >= 0) INVESTMENTS.splice(i, 1); return { ok: true }; }
     if (action === 'save_event') {
       const list = INVESTMENT_EVENTS[p.investment_id] = INVESTMENT_EVENTS[p.investment_id] || [];
-      if (p.id) { const row = list.find(x => x.id === p.id); if (row) Object.assign(row, p); return { ok: true, id: p.id }; }
-      const id = newId('ev');
-      list.push({ id, event_type: p.event_type, amount: Number(p.amount), event_date: p.event_date, note: p.note || '' });
       const inv = INVESTMENTS.find(x => x.id === p.investment_id);
+      let id = p.id;
+      if (id) { const row = list.find(x => x.id === id); if (row) Object.assign(row, p); }
+      else { id = newId('ev'); list.push({ id, event_type: p.event_type, amount: p.amount != null ? Number(p.amount) : null, quantity: p.quantity != null ? Number(p.quantity) : null, price: p.price != null ? Number(p.price) : null, event_date: p.event_date, note: p.note || '' }); }
       if (inv) {
-        if (p.event_type === 'contribution') inv.total_contributed = Number(inv.total_contributed || 0) + Number(p.amount);
-        if (p.event_type === 'withdrawal') inv.total_withdrawn = Number(inv.total_withdrawn || 0) + Number(p.amount);
-        if (p.event_type === 'valuation') { inv.latest_value = Number(p.amount); inv.latest_value_date = p.event_date; }
+        if (p.event_type === 'contribution' || p.event_type === 'buy') inv.total_contributed = Number(inv.total_contributed || 0) + Number(p.amount || (p.quantity * p.price) || 0);
+        if (p.event_type === 'withdrawal' || p.event_type === 'sell') inv.total_withdrawn = Number(inv.total_withdrawn || 0) + Number(p.amount || (p.quantity * p.price) || 0);
+        if (p.event_type === 'dividend') inv.total_dividends = Number(inv.total_dividends || 0) + Number(p.amount || 0);
+        if (p.event_type === 'interest') inv.total_interest = Number(inv.total_interest || 0) + Number(p.amount || 0);
+        if (p.event_type === 'valuation') {
+          if (inv.kind === 'securities') inv.current_price = Number(p.price);
+          else { inv.latest_value = Number(p.amount); inv.latest_value_date = p.event_date; }
+        }
+        if (inv.kind === 'securities' && (p.event_type === 'buy' || p.event_type === 'sell')) {
+          let qty = 0, avg = 0, realized = 0;
+          list.filter(e => e.event_type === 'buy' || e.event_type === 'sell').sort((a, b) => String(a.event_date).localeCompare(String(b.event_date))).forEach(e => {
+            if (e.event_type === 'buy') { avg = qty + e.quantity > 0 ? (qty * avg + e.quantity * e.price) / (qty + e.quantity) : avg; qty += e.quantity; }
+            else { realized += e.quantity * (e.price - avg); qty -= e.quantity; }
+          });
+          inv.quantity = qty; inv.avg_cost = avg; inv.realized_pl = realized;
+        }
       }
       return { ok: true, id };
     }
@@ -235,36 +252,28 @@ const RPC_HANDLERS = {
   await page.waitForSelector('#app:not(.hidden)', { timeout: 8000 });
   results.push('BOOT: app shell visible after fixture bootstrap - OK');
 
-  // ---- Tổng quan: must be month-only, zero asset/investment data ----
+  // ---- Tổng quan: month-only, Nợ never appears anywhere ----
   const dashboardText = await page.textContent('#content');
   const kpiLabels = await page.locator('.kpi-grid .kpi .label').allTextContents();
   results.push(`DASHBOARD kpi-grid = ${JSON.stringify(kpiLabels)}`);
-  results.push(`  Shows the 4 month-only KPIs (Thu nhập/Tổng chi tiêu/Còn lại/Tỷ lệ): ${kpiLabels.length === 4}`);
-  results.push(`  Tài sản ròng / Tiền thanh khoản / Đang đầu tư NEVER appear on Tổng quan: ${!/Tài sản ròng|Tiền thanh khoản|Đang đầu tư/.test(dashboardText)}`);
+  results.push(`  Shows exactly the 4 month-only KPIs: ${kpiLabels.length === 4}`);
+  results.push(`  Tài sản ròng / Tiền thanh khoản / Tổng đầu tư NEVER appear on Tổng quan: ${!/Tài sản ròng|Tiền thanh khoản|Tổng đầu tư/.test(dashboardText)}`);
+  results.push(`  Nợ / khoản vay NEVER appears anywhere on Tổng quan (no "Sắp đến hạn", no "Vay mua xe"): ${!dashboardText.includes('Sắp đến hạn') && !dashboardText.includes('Vay mua xe') && !/\bNợ\b/.test(dashboardText)}`);
   results.push(`  NISA / investment name never appears on Tổng quan: ${!dashboardText.includes('NISA')}`);
   results.push(`DASHBOARD shows month-over-month comparison text: ${dashboardText.includes('so với tháng trước') || dashboardText.includes('Bằng tháng trước')}`);
-  results.push(`DASHBOARD shows year-over-year comparison text: ${dashboardText.includes('cùng kỳ năm trước')}`);
   results.push(`DASHBOARD shows "năm nay so với năm trước" section: ${dashboardText.includes('Năm nay so với năm trước')}`);
-  results.push(`DASHBOARD shows "từng tháng trong năm" section: ${dashboardText.includes('Từng tháng trong năm')}`);
-  results.push(`DASHBOARD shows biggest-mover category section: ${dashboardText.includes('tăng/giảm nhiều nhất')}`);
-  results.push(`DASHBOARD shows "Sắp đến hạn" with the unpaid loan: ${dashboardText.includes('Sắp đến hạn') && dashboardText.includes('Vay mua xe')}`);
   await page.screenshot({ path: path.join(SHOT_DIR, 'shot-dashboard-1440.png'), fullPage: true });
 
-  // ---- Chi tiêu: 5 independent columns ----
+  // ---- Chi tiêu: 4 columns now (Nợ removed) ----
   await page.click('[data-view="budget"]');
   await page.waitForSelector('.money-board');
   const cols = await page.$$('.money-column');
-  results.push(`BUDGET column count = ${cols.length} (expect 5)`);
+  results.push(`BUDGET column count = ${cols.length} (expect 4 — Nợ moved to Tài sản)`);
+  results.push(`  No ".money-column.debt" exists in Chi tiêu anymore: ${await page.locator('.money-column.debt').count() === 0}`);
   const budgetText = await page.textContent('#content');
-  results.push(`BUDGET Thẻ & trả góp column shows the card expense (10,000) not mixed into Chi biến động: ${budgetText.includes('Rakuten')}`);
+  results.push(`  Thẻ & trả góp column shows the card expense (Rakuten), Chi biến động untouched: ${budgetText.includes('Rakuten')}`);
   await page.screenshot({ path: path.join(SHOT_DIR, 'shot-budget-1440.png'), fullPage: true });
 
-  for (const w of [1366, 1024]) {
-    await page.setViewportSize({ width: w, height: 900 });
-    await page.waitForTimeout(150);
-    const cols2 = await page.$$('.money-column');
-    results.push(`BUDGET at ${w}px: columns=${cols2.length}`);
-  }
   for (const w of [430, 390]) {
     await page.setViewportSize({ width: w, height: 800 });
     await page.waitForTimeout(150);
@@ -303,19 +312,10 @@ const RPC_HANDLERS = {
     await page.waitForTimeout(50);
   }
 
-  // ---- Quick entry: income/expense only, no account/transfer picker ----
+  // ---- Quick entry ----
   await page.click('[data-view="dashboard"]');
   await page.click('#quickAdd');
   await page.waitForSelector('#modal[open]', { timeout: 1500 });
-  const qeHasTransferTab = await page.locator('#qeTypeTabs button[data-t="transfer"]').count();
-  results.push(`QUICK ENTRY has no Chuyển (transfer) tab anymore: ${qeHasTransferTab === 0}`);
-  await page.click('.details-summary');
-  const excVisibleExpense = await page.isVisible('#qeExceptionalField');
-  results.push(`QUICK ENTRY "bất thường" checkbox visible for Chi (expense): ${excVisibleExpense}`);
-  await page.click('#qeTypeTabs button[data-t="income"]');
-  const excVisibleIncome = await page.isVisible('#qeExceptionalField');
-  results.push(`QUICK ENTRY "bất thường" checkbox hidden for Thu (income): ${!excVisibleIncome}`);
-  await page.click('#qeTypeTabs button[data-t="expense"]');
   await page.fill('#qeAmount', '3000');
   await resetToast();
   await page.click('#modalForm [type=submit]');
@@ -323,176 +323,131 @@ const RPC_HANDLERS = {
   await page.evaluate(() => document.getElementById('modal')?.close());
   await page.waitForTimeout(50);
 
-  await page.click('[data-view="budget"]');
-  await page.waitForSelector('.money-board');
-  await clickAndCheckModal('budget Thu-nhập column-settings', '.money-column.income .column-settings', '#columnRows');
-  await clickAndCheckModal('budget Thẻ&trả-góp column-settings', '.money-column.credit .column-settings');
-  await page.click('.money-column.debt .column-settings');
-  await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK budget Nợ column-settings: modal opened - OK')).catch(() => results.push('CLICK budget Nợ column-settings: modal did NOT open - FAIL'));
-  await page.evaluate(() => document.getElementById('modal')?.close());
-  await page.waitForTimeout(50);
-
-  // Category with money already in it opens the transaction list, not a
-  // blind add — inc1 "Lương C" has real transactions in the fixture.
-  await page.click('.money-column.income .money-line:has-text("Lương C")');
-  await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK income category with money (Lương C): opens transaction list - OK')).catch(() => results.push('CLICK income category with money: modal did NOT open - FAIL'));
-  await page.evaluate(() => document.getElementById('modal')?.close());
-  await page.waitForTimeout(50);
-
-  // ---- Thẻ & trả góp: card ledger, card_expenses + installments ----
-  await page.click('.money-column.credit .money-line:has-text("Rakuten")');
-  await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK Rakuten card row (openCardLedger): modal opened - OK')).catch(() => results.push('CLICK Rakuten card row: modal did NOT open - FAIL'));
-  const ledgerText = await page.textContent('#modalBody');
-  results.push(`  Card ledger shows labeled "Xóa"/"Sửa" buttons (not bare icons): ${ledgerText.includes('Sửa') && ledgerText.includes('Xóa')}`);
-  results.push(`  Card ledger lists the existing detail expense (Điện · Ga): ${ledgerText.includes('Điện')}`);
-  results.push(`  Card ledger shows the installment (Máy giặt) with kỳ progress: ${ledgerText.includes('Máy giặt')}`);
-
-  await page.click('button:has-text("＋ Thêm khoản chi")');
-  await page.waitForSelector('#modalBody [name="description"]', { timeout: 1500 }).then(() => results.push('CLICK "+ Thêm khoản chi" (detail entry form): opened - OK')).catch(() => results.push('CLICK "+ Thêm khoản chi": did NOT open - FAIL'));
-  await page.fill('[name="amount"]', '2500');
-  await resetToast();
-  await page.click('#modalForm [type=submit]');
-  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`SUBMIT new card detail expense: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('SUBMIT card detail expense: no toast - FAIL'));
-
-  await page.click('.money-column.credit .money-line:has-text("Rakuten")');
-  await page.waitForSelector('#modal[open]', { timeout: 1500 });
-  await page.click('button:has-text("＋ Nhập tổng theo tháng")');
-  await page.waitForSelector('[name="expense_month"]', { timeout: 1500 }).then(() => results.push('CLICK "+ Nhập tổng theo tháng" (lump entry form): opened - OK')).catch(() => results.push('CLICK "+ Nhập tổng theo tháng": did NOT open - FAIL'));
-  await page.evaluate(() => document.getElementById('modal')?.close());
-  await page.waitForTimeout(50);
-
-  // Edit and delete an existing card expense from the ledger list.
-  await page.click('.money-column.credit .money-line:has-text("Rakuten")');
-  await page.waitForSelector('#modal[open]', { timeout: 1500 });
-  await page.click('#modalBody .tx .btn:has-text("Sửa")');
-  await page.waitForSelector('[name="amount"]', { timeout: 1500 }).then(() => results.push('CLICK "Sửa" on a card expense row: edit form opened - OK')).catch(() => results.push('CLICK "Sửa" on card expense: edit form did NOT open - FAIL'));
-  await page.evaluate(() => document.getElementById('modal')?.close());
-  await page.waitForTimeout(50);
-
-  await page.click('.money-column.credit .money-line:has-text("Rakuten")');
-  await page.waitForSelector('#modal[open]', { timeout: 1500 });
-  await page.evaluate(() => { window.confirm = () => true; });
-  await resetToast();
-  await page.click('#modalBody .tx .btn:has-text("Xóa")');
-  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`CLICK "Xóa" on a card expense row: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('CLICK "Xóa" on card expense: no toast - FAIL'));
-  await page.evaluate(() => { window.confirm = () => false; });
-  await page.evaluate(() => document.getElementById('modal')?.close());
-  await page.waitForTimeout(50);
-
-  // ---- Trả góp: create, view schedule, toggle paid, delete ----
-  await page.click('.money-column.credit .money-line:has-text("Rakuten")');
-  await page.waitForSelector('#modal[open]', { timeout: 1500 });
-  await page.click('button:has-text("＋ Thêm khoản trả góp")');
-  await page.waitForSelector('[name="principal_amount"]', { timeout: 1500 }).then(() => results.push('CLICK "+ Thêm khoản trả góp": form opened - OK')).catch(() => results.push('CLICK "+ Thêm khoản trả góp": did NOT open - FAIL'));
-  await page.fill('[name="name"]', 'Tủ lạnh');
-  await page.fill('[name="principal_amount"]', '120000');
-  await page.fill('[name="total_installments"]', '12');
-  await resetToast();
-  await page.click('#modalForm [type=submit]');
-  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`SUBMIT new installment: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('SUBMIT new installment: no toast - FAIL'));
-
-  await page.click('.money-column.credit .money-line:has-text("Rakuten")');
-  await page.waitForSelector('#modal[open]', { timeout: 1500 });
-  await page.click('#modalBody .tx:has-text("Máy giặt") .btn:has-text("Xem lịch")');
-  await page.waitForSelector('#modalBody', { timeout: 1500 }).then(() => results.push('CLICK "Xem lịch" on installment: schedule modal opened - OK')).catch(() => results.push('CLICK "Xem lịch": schedule modal did NOT open - FAIL'));
-  const scheduleText = await page.textContent('#modalBody');
-  results.push(`  Schedule shows labeled "Đánh dấu đã trả/chưa trả" buttons per kỳ: ${/Đánh dấu/.test(scheduleText)}`);
-  const toggleBtn = page.locator('#modalBody .tx .btn', { hasText: 'Đánh dấu' }).first();
-  if (await toggleBtn.count()) {
-    await resetToast();
-    await toggleBtn.click();
-    await page.waitForTimeout(200);
-    results.push('CLICK "Đánh dấu đã trả/chưa trả" on a kỳ: no crash - OK');
-  }
-  await page.evaluate(() => document.getElementById('modal')?.close());
-  await page.waitForTimeout(50);
-
-  await page.click('.money-column.credit .money-line:has-text("Rakuten")');
-  await page.waitForSelector('#modal[open]', { timeout: 1500 });
-  await page.evaluate(() => { window.confirm = () => true; });
-  await resetToast();
-  await page.click('#modalBody .tx:has-text("Tủ lạnh") .btn:has-text("Xóa")');
-  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`CLICK "Xóa" on installment: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('CLICK "Xóa" on installment: no toast - FAIL'));
-  await page.evaluate(() => { window.confirm = () => false; });
-  await page.evaluate(() => document.getElementById('modal')?.close());
-  await page.waitForTimeout(50);
-
-  // ---- Đầu tư ----
-  await page.click('[data-view="investments"]');
-  await page.waitForTimeout(150);
-  const investText = await page.textContent('#content');
-  results.push(`INVESTMENTS shows NISA card with vốn ròng/lãi-lỗ: ${investText.includes('NISA') && investText.includes('Vốn ròng')}`);
-  await clickAndCheckModal('investments "+ Đầu tư mới"', 'button:has-text("＋ Đầu tư mới")', '[name="name"]');
-
-  const nisaCard = page.locator('.item-card', { hasText: 'NISA' });
-  await clickAndCheckModal('investment "Thêm vốn"', '.item-card:has-text("NISA") button:has-text("Thêm vốn")', '[name="amount"]');
-  await clickAndCheckModal('investment "Rút vốn"', '.item-card:has-text("NISA") button:has-text("Rút vốn")', '[name="amount"]');
-  await clickAndCheckModal('investment "Cập nhật giá trị"', '.item-card:has-text("NISA") button:has-text("Cập nhật giá trị")', '[name="amount"]');
-  await page.click('.item-card:has-text("NISA") button:has-text("Xem lịch sử")');
-  await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK investment "Xem lịch sử": modal opened - OK')).catch(() => results.push('CLICK investment "Xem lịch sử": modal did NOT open - FAIL'));
-  const histText = await page.textContent('#modalBody');
-  results.push(`  History lists both fixture events (Thêm vốn + Cập nhật giá trị) with Sửa/Xóa: ${histText.includes('Thêm vốn') && histText.includes('Cập nhật giá trị') && histText.includes('Sửa') && histText.includes('Xóa')}`);
-  await page.evaluate(() => { window.confirm = () => true; });
-  await resetToast();
-  await page.click('#modalBody .tx .btn:has-text("Xóa")');
-  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`CLICK delete investment event: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('CLICK delete investment event: no toast - FAIL'));
-  await page.evaluate(() => { window.confirm = () => false; });
-  await page.evaluate(() => document.getElementById('modal')?.close());
-  await page.waitForTimeout(50);
-  await clickAndCheckModal('investment "Sửa"', '.item-card:has-text("NISA") button:has-text("Sửa")', '[name="name"]');
-
-  // ---- Tài sản: net worth / liquid KPIs, manual +/- adjustments, no Chuyển tiền ----
+  // ---- Tài sản: 4-column board, new KPIs (no Thanh khoản ròng), charts ----
   await page.click('[data-view="accounts"]');
   await page.waitForTimeout(150);
   const assetKpiLabels = await page.locator('.kpi-grid .kpi .label').allTextContents();
-  results.push(`ASSETS kpi-grid shows liquidity/net-worth/invested KPIs: ${JSON.stringify(assetKpiLabels)}`);
-  results.push(`  Net worth chart present on Tài sản: ${await page.locator('.chart-card', { hasText: 'Tài sản ròng' }).count() > 0}`);
-  results.push(`  "Đang đầu tư" total reflects Đầu tư (550,000): ${(await page.textContent('#content')).includes('550')}`);
+  results.push(`ASSETS kpi-grid = ${JSON.stringify(assetKpiLabels)}`);
+  results.push(`  Shows exactly 4 KPIs, no "Thanh khoản ròng" anywhere: ${assetKpiLabels.length === 4 && !assetKpiLabels.includes('Thanh khoản ròng')}`);
+  const assetsCols = await page.$$('#content .money-column');
+  results.push(`  4-column board present (Tiền mặt & ngân hàng / Đầu tư / Khoản phải thu / Nợ phải trả): ${assetsCols.length === 4}`);
   const assetsText = await page.textContent('#content');
+  results.push(`  Khoản vay cũ ¥1,250,000 (Vay mua xe) is visible in Nợ phải trả column: ${assetsText.includes('Vay mua xe') && assetsText.includes('1,250,000')}`);
   results.push(`  No "Chuyển tiền" button anywhere on Tài sản: ${!assetsText.includes('Chuyển tiền')}`);
-  results.push(`  No investment account card rendered here (investments live only in Đầu tư tab): ${!page.url().includes('NISA')}`);
-  await clickAndCheckModal('accounts "+ Tài khoản"', 'button:has-text("＋ Tài khoản")', '[name="name"]');
+  results.push(`  Cơ cấu tài sản (composition) chart present: ${await page.locator('.chart-card', { hasText: 'Cơ cấu tài sản' }).count() > 0}`);
+  results.push(`  Lịch sử theo tháng (history) chart present with period toggle: ${await page.locator('.chart-card', { hasText: 'Lịch sử theo tháng' }).count() > 0 && await page.locator('button:has-text("6 tháng")').count() > 0}`);
+  await page.click('button:has-text("6 tháng")');
+  await page.waitForTimeout(150);
+  results.push('CLICK "6 tháng" period toggle: no crash - OK');
+  await page.screenshot({ path: path.join(SHOT_DIR, 'shot-accounts-1440.png'), fullPage: true });
 
-  await clickAndCheckModal('account "＋ Tiền"', '.item-card:has-text("UFJ") button:has-text("＋ Tiền")', '[name="amount"]');
-  await page.click('.item-card:has-text("UFJ") button:has-text("＋ Tiền")');
-  await page.waitForSelector('#modal[open]', { timeout: 1500 });
-  await page.fill('[name="amount"]', '50000');
-  await resetToast();
-  await page.click('#modalForm [type=submit]');
-  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`SUBMIT "＋ Tiền" on UFJ: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('SUBMIT "＋ Tiền": no toast - FAIL'));
-
-  await clickAndCheckModal('account "− Tiền"', '.item-card:has-text("UFJ") button:has-text("− Tiền")', '[name="amount"]');
-  await page.click('.item-card:has-text("UFJ") button:has-text("Xem lịch sử")');
-  await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK account "Xem lịch sử" (adjustment history): modal opened - OK')).catch(() => results.push('CLICK account "Xem lịch sử": modal did NOT open - FAIL'));
+  // Account +/- adjustment.
+  await page.click('.money-line:has-text("UFJ")');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK account row (UFJ, adjustment history): modal opened - OK')).catch(() => results.push('CLICK account row: modal did NOT open - FAIL'));
   const adjHistText = await page.textContent('#modalBody');
-  results.push(`  Adjustment history lists the fixture row and a month filter: ${adjHistText.includes('100') && (await page.locator('#adjHistFilter').count()) > 0}`);
-  await page.click('#modalBody .tx .btn:has-text("Sửa")');
-  await page.waitForSelector('[name="amount"]', { timeout: 1500 }).then(() => results.push('CLICK "Sửa" on an adjustment row: edit form opened - OK')).catch(() => results.push('CLICK "Sửa" on adjustment: edit form did NOT open - FAIL'));
+  results.push(`  Adjustment history lists the fixture row and a month/year filter: ${adjHistText.includes('100') && (await page.locator('#adjHistFilter').count()) > 0}`);
   await page.evaluate(() => document.getElementById('modal')?.close());
   await page.waitForTimeout(50);
+  await clickAndCheckModal('account "＋ Thêm" (Tiền mặt & ngân hàng column)', '.money-column.income .column-settings', '[name="name"]');
 
-  const acctEditBtn = await page.$('.item-card .mini-btn[aria-label="Sửa"]');
-  if (acctEditBtn) { await acctEditBtn.click(); await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK account card edit (pencil): modal opened - OK')).catch(() => results.push('CLICK account edit: modal did NOT open - FAIL')); await page.evaluate(() => document.getElementById('modal')?.close()); }
+  // Nợ phải trả: view, adjust, add.
+  await page.click('.money-column.debt .money-line:has-text("Vay mua xe")');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK Nợ row (Vay mua xe): history modal opened - OK')).catch(() => results.push('CLICK Nợ row: modal did NOT open - FAIL'));
+  await page.evaluate(() => document.getElementById('modal')?.close());
+  await page.waitForTimeout(50);
+  await clickAndCheckModal('Nợ inline "Tăng" button', '.money-column.debt .mini-btn[title="Tăng"]', '[name="amount"]');
+  await clickAndCheckModal('Nợ column "＋ Thêm"', '.money-column.debt .column-settings', '[name="name"]');
+  await page.click('.money-column.debt .column-settings');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 });
+  await page.fill('[name="name"]', 'Vay tiêu dùng');
+  await resetToast();
+  await page.click('#modalForm [type=submit]');
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`SUBMIT new debt (Vay tiêu dùng): saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('SUBMIT new debt: no toast - FAIL'));
+
+  // Khoản phải thu: add one, verify it shows.
+  await page.click('.money-column:has-text("Khoản phải thu") .column-settings');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK Khoản phải thu "＋ Thêm": form opened - OK')).catch(() => results.push('CLICK Khoản phải thu "＋ Thêm": did NOT open - FAIL'));
+  await page.fill('[name="name"]', 'Bạn A nợ');
+  await page.fill('[name="opening_amount"]', '50000');
+  await resetToast();
+  await page.click('#modalForm [type=submit]');
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`SUBMIT new receivable: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('SUBMIT new receivable: no toast - FAIL'));
 
   const foreignSection = page.locator('.section', { hasText: 'Tài khoản ngoại tệ' });
   results.push(`Foreign-currency account (VND) shows up on Tài sản instead of vanishing: ${await foreignSection.count() > 0}`);
   const hiddenSection = page.locator('.section', { hasText: 'Tài khoản đã ẩn' });
   results.push(`Hidden account (Ví cũ) listed under "Tài khoản đã ẩn": ${await hiddenSection.count() > 0}`);
-  const restoreBtn = hiddenSection.locator('button:has-text("Khôi phục")');
-  if (await restoreBtn.count()) {
-    await resetToast();
-    await restoreBtn.click();
-    await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`CLICK "Khôi phục" on hidden account: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('CLICK "Khôi phục": no toast - FAIL'));
-  } else { results.push('CLICK "Khôi phục": button not found - FAIL'); }
 
-  // Account form: only cash/bank/savings types offered, is_liquid shows for savings only.
-  await page.click('button:has-text("＋ Tài khoản")');
+  // ---- Đầu tư: NISA plan, securities trade, savings interest ----
+  await page.click('[data-view="investments"]');
+  await page.waitForTimeout(150);
+  const investText = await page.textContent('#content');
+  results.push(`INVESTMENTS groups by kind (NISA / Chứng khoán / Tiết kiệm sinh lời sections): ${investText.includes('NISA') && investText.includes('Chứng khoán') && investText.includes('Tiết kiệm sinh lời')}`);
+  results.push(`  NISA card shows contribution-plan widget: ${investText.includes('Kế hoạch góp tháng')}`);
+  results.push(`  NISA card shows simulated growth separate from real value: ${investText.includes('mô phỏng')}`);
+  results.push(`  Securities card shows quantity × price and vốn/giá vốn TB: ${investText.includes('Giá vốn TB')}`);
+  results.push(`  Savings card shows "Lãi thực nhận" distinct from principal: ${investText.includes('Lãi thực nhận')}`);
+  await page.screenshot({ path: path.join(SHOT_DIR, 'shot-investments-1440.png'), fullPage: true });
+
+  await clickAndCheckModal('investments "+ Đầu tư mới"', 'button:has-text("＋ Đầu tư mới")', '[name="name"]');
+  await page.click('button:has-text("＋ Đầu tư mới")');
   await page.waitForSelector('#modal[open]', { timeout: 1500 });
-  const acTypeOptions = await page.locator('#acType option').allTextContents();
-  results.push(`ACCOUNT FORM type list is exactly Tiền mặt/Ngân hàng/Tiết kiệm (no Đầu tư): ${JSON.stringify(acTypeOptions)}`);
-  await page.selectOption('#acType', 'savings');
-  const liquidVisible = await page.isVisible('#acLiquidField');
-  results.push(`ACCOUNT FORM shows "Có thể rút ngay" for Tiết kiệm: ${liquidVisible}`);
+  await page.selectOption('#invKind', 'nisa');
+  const nisaGroupVisible = await page.isVisible('[data-kind-group="nisa"]');
+  const otherGroupHidden = await page.isHidden('[data-kind-group="other"]');
+  results.push(`  New-investment form shows NISA fields and hides Khác fields when kind=nisa: ${nisaGroupVisible && otherGroupHidden}`);
+  await page.selectOption('#invKind', 'securities');
+  const securitiesGroupVisible = await page.isVisible('[data-kind-group="securities"]');
+  results.push(`  Switching to kind=securities shows the Chứng khoán field group: ${securitiesGroupVisible}`);
+  await page.evaluate(() => document.getElementById('modal')?.close());
+  await page.waitForTimeout(50);
+
+  // NISA plan: confirm this month's contribution.
+  const nisaCard = page.locator('.item-card', { hasText: 'NISA Rakuten' });
+  const pendingBtn = nisaCard.locator('button:has-text("Xác nhận đã góp")');
+  if (await pendingBtn.count()) {
+    await pendingBtn.click();
+    await page.waitForSelector('[name="amount"]', { timeout: 1500 }).then(() => results.push('CLICK NISA "Xác nhận đã góp": confirm form opened (prefilled, editable) - OK')).catch(() => results.push('CLICK "Xác nhận đã góp": form did NOT open - FAIL'));
+    await resetToast();
+    await page.click('#modalForm [type=submit]');
+    await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`SUBMIT NISA contribution confirm: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('SUBMIT NISA contribution confirm: no toast - FAIL'));
+  } else {
+    results.push('NISA plan already confirmed for this month in fixture — "Xác nhận đã góp" button not shown (expected once confirmed) - OK');
+  }
+
+  // Securities: Mua/Bán.
+  const secCard = page.locator('.item-card', { hasText: 'Toyota' });
+  await secCard.locator('button:has-text("Mua")').click();
+  await page.waitForSelector('[name="quantity"]', { timeout: 1500 }).then(() => results.push('CLICK securities "Mua": trade form opened with quantity+price - OK')).catch(() => results.push('CLICK "Mua": form did NOT open - FAIL'));
+  await page.fill('[name="quantity"]', '10');
+  await page.fill('[name="price"]', '2100');
+  await resetToast();
+  await page.click('#modalForm [type=submit]');
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`SUBMIT securities buy: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('SUBMIT securities buy: no toast - FAIL'));
+
+  const secCard2 = page.locator('.item-card', { hasText: 'Toyota' });
+  await secCard2.locator('button:has-text("Bán")').click();
+  await page.waitForSelector('[name="quantity"]', { timeout: 1500 }).then(() => results.push('CLICK securities "Bán": trade form opened - OK')).catch(() => results.push('CLICK "Bán": form did NOT open - FAIL'));
+  await page.evaluate(() => document.getElementById('modal')?.close());
+  await page.waitForTimeout(50);
+
+  // Savings: Nhận lãi.
+  const savCard = page.locator('.item-card', { hasText: 'Tiết kiệm kỳ hạn SBI' });
+  await savCard.locator('button:has-text("Nhận lãi")').click();
+  await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK savings "Nhận lãi": form opened - OK')).catch(() => results.push('CLICK "Nhận lãi": form did NOT open - FAIL'));
+  await page.evaluate(() => document.getElementById('modal')?.close());
+  await page.waitForTimeout(50);
+
+  // Đầu tư "Xem lịch sử" and delete an event.
+  await nisaCard.locator('button:has-text("Xem lịch sử")').click();
+  await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK investment "Xem lịch sử": modal opened - OK')).catch(() => results.push('CLICK "Xem lịch sử": modal did NOT open - FAIL'));
+  const histText = await page.textContent('#modalBody');
+  results.push(`  History shows labeled Sửa/Xóa buttons: ${histText.includes('Sửa') && histText.includes('Xóa')}`);
+  await page.evaluate(() => { window.confirm = () => true; });
+  await resetToast();
+  await page.click('#modalBody .tx .btn:has-text("Xóa")');
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`CLICK delete investment event: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('CLICK delete investment event: no toast - FAIL'));
+  await page.evaluate(() => { window.confirm = () => false; });
   await page.evaluate(() => document.getElementById('modal')?.close());
   await page.waitForTimeout(50);
 
@@ -504,10 +459,7 @@ const RPC_HANDLERS = {
   await page.click('[data-view="settings"]');
   await resetToast();
   await page.click('#householdForm button[type=submit]');
-  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`SUBMIT "Gia đình" form (saveHousehold): saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('SUBMIT "Gia đình" form: no toast - FAIL'));
-  await resetToast();
-  await page.click('#reportingForm button[type=submit]');
-  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`SUBMIT "Tỷ giá" form (saveReporting): saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('SUBMIT "Tỷ giá" form: no toast - FAIL'));
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`SUBMIT "Gia đình" form: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('SUBMIT "Gia đình" form: no toast - FAIL'));
   const csvBtn = await page.$('button:has-text("Xuất CSV")');
   if (csvBtn) {
     try {
