@@ -268,6 +268,21 @@ F.debtMonthTotalBase = (month = state.month) => (state.loans || [])
   .filter(l => l.loan_type === 'borrowed' && n(l.remaining_amount) > 0 && (l.currency || state.base) === state.base)
   .reduce((s, l) => s + n(F.loanMonthDue(l, month).amount), 0);
 F.cardMonthTotalBase = () => (state.cardMonth || []).filter(x => (x.currency || state.base) === state.base).reduce((s, x) => s + n(x.expected_amount), 0);
+// Loans still owing this month (not yet paid) + unpaid card statements, for a
+// "sắp đến hạn" reminder list — sorted soonest first, undated items last.
+F.upcomingDue = (month = state.month) => {
+  const items = [];
+  (state.loans || []).filter(l => l.loan_type === 'borrowed' && n(l.remaining_amount) > 0).forEach(l => {
+    const due = F.loanMonthDue(l, month);
+    if (n(due.amount) > 0 && due.note !== 'Đã trả tháng này') {
+      items.push({ kind: 'loan', id: l.id, label: l.counterparty, amount: due.amount, currency: l.currency || state.base, note: due.note, date: monthKey(l.due_date) === month ? l.due_date : null });
+    }
+  });
+  (state.cardMonth || []).filter(x => !x.paid && n(x.expected_amount) > 0).forEach(x => {
+    items.push({ kind: 'card', id: x.account_id, label: x.card_name || 'Thẻ tín dụng', amount: x.expected_amount, currency: x.currency || state.base, note: 'Cần thanh toán', date: x.payment_date });
+  });
+  return items.sort((a, b) => String(a.date || '9999-99-99').localeCompare(String(b.date || '9999-99-99')));
+};
 
 // ---------------- Credit cards ----------------
 F.cardAccounts = () => F.activeAccounts().filter(a => a.account_type === 'credit');

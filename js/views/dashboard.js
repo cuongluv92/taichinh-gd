@@ -56,6 +56,29 @@ function compareRow(label, sub, target, actual, basis, mode) {
   </div>`;
 }
 
+// "" when there's no prior-month data to compare against (avoids /0).
+function momText(cur, prev) {
+  if (!(prev > 0)) return '';
+  const diff = (cur - prev) / prev * 100;
+  if (Math.abs(diff) < 0.5) return ' · Bằng tháng trước';
+  return ` · ${diff > 0 ? '▲' : '▼'}${Math.abs(diff).toFixed(0)}% so với tháng trước`;
+}
+
+function upcomingDueHtml(items) {
+  if (!items.length) return '<div class="empty">Không có khoản nợ hay thẻ nào sắp đến hạn.</div>';
+  return `<div class="list">${items.map(x => {
+    const openAct = x.kind === 'loan' ? act('openLoanPayment', x.id) : act('openStatementPayment', x.id);
+    const overdue = x.date && daysUntil(x.date) < 0;
+    const dateNote = x.date ? ` · ${overdue ? 'Quá hạn' : 'Hạn'} ${esc(String(x.date).slice(0, 10))}` : '';
+    return `<div class="tx"><button class="tx-row-btn" ${openAct}>
+      <div class="tx-icon">${x.kind === 'loan' ? '↑' : '⇄'}</div>
+      <div class="tx-main"><strong>${esc(x.label)}</strong><span>${esc(x.note)}${dateNote}</span></div>
+      </button>
+      <div class="tx-actions"><strong class="amount ${overdue ? 'red' : ''}">${money(x.amount, x.currency)}</strong></div>
+    </div>`;
+  }).join('')}</div>`;
+}
+
 function renderDashboard() {
   const s = F.statsFor(F.periodTransactions(state.month));
   const pos = F.financialPosition(endOfMonthDate(state.month));
@@ -72,17 +95,31 @@ function renderDashboard() {
   const nw = F.netWorthSeries(12);
   const vnd = state.reporting?.show_vnd_conversion ? F.positionInVND(pos) : null;
   const netWorthSub = vnd ? `Tổng nợ ${money(pos.totalLiabilities)} · ≈ ${money(vnd.netWorth, 'VND')}` : `Tổng nợ ${money(pos.totalLiabilities)}`;
+  const prevStats = F.statsFor(F.periodTransactions(addMonths(state.month, -1)));
+  const upcoming = F.upcomingDue(state.month);
+
+  // Spending-pace note: only meaningful while the month is still in progress.
+  const isCurrentMonth = state.month === localMonth();
+  let paceNote = 'Kế hoạch luôn hiển thị đầy đủ dù thực tế đang là 0.', paceCls = '';
+  if (isCurrentMonth && variablePlan > 0) {
+    const daysInMonth = new Date(Number(state.month.slice(0, 4)), Number(state.month.slice(5, 7)), 0).getDate();
+    const dayPct = new Date(localToday()).getDate() / daysInMonth * 100;
+    const spendPct = s.variable / variablePlan * 100;
+    const ahead = spendPct - dayPct;
+    paceCls = ahead > 15 ? 'bad' : ahead > 5 ? 'warn' : 'good';
+    paceNote = `${ahead > 5 ? '⚠ ' : ''}Đã dùng ${spendPct.toFixed(0)}% ngân sách chi biến động · đã qua ${dayPct.toFixed(0)}% số ngày trong tháng.`;
+  }
 
   return `
   <div class="grid kpi-grid">
     ${kpiCard('Tài sản ròng', money(pos.netWorth), netWorthSub, pos.netWorth < 0 ? 'red' : '')}
     ${kpiCard('Tiền khả dụng', money(pos.liquid), 'Tiền mặt · ngân hàng · tiết kiệm')}
-    ${kpiCard('Thu nhập tháng', money(s.income), `Kế hoạch ${money(incomePlan)}`, 'green')}
-    ${kpiCard('Chi tiêu tháng', money(s.expense), `Kế hoạch ${money(fixedPlan + variablePlan)} · ${pctText(s.expense, incomePlan)} thu nhập`, '')}
+    ${kpiCard('Thu nhập tháng', money(s.income), `Kế hoạch ${money(incomePlan)}${momText(s.income, prevStats.income)}`, 'green')}
+    ${kpiCard('Chi tiêu tháng', money(s.expense), `Kế hoạch ${money(fixedPlan + variablePlan)} · ${pctText(s.expense, incomePlan)} thu nhập${momText(s.expense, prevStats.expense)}`, '')}
   </div>
 
   <section class="card mt-16">
-    <div class="section-head"><div><h2>Kế hoạch tháng ${fmtMonthKey(state.month)}</h2><p>Kế hoạch luôn hiển thị đầy đủ dù thực tế đang là 0.</p></div></div>
+    <div class="section-head"><div><h2>Kế hoạch tháng ${fmtMonthKey(state.month)}</h2><p class="${paceCls === 'bad' ? 'red' : paceCls === 'warn' ? 'amber' : ''}">${esc(paceNote)}</p></div></div>
     <div class="compare-table">
       <div class="compare-head"><span>Nhóm</span><span>Kế hoạch</span><span>Thực tế</span><span></span></div>
       <div class="compare-row"><div class="label"><b>Thu nhập</b></div><div>${money(incomePlan)}</div><div>${money(s.income)}</div><div></div></div>
@@ -116,10 +153,16 @@ function renderDashboard() {
     </div>
   </section>
 
-  <section class="card section mt-16">
-    <div class="section-head"><div><h2>Giao dịch gần đây</h2><p>Tháng ${fmtMonthKey(state.month)}</p></div><button class="btn sm primary" ${act('openQuickEntry')}>＋ Nhập nhanh</button></div>
-    ${txListHtml(recent)}
-  </section>`;
+  <div class="grid section-grid mt-16">
+    <section class="card section">
+      <div class="section-head"><div><h2>Giao dịch gần đây</h2><p>Tháng ${fmtMonthKey(state.month)}</p></div><button class="btn sm primary" ${act('openQuickEntry')}>＋ Nhập nhanh</button></div>
+      ${txListHtml(recent)}
+    </section>
+    <section class="card section">
+      <div class="section-head"><div><h2>Sắp đến hạn</h2><p>Khoản nợ chưa trả · thẻ chưa thanh toán</p></div></div>
+      ${upcomingDueHtml(upcoming)}
+    </section>
+  </div>`;
 }
 
 Object.assign(window, { renderDashboard, incomePlanTotal, txListHtml });
