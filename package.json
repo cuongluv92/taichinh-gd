@@ -1,0 +1,13 @@
+{
+  "name": "taichinh-gd",
+  "private": true,
+  "description": "Family finance tracker — static frontend over Supabase RPC functions.",
+  "scripts": {
+    "test:formulas": "node scripts/audit-formulas.mjs",
+    "test:e2e": "node tests/e2e-smoke.cjs",
+    "test": "npm run test:formulas && npm run test:e2e"
+  },
+  "devDependencies": {
+    "playwright": "1.56.1"
+  }
+}
