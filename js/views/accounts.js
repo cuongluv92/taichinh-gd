@@ -17,7 +17,7 @@ function accountCard(a) {
     ${isInvest ? `<div class="invest-summary"><span>Vốn ${money(capital, a.currency)}</span><span class="${pl >= 0 ? 'green' : 'red'}">${pl >= 0 ? '+' : ''}${money(pl, a.currency)}${ret !== null ? ` (${ret.toFixed(1)}%)` : ''}</span></div>` : ''}
     <div class="card-actions">
       ${isInvest
-        ? `<button class="btn sm primary" ${act('openInvestmentTransfer', a.id, 'in')}>＋ Nạp</button><button class="btn sm" ${act('openInvestmentTransfer', a.id, 'out')}>Rút</button><button class="btn sm" ${act('openInvestmentValue', a.id)}>Định giá</button>`
+        ? `<button class="btn sm primary" ${act('openInvestmentTransfer', a.id, 'in')}>＋ Nạp</button><button class="btn sm" ${act('openInvestmentTransfer', a.id, 'out')}>Rút</button><button class="btn sm" ${act('openInvestmentValue', a.id)}>Định giá</button><button class="btn sm" aria-label="Lịch sử định giá" title="Xem/sửa/xóa các lần định giá trước" ${act('openInvestmentHistory', a.id)}>📋</button>`
         : `<button class="btn sm" ${act('openTransfer', a.id)}>Chuyển tiền</button><button class="btn sm" ${act('openQuickEntry', { transaction_type: 'expense', account_id: a.id })}>Giao dịch</button>`}
     </div>
   </article>`;
@@ -33,6 +33,14 @@ function renderAccounts() {
   const cash = ac.filter(a => ['cash', 'bank'].includes(a.account_type));
   const savings = ac.filter(a => a.account_type === 'savings');
   const invest = ac.filter(a => a.account_type === 'investment');
+  // Accounts in a different currency than the household base (e.g. a VND
+  // bank account in a JPY household) were entirely invisible here before —
+  // F.baseAccounts() filters them out, correctly, so they never get summed
+  // 1:1 into the JPY totals above, but that filtering was silently dropping
+  // them from the page too instead of just excluding them from the sums.
+  const foreign = F.activeAccounts().filter(a => (a.currency || state.base) !== state.base);
+  const foreignGroups = [...new Set(foreign.map(a => a.currency))].map(cur =>
+    accountGroup(`Tài khoản ${cur}`, foreign.filter(a => a.currency === cur))).join('');
   return `<div class="view-head"><div><h2>Tài sản gia đình</h2><p>Mọi thu, chi, chuyển khoản và thanh toán nợ đều cập nhật số dư tự động.</p></div>
     <div class="row"><button class="btn" ${act('openTransfer')}>⇄ Chuyển tiền</button><button class="btn primary" ${act('openAccount')}>＋ Tài khoản</button></div></div>
   <div class="grid kpi-grid">
@@ -44,7 +52,8 @@ function renderAccounts() {
   ${accountGroup('Tiền đang dùng', cash)}
   ${accountGroup('Tiết kiệm', savings)}
   ${accountGroup('Đầu tư', invest)}
-  ${!cash.length && !savings.length && !invest.length ? '<div class="card empty mt-16">Chưa có tài khoản. Nhấn "＋ Tài khoản" để bắt đầu.</div>' : ''}`;
+  ${foreign.length ? `<p class="note mt-16">Tài khoản khác tiền tệ nền tảng (${esc(state.base)}) — không gộp vào 4 số ở trên để tránh cộng sai tỷ giá.</p>${foreignGroups}` : ''}
+  ${!cash.length && !savings.length && !invest.length && !foreign.length ? '<div class="card empty mt-16">Chưa có tài khoản. Nhấn "＋ Tài khoản" để bắt đầu.</div>' : ''}`;
 }
 
 Object.assign(window, { renderAccounts });

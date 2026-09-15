@@ -65,7 +65,8 @@ const ACCOUNTS = [
   { id: 'cash', name: 'Tiền mặt', account_type: 'cash', currency: 'JPY', opening_balance: 50000, is_active: true },
   { id: 'sav', name: 'Tiết kiệm', account_type: 'savings', currency: 'JPY', opening_balance: 200000, is_active: true },
   { id: 'inv', name: 'NISA', account_type: 'investment', currency: 'JPY', opening_balance: 100000, is_active: true },
-  { id: 'card', name: 'Rakuten Card', account_type: 'credit', currency: 'JPY', opening_balance: 0, is_active: true }
+  { id: 'card', name: 'Rakuten Card', account_type: 'credit', currency: 'JPY', opening_balance: 0, is_active: true },
+  { id: 'vnbank', name: 'Vietcombank', account_type: 'bank', currency: 'VND', opening_balance: 5000000, is_active: true }
 ];
 const LOANS = [
   { id: 'loan1', counterparty: 'Vay mua xe', loan_type: 'borrowed', currency: 'JPY', principal: 1000000, remaining_amount: 850000, start_date: '2026-01-10', due_date: '2028-01-10' },
@@ -90,6 +91,7 @@ FULL_TX.push(tx({ account_id: 'card', category_id: 'vr3', transaction_type: 'exp
 FULL_TX.push(tx({ account_id: 'bank', transfer_account_id: 'sav', transaction_type: 'transfer', amount: 20000, transaction_date: `${MONTH}-06` }));
 FULL_TX.push(tx({ account_id: 'bank', loan_id: 'loan1', transaction_type: 'loan_pay', amount: 30000, transaction_date: `${MONTH}-12` }));
 FULL_TX.push(tx({ account_id: 'bank', loan_id: 'loan1', transaction_type: 'loan_interest', amount: 4500, transaction_date: `${MONTH}-12` }));
+FULL_TX.push(tx({ account_id: 'inv', transaction_type: 'investment_gain', amount: 5000, transaction_date: `${MONTH}-10`, note: 'Cập nhật giá trị NISA' }));
 const MONTH_TX = FULL_TX.filter(t => t.transaction_date.startsWith(MONTH));
 
 const RPC_HANDLERS = {
@@ -472,7 +474,22 @@ const RPC_HANDLERS = {
     if (await nap.count()) { await nap.click(); await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK investment "+ Nạp": modal opened - OK')).catch(() => results.push('CLICK investment Nạp: modal did NOT open - FAIL')); await page.evaluate(() => document.getElementById('modal')?.close()); }
     const dinhGia = investCard.locator('button:has-text("Định giá")');
     if (await dinhGia.count()) { await dinhGia.click(); await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK investment "Định giá": modal opened - OK')).catch(() => results.push('CLICK investment Định giá: modal did NOT open - FAIL')); await page.evaluate(() => document.getElementById('modal')?.close()); }
+    const history = investCard.locator('[aria-label="Lịch sử định giá"]');
+    if (await history.count()) {
+      await history.click();
+      await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK investment "📋" (openInvestmentHistory): modal opened - OK')).catch(() => results.push('CLICK investment history: modal did NOT open - FAIL'));
+      const hasRow = await page.locator('#modalBody .tx').count() > 0;
+      results.push(`Investment history lists the fixture valuation row: ${hasRow}`);
+      await page.evaluate(() => { window.confirm = () => true; });
+      await resetToast();
+      await page.click('#modalBody .tx .mini-btn[aria-label="Xóa"]');
+      await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`CLICK delete investment valuation: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('CLICK delete investment valuation: no toast - FAIL'));
+      await page.evaluate(() => { window.confirm = () => false; });
+      await page.evaluate(() => document.getElementById('modal')?.close());
+    } else { results.push('CLICK investment "📋": button not found - FAIL'); }
   }
+  const foreignSection = page.locator('.section', { hasText: 'Tài khoản VND' });
+  results.push(`Foreign-currency account (VND) shows up on Tài sản instead of vanishing: ${await foreignSection.count() > 0}`);
 
   await page.click('[data-view="settings"]');
   // Actual form submits (save_household / save_reporting), not just that

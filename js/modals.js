@@ -295,6 +295,33 @@ function openInvestmentValue(id) {
     await api.investment('adjust', { account_id: id, direction: delta >= 0 ? 'gain' : 'loss', amount: Math.abs(delta), transaction_date: fd.transaction_date, note: fd.note || '' });
   }, 'Cập nhật');
 }
+// A valuation entered wrong had no way to be removed — openTransactionEdit
+// deliberately refuses investment_gain/investment_loss rows and points here
+// instead, but nothing here ever existed to catch that redirect. Mirrors
+// openCardTransactions: full history (not just this month, valuations are
+// sporadic), each row deletable in place.
+async function deleteTransactionFromInvestmentList(id, accountId) {
+  if (!confirm('Xóa lần định giá này?')) return;
+  try {
+    await api.core('delete_transaction', { id });
+    await window.refresh();
+    toast('Đã xóa');
+    openInvestmentHistory(accountId);
+  } catch (e) { toast(e.message, true); }
+}
+function openInvestmentHistory(id) {
+  const a = F.investmentAccounts().find(x => x.id === id); if (!a) return toast('Không tìm thấy tài khoản đầu tư.', true);
+  const rows = (state.fullTransactions || []).filter(t => t.account_id === id && F.isInvestmentAdjustment(t))
+    .sort((x, y) => String(y.transaction_date).localeCompare(String(x.transaction_date)));
+  const list = rows.map(t => `<div class="tx"><div class="tx-main">
+      <strong class="${t.transaction_type === 'investment_gain' ? 'green' : 'red'}">${t.transaction_type === 'investment_gain' ? '+' : '−'}${money(t.amount, t.currency)}</strong>
+      <span>${esc(String(t.transaction_date).slice(0, 10))}${t.note ? ` · ${esc(t.note)}` : ''}</span></div>
+      <div class="tx-actions"><button class="mini-btn" aria-label="Xóa" ${act('deleteTransactionFromInvestmentList', t.id, id)}>×</button></div>
+    </div>`).join('');
+  infoModal(`Lịch sử định giá · ${esc(a.name)}`, `
+    <div class="list">${list || '<div class="empty compact">Chưa có lần định giá nào.</div>'}</div>
+    <button class="btn primary mt-14" ${act('reopenAfterModal', 'openInvestmentValue', id)}>＋ Định giá mới</button>`);
+}
 
 // ---------------- Loans (personal + bank, unified) ----------------
 function openLoan(id = '', defaults = {}) {
