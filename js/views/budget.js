@@ -15,13 +15,45 @@ function amountLine(kind, planned, actual, basis) {
   return { shown, cls, sub, pct: pctText(shown, basis) };
 }
 
+// Clicking a category that already has money in it must let you fix/delete
+// what's already there, not just blindly add another entry on top — so the
+// row only jumps straight to Nhập nhanh while it's still empty (actual=0);
+// once it has transactions, it opens the list below instead.
+function categoryRowAction(type, actual, categoryId, categoryName) {
+  return actual > 0 ? act('openCategoryTransactions', type, categoryId, categoryName) : act('openQuickEntry', { transaction_type: type, category_id: categoryId });
+}
+// Deletes then re-renders THIS list in place (infoModal only re-opens the
+// dialog if it's closed, so this just refreshes its content) — plain
+// deleteTransaction() would leave the modal showing the now-deleted row
+// until the user closed and reopened it themselves.
+async function deleteTransactionFromCategory(id, type, categoryId, categoryName) {
+  if (!confirm('Xóa giao dịch này?')) return;
+  try {
+    await api.core('delete_transaction', { id });
+    await window.refresh();
+    toast('Đã xóa giao dịch');
+    openCategoryTransactions(type, categoryId, categoryName);
+  } catch (e) { toast(e.message, true); }
+}
+function openCategoryTransactions(type, categoryId, categoryName) {
+  const rows = (state.transactions || []).filter(t => t.transaction_type === type && t.category_id === categoryId)
+    .sort((a, b) => String(b.transaction_date).localeCompare(String(a.transaction_date)));
+  const list = rows.map(t => `<div class="tx"><button class="tx-row-btn" ${act('openTransactionEdit', t.id)}>
+      <div class="tx-main"><strong>${money(t.amount, t.currency)}${F.isExceptional(t) ? ' <span class="status-chip warn">Bất thường</span>' : ''}</strong><span>${esc(String(t.transaction_date).slice(0, 10))}${t.account_name ? ` · ${esc(t.account_name)}` : ''}${t.note ? ` · ${esc(t.note)}` : ''}</span></div>
+      </button>
+      <div class="tx-actions"><button class="mini-btn" aria-label="Xóa" ${act('deleteTransactionFromCategory', t.id, type, categoryId, categoryName)}>×</button></div>
+    </div>`).join('');
+  infoModal(`${esc(categoryName)} · Tháng ${fmtMonthKey(state.month)}`, `
+    <div class="list">${list || '<div class="empty compact">Chưa có giao dịch nào.</div>'}</div>
+    <button class="btn primary mt-14" ${act('reopenAfterModal', 'openQuickEntry', { transaction_type: type, category_id: categoryId })}>＋ Thêm giao dịch</button>`);
+}
 function incomeColumn() {
   const cats = F.orderedCategories('income');
   const total = cats.reduce((s, c) => { const actual = F.categoryActualBase(c.id, 'income'); return s + (actual > 0 ? actual : n(c.planned_amount)); }, 0);
   const items = cats.map(c => {
     const actual = F.categoryActualBase(c.id, 'income');
     const line = amountLine('income', n(c.planned_amount), actual, null);
-    return `<button class="money-line" ${act('openQuickEntry', { transaction_type: 'income', category_id: c.id })}><span class="line-label">${esc(c.name)}${line.sub}</span><strong class="${line.cls}">${money(line.shown)}</strong></button>`;
+    return `<button class="money-line" ${categoryRowAction('income', actual, c.id, c.name)}><span class="line-label">${esc(c.name)}${line.sub}</span><strong class="${line.cls}">${money(line.shown)}</strong></button>`;
   });
   return moneyColumn({ title: 'Thu nhập', tone: 'income', items, total: money(total), settingsAction: act('openColumnSettings', 'income'), emptyText: 'Chưa có mục thu nhập' });
 }
@@ -33,7 +65,7 @@ function expenseColumn(kind, title) {
     const actual = F.categoryActualBase(c.id, 'expense');
     const line = amountLine(kind, n(c.planned_amount), actual, basis);
     total += line.shown;
-    return `<button class="money-line" ${act('openQuickEntry', { transaction_type: 'expense', category_id: c.id })}><span class="line-label">${esc(c.name)}${line.sub}</span><span class="line-amount"><strong class="${line.cls}">${money(line.shown)}</strong><span class="pct">${line.pct}</span></span></button>`;
+    return `<button class="money-line" ${categoryRowAction('expense', actual, c.id, c.name)}><span class="line-label">${esc(c.name)}${line.sub}</span><span class="line-amount"><strong class="${line.cls}">${money(line.shown)}</strong><span class="pct">${line.pct}</span></span></button>`;
   });
   return moneyColumn({ title, tone: kind, items, total: `${money(total)} <span class="pct">${pctText(total, basis)}</span>`, settingsAction: act('openColumnSettings', kind), emptyText: kind === 'fixed' ? 'Chưa có chi cố định' : 'Chưa có chi biến động' });
 }

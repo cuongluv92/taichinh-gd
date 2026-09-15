@@ -306,8 +306,39 @@ const RPC_HANDLERS = {
   await page.evaluate(() => document.getElementById('modal')?.close());
   await page.waitForTimeout(50);
 
-  const incomeLine = await page.$('.money-column.income .money-line');
-  if (incomeLine) { await incomeLine.click(); await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK income money-line: quick-entry opened - OK')).catch(() => results.push('CLICK income money-line: modal did NOT open - FAIL')); await page.evaluate(() => document.getElementById('modal')?.close()); }
+  // A category row with money already in it must open the transaction
+  // LIST (edit/delete what's there), not silently add another entry on
+  // top of it. inc1 "Lương C" has real transactions in the fixture.
+  await page.click('.money-column.income .money-line:has-text("Lương C")');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK income category with money (Lương C): opens transaction list, not blind add - OK')).catch(() => results.push('CLICK income category with money: modal did NOT open - FAIL'));
+  const hasAddMoreBtn = await page.isVisible('button:has-text("Thêm giao dịch")');
+  results.push(`  category list has "+ Thêm giao dịch" button: ${hasAddMoreBtn}`);
+  const listTxBtn = page.locator('#modalBody .tx-row-btn').first();
+  if (await listTxBtn.count()) {
+    await listTxBtn.click();
+    await page.waitForSelector('[name="amount"]', { timeout: 1500 }).then(() => results.push('CLICK a transaction inside the category list: edit form opened - OK')).catch(() => results.push('CLICK a transaction inside the category list: edit form did NOT open - FAIL'));
+    await page.evaluate(() => document.getElementById('modal')?.close());
+    await page.waitForTimeout(50);
+  }
+  // Delete from inside the list must refresh the list in place (not leave
+  // a stale row showing, and not close the whole modal).
+  await page.click('.money-column.income .money-line:has-text("Lương C")');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 });
+  await page.evaluate(() => { window.confirm = () => true; });
+  await resetToast();
+  await page.click('#modalBody .tx .mini-btn[aria-label="Xóa"]');
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`CLICK delete from category list: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('CLICK delete from category list: no toast - FAIL'));
+  const modalStillOpenAfterListDelete = !!(await page.$('#modal[open]'));
+  results.push(`Category list modal stays open (refreshed in place) after delete: ${modalStillOpenAfterListDelete}`);
+  await page.evaluate(() => { window.confirm = () => false; });
+  await page.evaluate(() => document.getElementById('modal')?.close());
+  await page.waitForTimeout(50);
+  // A category with NO transactions yet (Wifi, cost_type fixed, 0 actual
+  // in the fixture) must still go straight to Nhập nhanh.
+  await page.click('.money-column.fixed .money-line:has-text("Wifi")');
+  await page.waitForSelector('#qeAmount', { timeout: 1500 }).then(() => results.push('CLICK empty category (Wifi, no transactions yet): goes straight to Nhập nhanh - OK')).catch(() => results.push('CLICK empty category (Wifi): did NOT open Nhập nhanh - FAIL'));
+  await page.evaluate(() => document.getElementById('modal')?.close());
+  await page.waitForTimeout(50);
   const debtLine = await page.$('.money-column.debt .money-line');
   if (debtLine) { await debtLine.click(); await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK debt money-line (openLoanPayment): modal opened - OK')).catch(() => results.push('CLICK debt money-line: modal did NOT open - FAIL')); await page.evaluate(() => document.getElementById('modal')?.close()); }
   // loan2 is a bank-kind loan (has loan_terms) — its row must route to
