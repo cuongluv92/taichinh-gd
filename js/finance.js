@@ -13,8 +13,9 @@
 //  - Net worth = (assets in accounts, base currency) + (receivables)
 //                - (liabilities in accounts, incl. negative/credit balances)
 //                - (loans payable).
-//  - Foreign currency is never summed 1:1; VND totals only appear when the
-//    user enters an explicit JPY->VND rate (fx history), and only for display.
+//  - Foreign currency is never summed 1:1; a VND total only appears when the
+//    user turns it on in Settings and enters a JPY->VND rate, and even then
+//    only as a display-only conversion of today's numbers.
 // ==========================================================================
 'use strict';
 
@@ -90,7 +91,6 @@ F.historicalLoanRemaining = (l, endDate) => {
 };
 F.loanTerms = id => (state.loanTerms || []).find(x => x.loan_id === id) || null;
 F.isBankLoan = l => !!l && F.loanTerms(l.id)?.loan_kind === 'bank';
-F.methodLabel = v => ({ manual: 'Nhập theo sao kê', equal_payment: '元利均等 · Tổng trả đều', equal_principal: '元金均等 · Gốc đều' }[v] || 'Nhập theo sao kê');
 F.monthsBetween = (a, b) => {
   if (!a || !b) return 0;
   const x = new Date(`${String(a).slice(0, 10)}T00:00:00`), y = new Date(`${String(b).slice(0, 10)}T00:00:00`);
@@ -175,13 +175,8 @@ F.categoryActualBase = (id, dir = 'expense') => {
   if (dir !== 'expense') return rows.reduce((s, t) => s + F.baseAmount(t), 0);
   return rows.filter(t => !F.isExceptional(t)).reduce((s, t) => s + F.baseAmount(t), 0);
 };
-F.categoryMonthAmount = (categoryId, direction) => F.categoryActualBase(categoryId, direction);
-
 // ---------------- Period transactions & stats ----------------
-F.periodTransactions = (period = 'month', month = state.month, year = state.analyticsYear) => {
-  const all = state.fullTransactions || [];
-  return period === 'year' ? all.filter(t => yearKey(t.transaction_date) === String(year)) : all.filter(t => monthKey(t.transaction_date) === month);
-};
+F.periodTransactions = (month = state.month) => (state.fullTransactions || []).filter(t => monthKey(t.transaction_date) === month);
 F.operatingFlowTo = (type, txs) => {
   let total = 0;
   txs.forEach(t => {
@@ -216,10 +211,6 @@ F.statsFor = txs => {
     cashFlow: income - expense
   };
 };
-// "normal" stats used for pace / average-spend indicators: same as statsFor but
-// exceptional purchases never distort the household's typical monthly rhythm.
-F.normalStatsFor = txs => F.statsFor(txs); // exceptional already excluded from fixed/variable above
-
 F.expenseByCategory = txs => {
   const map = new Map();
   (txs || []).filter(F.baseTx).forEach(t => {
@@ -233,55 +224,27 @@ F.expenseByCategory = txs => {
   });
   return [...map.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
 };
-F.avgExpenseMonths = (count = 3) => {
-  const end = new Date(`${state.month}-01T00:00:00`), start = F.dataStartMonth();
-  let total = 0, used = 0;
-  for (let i = 0; i < count; i++) {
-    const d = new Date(end); d.setMonth(d.getMonth() - i);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    if (key < start) continue;
-    total += F.statsFor(F.periodTransactions('month', key)).expense;
-    used++;
-  }
-  return used ? total / used : 0;
-};
-
-// ---------------- FX (JPY <-> VND, manual historical rate only) ----------------
-F.explicitRate = month => {
-  const key = monthKey(month);
-  return (state.fxHistory || []).find(x => monthKey(x.month) === key) || null;
-};
-F.fxRateRecord = month => {
-  const key = monthKey(month);
-  const rows = [...(state.fxHistory || [])].filter(x => monthKey(x.month) <= key).sort((a, b) => monthKey(b.month).localeCompare(monthKey(a.month)));
-  const r = rows[0];
-  if (r) return { rate: n(r.jpy_vnd_rate), sourceMonth: monthKey(r.month), inherited: monthKey(r.month) !== key };
-  return { rate: null, sourceMonth: null, inherited: false };
-};
-F.fxRateAt = date => { const r = F.fxRateRecord(date); return r.rate > 0 ? r.rate : null; };
-F.toVND = (amount, currency, date = state.month) => {
+// ---------------- FX (JPY -> VND, manual current rate only) ----------------
+// Settings only lets the user set a single "current" rate (reporting_settings),
+// not a month-by-month history, so conversion is always today's rate — the
+// display is explicitly a snapshot, never a claim about past-month accuracy.
+F.fxRate = () => { const r = n(state.reporting?.jpy_vnd_rate); return r > 0 ? r : null; };
+F.toVND = (amount, currency) => {
   if (currency === 'VND') return n(amount);
-  if (currency === 'JPY') { const r = F.fxRateAt(date); return r ? n(amount) * r : null; }
+  if (currency === 'JPY') { const r = F.fxRate(); return r ? n(amount) * r : null; }
   return null;
 };
-F.positionVND = (endDate = '9999-12-31') => {
-  const valuationDate = endDate === '9999-12-31' ? localToday() : endDate;
-  let assets = 0, liabilities = 0, liquid = 0, invested = 0, unconverted = 0;
-  (state.accounts || []).forEach(a => {
-    const v = F.toVND(F.accountBalanceAt(a, endDate), a.currency || state.base, valuationDate);
-    if (v === null) { unconverted++; return; }
-    if (v >= 0) assets += v; else liabilities += -v;
-    if (['cash', 'bank', 'savings'].includes(a.account_type)) liquid += Math.max(0, v);
-    if (a.account_type === 'investment') invested += Math.max(0, v);
-  });
-  let receivables = 0, borrowed = 0;
-  (state.loans || []).forEach(l => {
-    const v = F.toVND(F.historicalLoanRemaining(l, endDate), l.currency || state.base, valuationDate);
-    if (v === null) { unconverted++; return; }
-    if (l.loan_type === 'lent') receivables += v; else borrowed += v;
-  });
-  const totalAssets = assets + receivables, totalLiabilities = liabilities + borrowed;
-  return { assets, liabilities, receivables, borrowed, totalAssets, totalLiabilities, netWorth: totalAssets - totalLiabilities, liquid, invested, unconverted };
+// Converts an already-computed base-currency financialPosition() snapshot to
+// VND display figures. Returns null if base currency has no rate to convert
+// from (only ever called when the user opted in via Settings anyway).
+F.positionInVND = pos => {
+  if (state.base === 'VND') return pos;
+  const r = F.fxRate();
+  if (!r) return null;
+  return {
+    totalAssets: pos.totalAssets * r, totalLiabilities: pos.totalLiabilities * r,
+    netWorth: pos.netWorth * r, liquid: pos.liquid * r, invested: pos.invested * r
+  };
 };
 
 // ---------------- Monthly obligations (Budget board "Nợ" / card columns) ----------------
@@ -289,7 +252,7 @@ F.positionVND = (endDate = '9999-12-31') => {
 // showing the whole principal in the Chi tiêu page would misrepresent this
 // month's cash need (spec: "cột Chi tiêu phải hiện SỐ PHẢI TRẢ TRONG THÁNG").
 F.loanMonthDue = (l, month = state.month) => {
-  const rows = F.periodTransactions('month', month).filter(t => t.loan_id === l.id);
+  const rows = F.periodTransactions(month).filter(t => t.loan_id === l.id);
   const principal = rows.filter(t => t.transaction_type === 'loan_pay').reduce((s, t) => s + n(t.amount), 0);
   const interest = rows.filter(t => t.transaction_type === 'loan_interest').reduce((s, t) => s + n(t.amount), 0);
   const paid = principal + interest;
@@ -309,7 +272,6 @@ F.cardMonthTotalBase = () => (state.cardMonth || []).filter(x => (x.currency || 
 // ---------------- Credit cards ----------------
 F.cardAccounts = () => F.activeAccounts().filter(a => a.account_type === 'credit');
 F.settingFor = id => (state.cardSettings || []).find(x => x.account_id === id);
-F.overviewFor = id => (state.cardOverview || []).find(x => x.account_id === id);
 F.cardMonthFor = id => (state.cardMonth || []).find(x => x.account_id === id);
 F.configuredCards = () => F.cardAccounts().filter(a => F.settingFor(a.id));
 
@@ -346,14 +308,14 @@ function legendHtml(items, mode = 'value', income = 0) {
 }
 function trendSvg() {
   const keys = Array.from({ length: 12 }, (_, i) => addMonths(state.month, i - 11));
-  const data = keys.map(k => { const s = F.statsFor(F.periodTransactions('month', k)); return { k, inc: s.income, exp: s.expense }; });
+  const data = keys.map(k => { const s = F.statsFor(F.periodTransactions(k)); return { k, inc: s.income, exp: s.expense }; });
   const W = 720, H = 230, pad = 30, max = Math.max(1, ...data.flatMap(x => [x.inc, x.exp])), group = (W - pad * 2) / 12, bw = 12;
   const grid = [0, 1, 2, 3].map(i => { const y = pad + (H - pad * 2) * i / 3; return `<line class="v-gridline" x1="${pad}" y1="${y}" x2="${W - pad}" y2="${y}"/>`; }).join('');
   const bars = data.map((x, i) => {
     const cx = pad + group * i + group / 2, ih = (H - pad * 2) * x.inc / max, eh = (H - pad * 2) * x.exp / max;
     return `<g><title>${x.k}: Thu ${money(x.inc)} · Chi ${money(x.exp)}</title><rect class="bar-income" x="${cx - bw - 2}" y="${H - pad - ih}" width="${bw}" height="${ih}" rx="3"/><rect class="bar-expense" x="${cx + 2}" y="${H - pad - eh}" width="${bw}" height="${eh}" rx="3"/><text class="axis-label" x="${cx}" y="${H - 8}" text-anchor="middle">${x.k.slice(5)}</text></g>`;
   }).join('');
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Thu chi 12 tháng">${grid}${bars}</svg><div class="legend"><span><i style="background:var(--positive)"></i>Thu nhập</span><span><i style="background:var(--negative)"></i>Chi tiêu</span></div>`;
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Thu chi 12 tháng">${grid}${bars}</svg><div class="legend"><span><i class="swatch-positive"></i>Thu nhập</span><span><i class="swatch-negative"></i>Chi tiêu</span></div>`;
 }
 function netWorthLine(rows) {
   const W = 720, H = 220, p = 30;
@@ -363,10 +325,4 @@ function netWorthLine(rows) {
   const path = pts.map((q, i) => `${i ? 'L' : 'M'} ${q.x.toFixed(1)} ${q.y.toFixed(1)}`).join(' ');
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Tài sản ròng 12 tháng">${[0, 1, 2, 3].map(i => { const y = p + (H - p * 2) * i / 3; return `<line class="v-gridline" x1="${p}" y1="${y}" x2="${W - p}" y2="${y}"/>`; }).join('')}<path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2.5"/>${pts.map((q, i) => `<circle cx="${q.x}" cy="${q.y}" r="3.5" fill="var(--accent)"><title>${q.month}: ${money(q.value)}</title></circle>${i % 2 === 0 ? `<text class="axis-label" x="${q.x}" y="${H - 8}" text-anchor="middle">${q.month.slice(5)}</text>` : ''}`).join('')}</svg>`;
 }
-function expenseBars(txs) {
-  const rows = F.expenseByCategory(txs).slice(0, 8), max = Math.max(1, ...rows.map(x => x.value));
-  if (!rows.length) return '<div class="empty compact">Chưa có chi tiêu trong kỳ này</div>';
-  return `<div>${rows.map(x => `<div class="breakdown-row"><span>${esc(x.label)}</span><div class="bar-track"><div class="bar-fill" style="width:${Math.max(4, x.value / max * 100)}%;background:var(--accent)"></div></div><strong>${money(x.value)}</strong></div>`).join('')}</div>`;
-}
-
-Object.assign(window, { CHART_COLORS, donutSvg, legendHtml, trendSvg, netWorthLine, expenseBars });
+Object.assign(window, { CHART_COLORS, donutSvg, legendHtml, trendSvg, netWorthLine });

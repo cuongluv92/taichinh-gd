@@ -4,6 +4,9 @@
 // ==========================================================================
 'use strict';
 
+// `d.goals` and `d.monthly_summary` also come back in this response but
+// aren't kept on `state` — nothing in this simplified UI reads them (see
+// the handoff notes on dropped goals/analytics screens).
 function applyBootstrap(d) {
   state.household = d.household || {};
   state.base = state.household.base_currency || 'JPY';
@@ -11,36 +14,30 @@ function applyBootstrap(d) {
   state.categories = d.categories || [];
   state.categoryVersions = d.category_versions || [];
   state.transactions = d.transactions || [];
-  state.goals = d.goals || [];
   state.loans = d.loans || [];
-  state.monthlySummary = d.monthly_summary || [];
   $('#familyNameSide').textContent = state.household.name || 'Gia đình';
 }
 
 async function loadExtras(month = state.month) {
-  const [ext, allocation, recMonth, recAll, cardGet, cardOverview, cardInstallments, cardMonthRes, exceptional, fx] = await Promise.all([
+  // Only the endpoints this UI actually renders. (The backend also has
+  // recurring-expense reminders, a second card "overview" summary, and a
+  // monthly FX-history table — all still intact in Supabase, just not part
+  // of this pass's simplified screens, so they're not fetched here.)
+  const [ext, allocation, cardGet, cardInstallments, cardMonthRes, exceptional] = await Promise.all([
     api.extension('get'),
     api.allocation('get_month', { month: monthDate(month) }),
-    api.recurring('get_month', { month: monthDate(month) }),
-    api.recurring('list_all', { month: monthDate(month) }),
     api.card('get'),
-    api.card('overview'),
     api.card('list_installments'),
     api.cardMonth(month),
-    api.exceptional('list'),
-    api.fxHistory('list')
+    api.exceptional('list')
   ]);
   state.reporting = { show_vnd_conversion: false, jpy_vnd_rate: null, ...(ext?.reporting || {}) };
   state.loanTerms = ext?.loan_terms || [];
   state.allocationPlan = allocation || null;
-  state.recurringMonth = recMonth?.items || [];
-  state.recurringAll = recAll?.items || [];
   state.cardSettings = cardGet?.items || [];
-  state.cardOverview = cardOverview?.items || [];
   state.cardInstallments = cardInstallments?.items || [];
   state.cardMonth = cardMonthRes?.items || [];
   state.exceptionalIds = exceptional?.ids || [];
-  state.fxHistory = fx?.items || [];
 }
 
 async function boot() {

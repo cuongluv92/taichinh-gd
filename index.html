@@ -43,9 +43,9 @@
         <div><h1 id="pageTitle">Tổng quan</h1><p id="pageSubtitle">Kế hoạch tháng và phân tích tài chính</p></div>
         <div class="top-actions">
           <div class="month-nav" aria-label="Chọn tháng">
-            <button class="btn month-step" type="button" onclick="changeMonth(-1)" title="Tháng trước">‹</button>
+            <button class="btn month-step" type="button" data-action="changeMonth" data-a="[-1]" title="Tháng trước">‹</button>
             <input id="monthPicker" type="month" />
-            <button class="btn month-step" type="button" onclick="changeMonth(1)" title="Tháng sau">›</button>
+            <button class="btn month-step" type="button" data-action="changeMonth" data-a="[1]" title="Tháng sau">›</button>
           </div>
           <button id="quickAdd" class="btn primary">＋ Nhập nhanh</button>
         </div>

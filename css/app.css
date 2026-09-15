@@ -123,6 +123,7 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
   background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-lg);
   padding:18px;
 }
+.card>h2,.section>h2{margin-top:0}
 .section-head,.view-head{
   display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap;
 }
@@ -175,6 +176,12 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 .money-total span{color:var(--text-dim);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.02em}
 .money-column.income .money-column-head h3{color:var(--positive)}
 .money-column.debt .money-column-head h3,.money-column.credit .money-column-head h3{color:var(--negative)}
+.money-total .pct{font-size:11px;color:var(--text-faint);font-weight:600;margin-left:6px}
+.line-amount{text-align:right}
+.invest-summary{color:var(--text-dim);font-size:12px;margin-top:6px;display:flex;gap:14px}
+.card-actions{display:flex;gap:8px;margin-top:12px}
+.count-tag{color:var(--text-dim);font-size:12px}
+.text-sm{font-size:12px}
 
 /* ---------- Transaction / list rows ---------- */
 .list{display:flex;flex-direction:column;gap:2px}
@@ -239,11 +246,6 @@ progress::-webkit-progress-value{background:var(--accent);border-radius:99px}
 progress::-moz-progress-bar{background:var(--accent);border-radius:99px}
 progress.good::-webkit-progress-value{background:var(--positive)}
 progress.bad::-webkit-progress-value{background:var(--negative)}
-.bar-track{height:8px;background:var(--panel-3);border-radius:99px;overflow:hidden;flex:1 1 auto;margin:0 10px}
-.bar-fill{height:100%;border-radius:99px}
-.breakdown-row{display:flex;align-items:center;gap:6px;padding:7px 0;font-size:12.5px}
-.breakdown-row span{width:112px;flex:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-dim)}
-.breakdown-row strong{width:96px;flex:none;text-align:right;font-variant-numeric:tabular-nums}
 
 /* ---------- Charts ---------- */
 .chart-card svg{width:100%;height:auto;display:block}
@@ -356,6 +358,40 @@ input[type=color]{padding:3px;height:36px}
 .type-tabs{display:flex;gap:6px;background:var(--panel-3);border-radius:var(--radius-md);padding:4px}
 .type-tabs button{flex:1;border:none;background:none;color:var(--text-dim);padding:8px;border-radius:var(--radius-sm);font-weight:700;font-size:12.5px;cursor:pointer}
 .type-tabs button.active{background:var(--panel-2);color:var(--text)}
+
+/* ---------- Utilities ----------
+   Production CSP is `style-src 'self'` (no unsafe-inline), so a literal
+   style="..." attribute is silently dropped by the browser — every ad-hoc
+   layout tweak has to be a real class instead. */
+.row{display:flex;align-items:center;gap:8px}
+.row-6{display:flex;align-items:center;gap:6px}
+.row-14{display:flex;align-items:center;gap:14px}
+.text-right{text-align:right}
+.no-cursor{cursor:default}
+.m-0{margin:0}
+.mt-0{margin-top:0}
+.mt-6{margin-top:6px}
+.mt-8{margin-top:8px}
+.mt-10{margin-top:10px}
+.mt-12{margin-top:12px}
+.mt-14{margin-top:14px}
+.mt-16{margin-top:16px}
+.note{color:var(--text-dim);font-size:12.5px;margin:0 0 12px}
+.eyebrow{font-size:11.5px;text-transform:uppercase;letter-spacing:.02em;color:var(--text-faint)}
+.mini-label{display:block;font-size:12px;font-weight:600;color:var(--text-dim);margin-bottom:6px}
+.details-summary{cursor:pointer;font-size:12.5px;color:var(--text-dim)}
+.checkbox-label{display:flex;align-items:center;gap:8px;font-weight:600;color:var(--text)}
+.checkbox-label input[type=checkbox]{width:auto}
+.settings-row{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;
+}
+.settings-row-inputs{flex:1 1 auto;display:grid;grid-template-columns:1.6fr 1fr;gap:8px}
+.installment-row{display:grid;grid-template-columns:.6fr 1fr 1fr 1fr .9fr;gap:6px;align-items:center;font-size:12px}
+.stat-row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:0 0 12px;font-size:12px;color:var(--text-dim)}
+.stat-row-3 b{display:block;color:var(--text);font-size:13px;margin-top:2px}
+.swatch-positive{background:var(--positive)}
+.swatch-negative{background:var(--negative)}
 
 /* ---------- Responsive ----------
    Budget board must keep 5 equal columns on one row on every desktop/laptop

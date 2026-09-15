@@ -36,7 +36,7 @@ const sandbox = {
   localToday: () => '2026-09-15',
   localMonth: () => '2026-09',
   addMonths: (ym, delta) => { const [y, m] = String(ym).slice(0, 7).split('-').map(Number); const idx = y * 12 + (m - 1) + delta; return `${Math.floor(idx / 12)}-${String(idx % 12 + 1).padStart(2, '0')}`; },
-  state: { base: 'JPY', month: '2026-09', analyticsYear: 2026, accounts: [], categories: [], categoryVersions: [], transactions: [], fullTransactions: [], loans: [], exceptionalIds: [], fxHistory: [] }
+  state: { base: 'JPY', month: '2026-09', analyticsYear: 2026, accounts: [], categories: [], categoryVersions: [], transactions: [], fullTransactions: [], loans: [], exceptionalIds: [], reporting: { show_vnd_conversion: false, jpy_vnd_rate: null } }
 };
 sandbox.window = sandbox;
 vm.createContext(sandbox);
@@ -45,7 +45,7 @@ const F = sandbox.F;
 
 function resetState(patch) {
   Object.assign(sandbox.state, {
-    base: 'JPY', accounts: [], categories: [], categoryVersions: [], transactions: [], fullTransactions: [], loans: [], exceptionalIds: [], fxHistory: []
+    base: 'JPY', accounts: [], categories: [], categoryVersions: [], transactions: [], fullTransactions: [], loans: [], exceptionalIds: [], reporting: { show_vnd_conversion: false, jpy_vnd_rate: null }
   }, patch);
 }
 function acc(id, type, currency, opening = 0) { return { id, account_type: type, currency, opening_balance: opening, is_active: true }; }
@@ -196,9 +196,13 @@ function tx(overrides) { return { id: overrides.id || Math.random().toString(36)
 {
   resetState({ base: 'JPY', accounts: [acc('bank', 'bank', 'JPY', 100000), acc('vnbank', 'bank', 'VND', 5000000)] });
   eq('A JPY-base household excludes a VND account from totalAssets entirely', F.financialPosition().totalAssets, 100000);
-  eq('toVND(JPY) is null with no fx rate on file (never assumes 1:1)', F.toVND(1000, 'JPY', '2026-09'), null);
-  resetState({ base: 'JPY', fxHistory: [{ month: '2026-09-01', jpy_vnd_rate: 168 }] });
-  eq('toVND(JPY) uses the explicit entered rate once one exists', F.toVND(1000, 'JPY', '2026-09'), 168000);
+  eq('toVND(JPY) is null with no fx rate on file (never assumes 1:1)', F.toVND(1000, 'JPY'), null);
+  resetState({ base: 'JPY', reporting: { show_vnd_conversion: true, jpy_vnd_rate: 168 } });
+  eq('toVND(JPY) uses the explicit entered rate once one exists', F.toVND(1000, 'JPY'), 168000);
+  eq('toVND(VND) passes VND amounts through unchanged', F.toVND(50000, 'VND'), 50000);
+  eq('positionInVND multiplies every figure by the current rate', F.positionInVND({ totalAssets: 100, totalLiabilities: 20, netWorth: 80, liquid: 60, invested: 40 }).netWorth, 80 * 168);
+  resetState({ base: 'JPY', reporting: { show_vnd_conversion: false, jpy_vnd_rate: null } });
+  eq('positionInVND is null with no fx rate on file', F.positionInVND({ totalAssets: 100, totalLiabilities: 20, netWorth: 80, liquid: 60, invested: 40 }), null);
 }
 
 // ---------------------------------------------------------------------

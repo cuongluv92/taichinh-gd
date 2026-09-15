@@ -31,11 +31,11 @@ function txListHtml(rows) {
     const cls = tone === 'positive' ? 'green' : tone === 'negative' ? 'red' : '';
     const icon = tone === 'positive' ? '↓' : tone === 'transfer' ? '⇄' : '↑';
     const canEdit = editable.has(t.transaction_type);
-    return `<div class="tx"><button class="tx-row-btn" ${canEdit ? `onclick="openTransactionEdit('${esc(t.id)}')"` : 'disabled'} style="${canEdit ? '' : 'cursor:default'}">
+    return `<div class="tx"><button class="tx-row-btn${canEdit ? '' : ' no-cursor'}" ${canEdit ? act('openTransactionEdit', t.id) : 'disabled'}>
       <div class="tx-icon">${icon}</div>
       <div class="tx-main"><strong>${esc(txLabel(t))}</strong><span>${esc(String(t.transaction_date).slice(0, 10))}${t.account_name ? ` · ${esc(t.account_name)}` : ''}${t.note ? ` · ${esc(t.note)}` : ''}</span></div>
       </button>
-      <div class="tx-actions"><strong class="amount ${cls}">${sign}${money(t.amount, t.currency)}</strong>${canEdit ? `<button class="mini-btn" aria-label="Xóa" onclick="deleteTransaction('${esc(t.id)}')">×</button>` : ''}</div>
+      <div class="tx-actions"><strong class="amount ${cls}">${sign}${money(t.amount, t.currency)}</strong>${canEdit ? `<button class="mini-btn" aria-label="Xóa" ${act('deleteTransaction', t.id)}>×</button>` : ''}</div>
     </div>`;
   }).join('')}</div>`;
 }
@@ -57,7 +57,7 @@ function compareRow(label, sub, target, actual, basis, mode) {
 }
 
 function renderDashboard() {
-  const s = F.statsFor(F.periodTransactions('month', state.month));
+  const s = F.statsFor(F.periodTransactions(state.month));
   const pos = F.financialPosition(endOfMonthDate(state.month));
   const incomePlan = incomePlanTotal();
   const fixedPlan = F.orderedCategories('expense').filter(c => c.cost_type === 'fixed').reduce((a, c) => a + n(c.planned_amount), 0);
@@ -67,19 +67,21 @@ function renderDashboard() {
   const cardTarget = F.cardMonthTotalBase(), cardActual = (state.cardMonth || []).filter(x => (x.currency || state.base) === state.base && x.paid).reduce((sum, x) => sum + n(x.expected_amount), 0);
   const debtTarget = F.debtMonthTotalBase(), debtActual = s.debtPay + s.loanInterest;
   const recent = [...state.transactions].sort((a, b) => String(b.transaction_date).localeCompare(String(a.transaction_date))).slice(0, 8);
-  const expenseComposition = F.expenseByCategory(F.periodTransactions('month', state.month));
+  const expenseComposition = F.expenseByCategory(F.periodTransactions(state.month));
   const assets = F.assetComposition(endOfMonthDate(state.month));
   const nw = F.netWorthSeries(12);
+  const vnd = state.reporting?.show_vnd_conversion ? F.positionInVND(pos) : null;
+  const netWorthSub = vnd ? `Tổng nợ ${money(pos.totalLiabilities)} · ≈ ${money(vnd.netWorth, 'VND')}` : `Tổng nợ ${money(pos.totalLiabilities)}`;
 
   return `
   <div class="grid kpi-grid">
-    ${kpiCard('Tài sản ròng', money(pos.netWorth), `Tổng nợ ${money(pos.totalLiabilities)}`, pos.netWorth < 0 ? 'red' : '')}
+    ${kpiCard('Tài sản ròng', money(pos.netWorth), netWorthSub, pos.netWorth < 0 ? 'red' : '')}
     ${kpiCard('Tiền khả dụng', money(pos.liquid), 'Tiền mặt · ngân hàng · tiết kiệm')}
     ${kpiCard('Thu nhập tháng', money(s.income), `Kế hoạch ${money(incomePlan)}`, 'green')}
     ${kpiCard('Chi tiêu tháng', money(s.expense), `Kế hoạch ${money(fixedPlan + variablePlan)} · ${pctText(s.expense, incomePlan)} thu nhập`, '')}
   </div>
 
-  <section class="card" style="margin-top:16px">
+  <section class="card mt-16">
     <div class="section-head"><div><h2>Kế hoạch tháng ${fmtMonthKey(state.month)}</h2><p>Kế hoạch luôn hiển thị đầy đủ dù thực tế đang là 0.</p></div></div>
     <div class="compare-table">
       <div class="compare-head"><span>Nhóm</span><span>Kế hoạch</span><span>Thực tế</span><span></span></div>
@@ -89,20 +91,20 @@ function renderDashboard() {
     </div>
   </section>
 
-  <div class="grid section-grid" style="margin-top:16px">
+  <div class="grid section-grid mt-16">
     <section class="card section chart-card"><div class="section-head"><div><h2>Thu nhập vs Chi tiêu</h2><p>12 tháng gần nhất</p></div></div>${trendSvg()}</section>
     <section class="card section chart-card"><div class="section-head"><div><h2>Tài sản ròng</h2><p>12 tháng gần nhất</p></div></div>${netWorthLine(nw)}</section>
   </div>
 
-  <div class="grid section-grid" style="margin-top:16px">
+  <div class="grid section-grid mt-16">
     <section class="card section"><div class="section-head"><div><h2>Cơ cấu chi tiêu tháng</h2><p>${fmtMonthKey(state.month)}</p></div></div>
       <div class="donut-layout">${donutSvg(expenseComposition)}${legendHtml(expenseComposition, 'income', s.income)}</div></section>
     <section class="card section"><div class="section-head"><div><h2>Tiền đang nằm ở đâu</h2><p>Không tính nợ</p></div></div>
       <div class="donut-layout">${donutSvg(assets)}${legendHtml(assets)}</div></section>
   </div>
 
-  <section class="card section" style="margin-top:16px">
-    <div class="section-head"><div><h2>Kế hoạch vs Thực tế</h2><p>Toàn bộ dòng tiền được phân bổ trong tháng</p></div><button class="btn sm" onclick="openAllocationPlan()">Sửa chỉ tiêu %</button></div>
+  <section class="card section mt-16">
+    <div class="section-head"><div><h2>Kế hoạch vs Thực tế</h2><p>Toàn bộ dòng tiền được phân bổ trong tháng</p></div><button class="btn sm" ${act('openAllocationPlan')}>Sửa chỉ tiêu %</button></div>
     <div class="compare-table">
       <div class="compare-head"><span>Nhóm</span><span>Kế hoạch</span><span>Thực tế</span><span>Trạng thái</span></div>
       ${compareRow('Chi cố định', 'Theo danh mục', fixedPlan, s.fixed, incomePlan, 'max')}
@@ -114,8 +116,8 @@ function renderDashboard() {
     </div>
   </section>
 
-  <section class="card section" style="margin-top:16px">
-    <div class="section-head"><div><h2>Giao dịch gần đây</h2><p>Tháng ${fmtMonthKey(state.month)}</p></div><button class="btn sm primary" onclick="openQuickEntry()">＋ Nhập nhanh</button></div>
+  <section class="card section mt-16">
+    <div class="section-head"><div><h2>Giao dịch gần đây</h2><p>Tháng ${fmtMonthKey(state.month)}</p></div><button class="btn sm primary" ${act('openQuickEntry')}>＋ Nhập nhanh</button></div>
     ${txListHtml(recent)}
   </section>`;
 }

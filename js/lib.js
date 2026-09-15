@@ -20,33 +20,20 @@ const state = {
   view: 'dashboard',
   base: 'JPY',
   month: localMonth(),
-  search: '',
-  txFilter: 'all',
   household: null,
   accounts: [],
   categories: [],
   categoryVersions: [],
   transactions: [],
   fullTransactions: [],
-  goals: [],
   loans: [],
   loanTerms: [],
-  monthlySummary: [],
   reporting: { show_vnd_conversion: false, jpy_vnd_rate: null },
-  fxHistory: [],
   allocationPlan: null,
-  allocationYear: [],
-  allocationYearLoaded: null,
-  recurringMonth: [],
-  recurringAll: [],
   cardSettings: [],
-  cardOverview: [],
   cardInstallments: [],
   cardMonth: [],
-  reconciliations: [],
-  exceptionalIds: [],
-  familySplit: { settings: { enabled: false, person_a_name: 'Tôi', person_b_name: 'Người kia' }, items: [] },
-  statementBatches: []
+  exceptionalIds: []
 };
 
 const $ = (s, root = document) => root.querySelector(s);
@@ -115,12 +102,22 @@ function options(items, value, label = x => x.name) {
   return items.map(x => `<option value="${esc(x.id)}" ${x.id === value ? 'selected' : ''}>${esc(label(x))}</option>`).join('');
 }
 
+// ---------- CSP-safe action dispatch ----------
+// The production CSP is `script-src 'self'` (no 'unsafe-inline'), so plain
+// onclick="..." HTML attributes are silently dropped by the browser. Every
+// interactive element built from a template string must use act(...) below
+// instead, which emits data-action/data-a attributes read by one delegated
+// listener (wired in app.js) rather than an inline event handler.
+function act(name, ...args) {
+  return `data-action="${esc(name)}"${args.length ? ` data-a="${esc(JSON.stringify(args))}"` : ''}`;
+}
+
 // ---------- Modal ----------
 function modal(title, bodyHtml, onSubmit, submitText = 'Lưu') {
   const dlg = $('#modal'), mb = $('#modalBody');
-  mb.innerHTML = `<div class="modal-head"><h3>${esc(title)}</h3><button class="mini-btn" type="button" aria-label="Đóng" onclick="document.getElementById('modal').close()">✕</button></div>` +
+  mb.innerHTML = `<div class="modal-head"><h3>${esc(title)}</h3><button class="mini-btn" type="button" aria-label="Đóng" ${act('closeModal')}>✕</button></div>` +
     `<div class="modal-content">${bodyHtml}</div>` +
-    `<div class="modal-actions"><button class="btn" type="button" onclick="document.getElementById('modal').close()">Hủy</button><button class="btn primary" type="submit">${esc(submitText)}</button></div>`;
+    `<div class="modal-actions"><button class="btn" type="button" ${act('closeModal')}>Hủy</button><button class="btn primary" type="submit">${esc(submitText)}</button></div>`;
   const form = $('#modalForm');
   form.onsubmit = async e => {
     e.preventDefault();
@@ -144,13 +141,20 @@ function modal(title, bodyHtml, onSubmit, submitText = 'Lưu') {
 // info-only modal (no form submit action)
 function infoModal(title, bodyHtml) {
   const dlg = $('#modal'), mb = $('#modalBody'), form = $('#modalForm');
-  mb.innerHTML = `<div class="modal-head"><h3>${esc(title)}</h3><button class="mini-btn" type="button" aria-label="Đóng" onclick="document.getElementById('modal').close()">✕</button></div>` +
+  mb.innerHTML = `<div class="modal-head"><h3>${esc(title)}</h3><button class="mini-btn" type="button" aria-label="Đóng" ${act('closeModal')}>✕</button></div>` +
     `<div class="modal-content">${bodyHtml}</div>` +
-    `<div class="modal-actions"><button class="btn primary" type="button" onclick="document.getElementById('modal').close()">Đóng</button></div>`;
+    `<div class="modal-actions"><button class="btn primary" type="button" ${act('closeModal')}>Đóng</button></div>`;
   form.onsubmit = e => e.preventDefault();
   if (!dlg.open) dlg.showModal();
 }
 function closeModal() { $('#modal')?.close(); }
+// Close the current modal, then open a different one (same <dialog> element
+// is reused for both, so give it a tick to finish closing first).
+function reopenAfterModal(fnName, ...args) {
+  closeModal();
+  const fn = window[fnName];
+  if (typeof fn === 'function') setTimeout(() => fn(...args), 0);
+}
 
 // ---------- Generic RPC caller ----------
 async function callRpc(fnName, body) {
@@ -249,6 +253,21 @@ async function copyPrivateLink() {
 Object.assign(window, {
   SUPABASE_URL, SUPABASE_KEY, state, $, $$, esc, n, clamp0, money, signedMoney, pctText, pctOf,
   monthDate, monthKey, yearKey, fmtMonth, fmtMonthKey, shiftMonth, addMonths, endOfMonthDate,
-  daysUntil, dateStatus, toast, setLoading, options, modal, infoModal, closeModal, callRpc,
+  daysUntil, dateStatus, toast, setLoading, options, modal, infoModal, closeModal, reopenAfterModal, callRpc, act,
   extractKey, forgetDevice, copyPrivateLink, localToday, localMonth, QUICK_PREF_KEY
+});
+
+// One delegated handler for every data-action element in the document,
+// including inside the <dialog id="modal">. This is the CSP-safe
+// replacement for onclick="..." attributes (see act() above).
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  const fn = window[el.dataset.action];
+  if (typeof fn !== 'function') { console.error(`Hành động "${el.dataset.action}" chưa được định nghĩa.`); return; }
+  e.preventDefault();
+  let args = [];
+  if (el.dataset.a) { try { args = JSON.parse(el.dataset.a); } catch (err) { console.error('data-a không hợp lệ', err); } }
+  const result = fn(...args);
+  if (result && typeof result.then === 'function') result.catch(err => toast(err?.message || 'Không thực hiện được', true));
 });

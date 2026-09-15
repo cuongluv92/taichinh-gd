@@ -37,15 +37,15 @@ function openQuickEntry(defaults = {}) {
   let categoryId = defaults.category_id || prefs[type]?.category_id || '';
   let targetId = defaults.transfer_account_id || '';
   const dlg = $('#modal'), mb = $('#modalBody'), form = $('#modalForm');
-  mb.innerHTML = `<div class="modal-head"><h3>Nhập nhanh</h3><button class="mini-btn" type="button" aria-label="Đóng" onclick="document.getElementById('modal').close()">✕</button></div>
+  mb.innerHTML = `<div class="modal-head"><h3>Nhập nhanh</h3><button class="mini-btn" type="button" aria-label="Đóng" ${act('closeModal')}>✕</button></div>
   <div class="modal-content quick-entry">
     <div class="type-tabs" id="qeTypeTabs"><button type="button" data-t="expense">Chi</button><button type="button" data-t="income">Thu</button><button type="button" data-t="transfer">Chuyển</button></div>
     <div class="field"><label>Số tiền</label><div class="amount-row"><span id="qeCurrency">${esc(state.base)}</span><input id="qeAmount" name="amount" type="number" min="1" step="1" required autofocus placeholder="0" value="${esc(defaults.amount || '')}"></div><div class="chip-row" id="qeAmountChips"></div></div>
-    <div id="qeCategoryBlock"><label class="muted" style="font-size:12px;font-weight:600">Danh mục</label><div class="chip-row" id="qeCategoryChips"></div></div>
-    <div><label class="muted" style="font-size:12px;font-weight:600">Tài khoản</label><div class="chip-row" id="qeAccountChips"></div></div>
-    <div id="qeTargetBlock" class="hidden"><label class="muted" style="font-size:12px;font-weight:600">Chuyển đến</label><div class="chip-row" id="qeTargetChips"></div></div>
-    <details style="margin-top:12px"><summary class="muted" style="cursor:pointer;font-size:12.5px">Thêm chi tiết</summary>
-      <div class="form-grid" style="margin-top:10px">
+    <div id="qeCategoryBlock"><label class="mini-label">Danh mục</label><div class="chip-row" id="qeCategoryChips"></div></div>
+    <div><label class="mini-label">Tài khoản</label><div class="chip-row" id="qeAccountChips"></div></div>
+    <div id="qeTargetBlock" class="hidden"><label class="mini-label">Chuyển đến</label><div class="chip-row" id="qeTargetChips"></div></div>
+    <details class="mt-12"><summary class="details-summary">Thêm chi tiết</summary>
+      <div class="form-grid mt-10">
         <div class="field"><label>Ngày</label><input name="transaction_date" type="date" value="${esc(defaults.transaction_date || selectedMonthDate())}" required></div>
         <div class="field"><label>Danh mục</label><select id="qeCategorySelect" name="category_id"></select></div>
         <div class="field"><label>Tài khoản</label><select id="qeAccountSelect" name="account_id"></select></div>
@@ -55,7 +55,7 @@ function openQuickEntry(defaults = {}) {
     </details>
     <input type="hidden" id="qeType" name="transaction_type" value="${esc(type)}"><input type="hidden" id="qeCurrencyField" name="currency" value="${esc(state.base)}">
   </div>
-  <div class="modal-actions"><button class="btn" type="button" onclick="document.getElementById('modal').close()">Hủy</button><button class="btn primary" type="submit">Lưu</button></div>`;
+  <div class="modal-actions"><button class="btn" type="button" ${act('closeModal')}>Hủy</button><button class="btn primary" type="submit">Lưu</button></div>`;
 
   const amount = $('#qeAmount'), currencyLabel = $('#qeCurrency'), currencyField = $('#qeCurrencyField');
   const catSel = $('#qeCategorySelect'), accSel = $('#qeAccountSelect'), tgtSel = $('#qeTargetSelect');
@@ -161,8 +161,8 @@ function columnCategories(kind) {
 }
 function columnRowHtml(kind, c = {}) {
   const m = COLUMN_META[kind];
-  return `<div class="tx" data-col-row data-id="${esc(c.id || '')}" data-color="${esc(c.color || m.color)}" style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;gap:10px">
-    <div style="flex:1 1 auto;display:grid;grid-template-columns:1.6fr 1fr;gap:8px">
+  return `<div class="settings-row" data-col-row data-id="${esc(c.id || '')}" data-color="${esc(c.color || m.color)}">
+    <div class="settings-row-inputs">
       <input data-col-name placeholder="Tên mục" value="${esc(c.name || '')}" required>
       <input data-col-amount type="number" min="0" step="1" placeholder="${esc(m.label)}" value="${esc(c.planned_amount ?? 0)}" required>
     </div>
@@ -182,10 +182,10 @@ function openColumnSettings(kind) {
   const dlg = $('#modal'), mb = $('#modalBody'), form = $('#modalForm');
   mb.innerHTML = `<div class="modal-head"><h3>Cài đặt · ${esc(m.title)}</h3><button class="mini-btn" type="button" aria-label="Đóng" data-close>✕</button></div>
   <div class="modal-content">
-    <p class="muted" style="font-size:12.5px;margin-top:0">Một cài đặt dùng chung cho cả cột. Áp dụng từ tháng bạn chọn; các tháng trước giữ nguyên.</p>
+    <p class="note">Một cài đặt dùng chung cho cả cột. Áp dụng từ tháng bạn chọn; các tháng trước giữ nguyên.</p>
     <div class="field"><label>Áp dụng từ tháng</label><input id="columnEffective" type="month" value="${esc(state.month)}" required></div>
-    <div id="columnRows" class="stack" style="margin-top:10px">${cats.map(c => columnRowHtml(kind, c)).join('') || '<div class="empty compact">Chưa có mục nào.</div>'}</div>
-    <button type="button" class="btn" id="columnAddRow" style="margin-top:10px">＋ Thêm mục mới</button>
+    <div id="columnRows" class="stack mt-10">${cats.map(c => columnRowHtml(kind, c)).join('') || '<div class="empty compact">Chưa có mục nào.</div>'}</div>
+    <button type="button" class="btn mt-10" id="columnAddRow">＋ Thêm mục mới</button>
   </div>
   <div class="modal-actions"><button class="btn" type="button" data-close>Hủy</button><button class="btn primary" type="submit">Lưu cả cột</button></div>`;
   refreshColumnMoveButtons();
@@ -292,7 +292,7 @@ function openLoan(id = '', defaults = {}) {
     <div class="field"><label>Ngày bắt đầu</label><input name="start_date" type="date" value="${esc(l.start_date || localToday())}" ${linked ? 'readonly' : ''}></div>
     <div class="field"><label>Hạn cuối</label><input name="due_date" type="date" value="${esc(l.due_date || '')}"></div>
   </div>
-  <div id="bankFields" class="hidden" style="margin-top:12px">
+  <div id="bankFields" class="hidden mt-12">
     <div class="form-grid">
       <div class="field"><label>Ngân hàng / tổ chức</label><input name="institution_name" value="${esc(t.institution_name || '')}" placeholder="VD: MUFG, SMBC"></div>
       <div class="field"><label>Tên sản phẩm</label><input name="product_name" value="${esc(t.product_name || '')}" placeholder="VD: 住宅ローン"></div>
@@ -303,7 +303,7 @@ function openLoan(id = '', defaults = {}) {
     </div>
     <small class="muted">Số kỳ tới chỉ là ước tính. Khi trả thật, luôn nhập đúng gốc/lãi theo sao kê ngân hàng.</small>
   </div>
-  <div class="field full" style="margin-top:12px"><label>Ghi chú</label><input name="note" value="${esc(l.note || '')}"></div>`,
+  <div class="field full mt-12"><label>Ghi chú</label><input name="note" value="${esc(l.note || '')}"></div>`,
   async fd => {
     const kind = fd.loan_kind || initialKind;
     if (kind === 'bank') {
@@ -362,7 +362,7 @@ function openBankPayment(id) {
     <div class="field"><label>Lãi / phí kỳ này</label><input id="bpInterest" name="interest_amount" type="number" min="0" step="1" value="${i0}" required></div>
     <div class="field"><label>Tài khoản trả</label><select name="account_id" required>${options(ac, ac[0].id, a => `${a.name} · ${a.currency}`)}</select></div>
     <div class="field"><label>Ngày trả</label><input name="transaction_date" type="date" value="${localToday()}" required></div>
-    <div class="field full"><label>Tổng tiền ra</label><div id="bpTotal" class="balance-card" style="margin:0"><strong>${esc(money(p0 + i0, l.currency))}</strong></div></div>
+    <div class="field full"><label>Tổng tiền ra</label><div id="bpTotal" class="balance-card m-0"><strong>${esc(money(p0 + i0, l.currency))}</strong></div></div>
     <div class="field full"><label>Ghi chú</label><input name="note" value="${esc(t.institution_name || '')} ${esc(l.counterparty)}"></div>
   </div>
   <small class="muted">Gốc làm giảm dư nợ. Lãi/phí là chi phí và làm giảm tài sản ròng, nhưng không giảm gốc.</small>`,
@@ -379,7 +379,7 @@ function paymentAccountOptions(currency, selected = '') {
 }
 function openCreditCard() {
   const cats = F.activeCategories('expense');
-  modal('Thêm thẻ tín dụng', `<div class="muted" style="font-size:12.5px;margin-bottom:10px"><b>Thẻ tín dụng là chi trước, trả sau.</b> Nếu đang có khoản đã tiêu ở kỳ trước phải trả trong tháng đang xem, nhập ở dưới; app xếp đúng vào kỳ thanh toán.</div>
+  modal('Thêm thẻ tín dụng', `<div class="note"><b>Thẻ tín dụng là chi trước, trả sau.</b> Nếu đang có khoản đã tiêu ở kỳ trước phải trả trong tháng đang xem, nhập ở dưới; app xếp đúng vào kỳ thanh toán.</div>
   <div class="form-grid">
     <div class="field full"><label>Tên thẻ</label><input name="name" placeholder="VD: Rakuten" required autofocus></div>
     <div class="field"><label>Tiền tệ</label><select id="ccCurrency" name="currency"><option value="JPY" ${state.base === 'JPY' ? 'selected' : ''}>JPY</option><option value="VND" ${state.base === 'VND' ? 'selected' : ''}>VND</option></select></div>
@@ -417,7 +417,7 @@ function openCardSettings(id) {
 function openInstallment() {
   const cards = F.configuredCards(); if (!cards.length) return toast('Hãy thiết lập chu kỳ cho ít nhất một thẻ trước.', true);
   const cats = F.activeCategories('expense'); if (!cats.length) return toast('Hãy tạo danh mục chi trước.', true);
-  modal('Thêm khoản trả góp', `<div class="muted" style="font-size:12.5px;margin-bottom:10px"><b>Nguyên tắc:</b> toàn bộ giá mua ghi chi tại ngày mua. Mỗi tháng chỉ trả nghĩa vụ; phí trả góp mới là chi phí phát sinh thêm.</div>
+  modal('Thêm khoản trả góp', `<div class="note"><b>Nguyên tắc:</b> toàn bộ giá mua ghi chi tại ngày mua. Mỗi tháng chỉ trả nghĩa vụ; phí trả góp mới là chi phí phát sinh thêm.</div>
   <div class="form-grid">
     <div class="field full"><label>Tên khoản</label><input name="name" placeholder="VD: iPhone / Máy giặt" required autofocus></div>
     <div class="field"><label>Loại khoản</label><select name="entry_mode"><option value="purchase">Mua mới</option><option value="existing">Đang trả dở</option></select></div>
@@ -429,7 +429,7 @@ function openInstallment() {
     <div class="field"><label>Ngày mua</label><input name="purchase_date" type="date" value="${localToday()}" required></div>
     <div class="field"><label>Danh mục</label><select name="category_id" required>${options(cats, cats[0].id)}</select></div>
     <div id="instExisting" class="field full hidden"><div class="form-grid"><div class="field"><label>Đã trả bao nhiêu kỳ</label><input name="paid_installments_before" type="number" min="0" max="59" value="0"></div><div class="field"><label>Bắt đầu trả tiếp từ tháng</label><input name="next_payment_month" type="month" value="${esc(state.month)}"></div></div></div>
-    <div id="instCustom" class="field full hidden"><div class="stack" id="instRows"></div><button type="button" class="btn sm" id="instGenerate" style="margin-top:8px">Tạo / làm lại lịch</button><div id="instSummary" class="muted" style="font-size:12px;margin-top:6px"></div></div>
+    <div id="instCustom" class="field full hidden"><div class="stack" id="instRows"></div><button type="button" class="btn sm mt-8" id="instGenerate">Tạo / làm lại lịch</button><div id="instSummary" class="muted mt-6 text-sm"></div></div>
     <div class="field full"><label>Ghi chú</label><input name="note" placeholder="Tùy chọn"></div>
   </div>`, async fd => {
     const payload = { ...fd, paid_installments_before: fd.entry_mode === 'existing' ? n(fd.paid_installments_before || 0) : 0, next_payment_month: fd.entry_mode === 'existing' && fd.schedule_mode === 'equal' && fd.next_payment_month ? `${fd.next_payment_month}-01` : null };
@@ -472,7 +472,7 @@ function openInstallment() {
       const p = no < s.total ? baseP : s.principal - baseP * (s.total - 1);
       const f = no < s.total ? baseF : s.fee - baseF * (s.total - 1);
       const month = addMonths(start, j);
-      html += `<div data-row style="display:grid;grid-template-columns:.6fr 1fr 1fr 1fr .9fr;gap:6px;align-items:center"><span class="muted" style="font-size:12px">#${no}</span><input data-month type="month" value="${month}" required><input data-principal type="number" min="0" step="1" value="${p}" required><input data-fee type="number" min="0" step="1" value="${f}" required><select data-kind><option value="regular">Thường</option><option value="bonus">Bonus</option></select></div>`;
+      html += `<div data-row class="installment-row"><span class="muted">#${no}</span><input data-month type="month" value="${month}" required><input data-principal type="number" min="0" step="1" value="${p}" required><input data-fee type="number" min="0" step="1" value="${f}" required><select data-kind><option value="regular">Thường</option><option value="bonus">Bonus</option></select></div>`;
     }
     box.innerHTML = html;
     box.addEventListener('input', updateInstallmentSummary);
@@ -502,13 +502,13 @@ function openStatementPayment(id) {
   const cats = F.activeCategories('expense');
   const feeCat = cats.find(c => /phí|lãi|fee/i.test(c.name))?.id || cats[0]?.id || '';
   modal(`Thanh toán · ${esc(card.name)}`, `<div class="balance-card"><span>Kỳ thanh toán</span><strong>${esc(money(overview.expected_amount, card.currency))}</strong></div>
-  <div class="grid" style="grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;font-size:12px" class="muted">
+  <div class="stat-row-3">
     <div>Chi thường<br><b>${esc(money(overview.regular_amount, card.currency))}</b></div>
     <div>Gốc trả góp<br><b>${esc(money(overview.installment_principal, card.currency))}</b></div>
     <div>Phí trả góp<br><b>${esc(money(overview.installment_fee, card.currency))}</b></div>
   </div>
   <div class="field"><label>Số tiền thực tế bị trừ</label><input name="amount" type="number" min="1" step="1" value="${esc(overview.expected_amount)}" required autofocus></div>
-  <div class="form-grid" style="margin-top:10px">
+  <div class="form-grid mt-10">
     <div class="field"><label>Trừ từ</label><select name="payment_account_id" required>${options(sources, selected, a => `${a.name} · ${a.currency}`)}</select></div>
     <div class="field"><label>Ngày thực trả</label><input name="transaction_date" type="date" value="${localToday()}" required></div>
     ${n(overview.installment_fee) ? `<div class="field full"><label>Danh mục cho phí trả góp ${esc(money(overview.installment_fee, card.currency))}</label><select name="fee_category_id" required>${options(cats, feeCat)}</select></div>` : '<input type="hidden" name="fee_category_id" value="">'}
@@ -541,8 +541,8 @@ const ALLOC_DEFS = [
 ];
 function openAllocationPlan() {
   const p = state.allocationPlan && monthKey(state.allocationPlan.month) === state.month ? state.allocationPlan : { fixed_pct: 0, variable_pct: 0, interest_pct: 0, saving_pct: 0, investment_pct: 0, debt_pct: 0 };
-  modal(`Chỉ tiêu tháng ${fmtMonthKey(state.month)}`, `<p class="muted" style="font-size:12.5px;margin-top:0">Tổng 6 mục tối đa 100% thu nhập. Phần còn lại tự động là dự phòng. Tháng sau tự kế thừa cho tới khi bạn đổi.</p>
-  <div class="form-grid" id="allocForm">${ALLOC_DEFS.map(d => `<div class="field"><label>${esc(d.label)}</label><div style="display:flex;align-items:center;gap:6px"><input name="${d.pct}" type="number" min="0" max="100" step="0.1" value="${n(p[d.pct])}" required><span class="muted">%</span></div></div>`).join('')}
+  modal(`Chỉ tiêu tháng ${fmtMonthKey(state.month)}`, `<p class="note">Tổng 6 mục tối đa 100% thu nhập. Phần còn lại tự động là dự phòng. Tháng sau tự kế thừa cho tới khi bạn đổi.</p>
+  <div class="form-grid" id="allocForm">${ALLOC_DEFS.map(d => `<div class="field"><label>${esc(d.label)}</label><div class="row-6"><input name="${d.pct}" type="number" min="0" max="100" step="0.1" value="${n(p[d.pct])}" required><span class="muted">%</span></div></div>`).join('')}
     <div class="field full"><div class="balance-card"><span>Đã phân bổ</span><strong id="allocTotal">0%</strong><span>Dự phòng</span><strong id="allocReserve">100%</strong></div></div>
   </div>`, fd => api.allocation('save_month', { month: `${state.month}-01`, ...fd }), 'Lưu chỉ tiêu');
   const inputs = $$('#allocForm input[type=number]'), total = $('#allocTotal'), reserve = $('#allocReserve'), submit = $('#modalForm [type=submit]');
