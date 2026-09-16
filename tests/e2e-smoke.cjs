@@ -455,14 +455,15 @@ const RPC_HANDLERS = {
   const assetsText = await page.textContent('#content');
   results.push(`  Khoản vay cũ ¥1,250,000 (Vay mua xe) is visible in Nợ phải trả column: ${assetsText.includes('Vay mua xe') && assetsText.includes('1,250,000')}`);
   results.push(`  No "Chuyển tiền" button anywhere on Tài sản: ${!assetsText.includes('Chuyển tiền')}`);
-  // A VND nợ phải trả ("Vay chị Hoa") must NOT silently vanish from (or get
-  // mixed into) the JPY totals: it shows in its own "ngoại tệ" section,
-  // stays out of the main Nợ phải trả column, and Tổng nợ stays JPY-only.
+  // A VND nợ phải trả ("Vay chị Hoa") stays INLINE in the main Nợ phải trả
+  // column (one list, no second table) with its own currency shown as-is,
+  // plus a small conversion-estimate line; Tổng nợ itself stays JPY-only
+  // (an exact base-currency sum), never silently mixing the VND figure in.
   const debtColumnText = await page.locator('.money-column.debt').textContent();
-  results.push(`  Nợ ngoại tệ (VND, "Vay chị Hoa") shows in its own section, not the main Nợ phải trả column: ${assetsText.includes('Vay chị Hoa') && !debtColumnText.includes('Vay chị Hoa')}`);
+  results.push(`  Nợ ngoại tệ (VND, "Vay chị Hoa") shows inline inside the main Nợ phải trả column: ${debtColumnText.includes('Vay chị Hoa') && debtColumnText.includes('5.000.000')}`);
   const tongNoValue = await page.locator('.kpi').filter({ has: page.locator('.label', { hasText: 'Tổng nợ' }) }).locator('.value').textContent();
   results.push(`  Tổng nợ KPI stays JPY-only (¥1,250,000), VND debt not silently mixed in: ${tongNoValue.includes('1,250,000')}`);
-  results.push(`  Ngoại tệ debt section explains it isn't counted in the JPY total yet: ${/chưa tính vào/i.test(assetsText)}`);
+  results.push(`  VND debt row prompts to set a conversion rate when none is configured: ${debtColumnText.includes('Chưa đặt tỷ giá quy đổi ở Cài đặt')}`);
   results.push(`  Cơ cấu tài sản (composition) chart present: ${await page.locator('.chart-card', { hasText: 'Cơ cấu tài sản' }).count() > 0}`);
   results.push(`  Lịch sử theo tháng (history) chart present with period toggle: ${await page.locator('.chart-card', { hasText: 'Lịch sử theo tháng' }).count() > 0 && await page.locator('button:has-text("6 tháng")').count() > 0}`);
   const assetChartHeights = await rowHeightsEqual('#content .section-grid .chart-card');

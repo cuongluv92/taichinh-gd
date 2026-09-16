@@ -26,13 +26,24 @@ function debtRowMeta(d) {
   if (d.due_date) parts.push(`<span class="due-date-tag">Đáo hạn ${esc(String(d.due_date).slice(0, 10))}</span>`);
   return parts.join(' · ');
 }
+// A foreign-currency khoản stays right here in its own column (the user
+// wants one list, not a second table to check) — its own currency is
+// still the real number; this is only a reference estimate in the
+// household's base currency, shown once a JPY↔VND rate is set in Cài đặt.
+function debtConvertedEstimate(d, bal) {
+  if ((d.currency || state.base) === state.base) return '';
+  const rate = state.reporting?.jpy_vnd_rate;
+  if (!rate) return '<small class="muted">Chưa đặt tỷ giá quy đổi ở Cài đặt</small>';
+  const jpy = d.currency === 'JPY' ? bal * rate : bal / rate;
+  return `<small class="muted">≈ ${money(jpy, state.base)}</small>`;
+}
 function receivableRow(d) {
   const bal = F.debtBalance(d), meta = debtRowMeta(d);
-  return `<button class="money-line" ${act('openDebtAdjustmentHistory', d.id)}><span class="line-label">${esc(d.name)}${meta ? `<small>${meta}</small>` : ''}</span><strong class="green">${money(bal, d.currency)}</strong></button>`;
+  return `<button class="money-line" ${act('openDebtAdjustmentHistory', d.id)}><span class="line-label">${esc(d.name)}${meta ? `<small>${meta}</small>` : ''}</span><span class="line-amount"><strong class="green">${money(bal, d.currency)}</strong>${debtConvertedEstimate(d, bal)}</span></button>`;
 }
 function payableRow(d) {
   const bal = F.debtBalance(d), meta = debtRowMeta(d);
-  return `<button class="money-line" ${act('openDebtAdjustmentHistory', d.id)}><span class="line-label">${esc(d.name)}${meta ? `<small>${meta}</small>` : ''}</span><strong class="red">${money(bal, d.currency)}</strong></button>`;
+  return `<button class="money-line" ${act('openDebtAdjustmentHistory', d.id)}><span class="line-label">${esc(d.name)}${meta ? `<small>${meta}</small>` : ''}</span><span class="line-amount"><strong class="red">${money(bal, d.currency)}</strong>${debtConvertedEstimate(d, bal)}</span></button>`;
 }
 
 function assetColumn() {
@@ -46,17 +57,17 @@ function investmentColumn() {
   const total = F.investmentTotalValue();
   return moneyColumn({ title: 'Đầu tư', tone: 'credit', items, total: money(total), settingsAction: act('openInvestmentColumnManager'), settingsLabel: '⚙ Cài đặt', emptyText: 'Chưa có khoản đầu tư' });
 }
-// Like assetAccounts(), the board only lists base-currency debts — a VND
-// khoản when the household base is JPY shows up in its own "ngoại tệ"
-// section below instead (see renderAccounts), never silently folded into
-// (or silently dropped from) a JPY total.
+// Unlike accounts, a foreign-currency khoản stays in this same column
+// (its row shows a converted estimate via debtConvertedEstimate instead of
+// being split into a separate ngoại tệ section) — the total below still
+// only ever sums base-currency debts, so it stays an exact figure.
 function receivablesColumn() {
-  const items = F.receivables().filter(d => (d.currency || state.base) === state.base).map(receivableRow);
+  const items = F.receivables().map(receivableRow);
   const total = F.totalReceivablesAt('9999-12-31');
   return moneyColumn({ title: 'Khoản phải thu', tone: 'receivable', items, total: money(total), settingsAction: act('openDebtColumnManager', 'receivable'), settingsLabel: '⚙ Cài đặt', emptyText: 'Chưa có khoản phải thu' });
 }
 function payablesColumn() {
-  const items = F.payables().filter(d => (d.currency || state.base) === state.base).map(payableRow);
+  const items = F.payables().map(payableRow);
   const total = F.totalPayablesAt('9999-12-31');
   return moneyColumn({ title: 'Nợ phải trả', tone: 'debt', items, total: money(total), settingsAction: act('openDebtColumnManager', 'payable'), settingsLabel: '⚙ Cài đặt', emptyText: 'Chưa có khoản nợ' });
 }
@@ -81,18 +92,6 @@ function renderAccounts() {
       : `Chưa tính vào tổng ${esc(state.base)} ở trên. Bật quy đổi ở Cài đặt để xem ước tính.`;
     const list = foreign.filter(a => a.currency === cur);
     return `<section class="card section mt-16"><div class="section-head"><h2>Tài khoản ngoại tệ · ${esc(cur)}</h2><span class="count-tag">${list.length} tài khoản</span></div><p class="note">${esc(note)}</p><div class="money-items">${list.map(assetAccountRow).join('')}</div></section>`;
-  }).join('');
-  // Same idea for debts: a VND khoản phải thu/nợ still shows here, in its
-  // own currency, instead of silently vanishing from the JPY Tổng nợ/
-  // Khoản phải thu/Tài sản ròng totals with no explanation.
-  const foreignDebts = F.debts().filter(d => (d.currency || state.base) !== state.base);
-  const foreignDebtGroups = [...new Set(foreignDebts.map(d => d.currency))].map(cur => {
-    const rate = state.reporting?.jpy_vnd_rate;
-    const note = state.reporting?.show_vnd_conversion && rate
-      ? `Ước tính quy đổi theo tỷ giá đã đặt (1 JPY ≈ ${rate} ${cur}). Số tiền gốc vẫn giữ nguyên bằng ${cur}, chưa tính vào Tổng nợ/Khoản phải thu/Tài sản ròng ${esc(state.base)} ở trên.`
-      : `Chưa tính vào Tổng nợ/Khoản phải thu/Tài sản ròng ${esc(state.base)} ở trên. Bật quy đổi ở Cài đặt để xem ước tính.`;
-    const list = foreignDebts.filter(d => d.currency === cur);
-    return `<section class="card section mt-16"><div class="section-head"><h2>Khoản phải thu / nợ ngoại tệ · ${esc(cur)}</h2><span class="count-tag">${list.length} khoản</span></div><p class="note">${esc(note)}</p><div class="money-items">${list.map(d => d.direction === 'receivable' ? receivableRow(d) : payableRow(d)).join('')}</div></section>`;
   }).join('');
   const investByKind = kind => F.investmentsByKind(kind).filter(inv => (inv.currency || state.base) === state.base).reduce((s, inv) => s + F.investmentCurrentValue(inv), 0);
   const composition = [
@@ -124,7 +123,6 @@ function renderAccounts() {
   <div class="money-board mt-16">${assetColumn()}${investmentColumn()}${receivablesColumn()}${payablesColumn()}</div>
 
   ${foreign.length ? foreignGroups : ''}
-  ${foreignDebts.length ? foreignDebtGroups : ''}
 
   <div class="grid section-grid mt-16">
     <section class="card section chart-card"><div class="section-head"><div><h2>Cơ cấu tài sản</h2><p>Số dư hiện tại theo nhóm</p></div></div>${barChartSvg(composition)}</section>
