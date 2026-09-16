@@ -21,7 +21,10 @@ function investmentRow(inv) {
   return `<button class="money-line" ${act('openInvestmentEventHistory', inv.id)}><span class="line-label">${esc(inv.name)}<small>${esc(INVESTMENT_KIND_LABEL[inv.kind] || '')}</small></span><strong>${money(val, inv.currency)}</strong></button>`;
 }
 function debtRowMeta(d) {
-  return esc([d.counterparty, d.due_date ? `Đáo hạn ${String(d.due_date).slice(0, 10)}` : ''].filter(Boolean).join(' · '));
+  const parts = [];
+  if (d.counterparty) parts.push(esc(d.counterparty));
+  if (d.due_date) parts.push(`<span class="due-date-tag">Đáo hạn ${esc(String(d.due_date).slice(0, 10))}</span>`);
+  return parts.join(' · ');
 }
 function receivableRow(d) {
   const bal = F.debtBalance(d), meta = debtRowMeta(d);

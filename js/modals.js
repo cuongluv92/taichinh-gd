@@ -569,20 +569,37 @@ async function skipInvestmentPlan(investmentId, month) {
 }
 
 // ---------------- Nợ phải trả / Khoản phải thu (manual ledger, lives on Tài sản only) ----------------
+// "Nợ phải trả" (payable, direction='payable') and "Khoản phải thu"
+// (receivable, direction='receivable') share the same table/adjustment
+// mechanics, but the wording must not be the same: a payable is money the
+// household OWES, a receivable is money owed TO the household (someone
+// else's loan, a refund still coming, etc.) — calling both "dư nợ" (debt
+// balance) on a receivable reads backwards. Every label below picks its
+// wording from the debt's own direction instead of one generic string.
+const DEBT_DIR_LABEL = {
+  payable: { increase: 'Tăng dư nợ', decrease: 'Giảm dư nợ', balance: 'Dư nợ hiện tại', opening: 'Dư nợ ban đầu', counterparty: 'Chủ nợ / người liên quan' },
+  receivable: { increase: 'Cho vay/ghi nhận thêm', decrease: 'Thu hồi nợ', balance: 'Số tiền còn phải thu hiện tại', opening: 'Số tiền cho vay/phải thu ban đầu', counterparty: 'Người vay / liên quan' }
+};
 function openDebt(id = '', direction = 'payable') {
   const d = id ? F.debts().find(x => x.id === id) : null;
   const dir = d?.direction || direction;
   modal(id ? 'Sửa khoản nợ' : (dir === 'payable' ? 'Thêm khoản nợ phải trả' : 'Thêm khoản phải thu'), `<div class="form-grid">
     <div class="field full"><label>Tên khoản nợ</label><input name="name" value="${esc(d?.name || '')}" placeholder="VD: Vay mua xe" required autofocus></div>
     <div class="field"><label>Loại</label><select name="direction" id="debtDirection"><option value="payable" ${dir === 'payable' ? 'selected' : ''}>Nợ phải trả</option><option value="receivable" ${dir === 'receivable' ? 'selected' : ''}>Khoản phải thu</option></select></div>
-    <div class="field"><label>Chủ nợ / người liên quan</label><input name="counterparty" value="${esc(d?.counterparty || '')}"></div>
+    <div class="field"><label id="debtCounterpartyLabel">${esc(DEBT_DIR_LABEL[dir].counterparty)}</label><input name="counterparty" value="${esc(d?.counterparty || '')}"></div>
     <div class="field"><label>Tiền tệ</label><select name="currency"><option value="JPY" ${(d?.currency || state.base) === 'JPY' ? 'selected' : ''}>JPY</option><option value="VND" ${(d?.currency || state.base) === 'VND' ? 'selected' : ''}>VND</option></select></div>
-    <div class="field"><label>Dư nợ ban đầu</label><input name="opening_amount" type="number" min="0" step="1" value="${esc(d?.opening_amount ?? 0)}"></div>
+    <div class="field"><label id="debtOpeningLabel">${esc(DEBT_DIR_LABEL[dir].opening)}</label><input name="opening_amount" type="number" min="0" step="1" value="${esc(d?.opening_amount ?? 0)}"></div>
     <div class="field"><label>Ngày bắt đầu</label><input name="start_date" type="date" value="${esc(d?.start_date || '')}"></div>
     <div class="field"><label>Ngày đáo hạn</label><input name="due_date" type="date" value="${esc(d?.due_date || '')}"></div>
     <div class="field"><label>Lãi suất (%/năm, nếu có)</label><input name="interest_rate" type="number" min="0" step="0.01" value="${esc(d?.interest_rate ?? '')}"></div>
     <div class="field full"><label>Ghi chú</label><input name="note" value="${esc(d?.note || '')}" placeholder="Tùy chọn"></div>
   </div>`, fd => api.debtLedger('save', { ...fd, id: id || null }), id ? 'Lưu' : 'Tạo');
+  const dirEl = $('#debtDirection');
+  dirEl.onchange = () => {
+    const lbl = DEBT_DIR_LABEL[dirEl.value];
+    $('#debtCounterpartyLabel').textContent = lbl.counterparty;
+    $('#debtOpeningLabel').textContent = lbl.opening;
+  };
 }
 async function deleteDebt(id) {
   if (!confirm('Xóa khoản nợ này? Chỉ xóa được khi chưa có lịch sử điều chỉnh.')) return;
@@ -594,17 +611,21 @@ function openDebtColumnManager(direction) {
   const title = direction === 'receivable' ? 'Khoản phải thu' : 'Nợ phải trả';
   const items = direction === 'receivable' ? F.receivables() : F.payables();
   infoModal(`Quản lý · ${esc(title)}`, `
-    <div class="list">${items.map(d => `<div class="tx"><div class="tx-main"><strong>${esc(d.name)}</strong><span>${[d.counterparty, d.due_date ? `Đáo hạn ${String(d.due_date).slice(0, 10)}` : ''].filter(Boolean).map(esc).join(' · ')}${(d.counterparty || d.due_date) ? ' · ' : ''}${money(F.debtBalance(d), d.currency)}</span></div>
-      <div class="tx-actions"><button class="btn sm" ${act('reopenAfterModal', 'openDebt', d.id, d.direction)}>Sửa</button><button class="btn sm" ${act('deleteDebt', d.id)}>Xóa</button></div></div>`).join('') || `<div class="empty compact">Chưa có ${esc(direction === 'receivable' ? 'khoản phải thu' : 'khoản nợ')}</div>`}</div>
+    <div class="list">${items.map(d => {
+      const meta = [d.counterparty ? esc(d.counterparty) : '', d.due_date ? `<span class="due-date-tag">Đáo hạn ${esc(String(d.due_date).slice(0, 10))}</span>` : ''].filter(Boolean).join(' · ');
+      return `<div class="tx"><div class="tx-main"><strong>${esc(d.name)}</strong><span>${meta}${meta ? ' · ' : ''}${money(F.debtBalance(d), d.currency)}</span></div>
+      <div class="tx-actions"><button class="btn sm" ${act('reopenAfterModal', 'openDebt', d.id, d.direction)}>Sửa</button><button class="btn sm" ${act('deleteDebt', d.id)}>Xóa</button></div></div>`;
+    }).join('') || `<div class="empty compact">Chưa có ${esc(direction === 'receivable' ? 'khoản phải thu' : 'khoản nợ')}</div>`}</div>
     <div class="row mt-14 wrap"><button class="btn primary" ${act('reopenAfterModal', 'openDebt', '', direction)}>＋ Thêm</button></div>`);
 }
 function openDebtAdjustment(debtId, direction = 'increase', id = '') {
   const d = F.debts().find(x => x.id === debtId); if (!d) return toast('Không tìm thấy khoản nợ.', true);
   const existing = id ? F.debtAdjustmentsFor(d).find(x => x.id === id) : null;
   const dir = existing?.direction || direction;
-  modal(existing ? 'Sửa lần điều chỉnh' : (dir === 'increase' ? `Tăng dư nợ · ${d.name}` : `Giảm dư nợ · ${d.name}`), `<div class="form-grid">
-    <div class="field full"><label>${esc(d.name)}</label><input value="${esc(money(F.debtBalance(d), d.currency))}" disabled><small>Dư nợ hiện tại</small></div>
-    <div class="field"><label>Loại</label><select name="direction" id="debtAdjDirection"><option value="increase" ${dir === 'increase' ? 'selected' : ''}>Tăng dư nợ</option><option value="decrease" ${dir === 'decrease' ? 'selected' : ''}>Giảm dư nợ</option></select></div>
+  const lbl = DEBT_DIR_LABEL[d.direction];
+  modal(existing ? 'Sửa lần điều chỉnh' : `${dir === 'increase' ? lbl.increase : lbl.decrease} · ${d.name}`, `<div class="form-grid">
+    <div class="field full"><label>${esc(d.name)}</label><input value="${esc(money(F.debtBalance(d), d.currency))}" disabled><small>${esc(lbl.balance)}</small></div>
+    <div class="field"><label>Loại</label><select name="direction" id="debtAdjDirection"><option value="increase" ${dir === 'increase' ? 'selected' : ''}>${esc(lbl.increase)}</option><option value="decrease" ${dir === 'decrease' ? 'selected' : ''}>${esc(lbl.decrease)}</option></select></div>
     <div class="field"><label>Số tiền</label><input name="amount" type="number" min="1" step="1" value="${esc(existing?.amount || '')}" required autofocus></div>
     <div class="field"><label>Ngày</label><input name="adjustment_date" type="date" value="${esc(existing?.adjustment_date || localToday())}" required></div>
     <div class="field full"><label>Ghi chú</label><input name="note" value="${esc(existing?.note || '')}" placeholder="Tùy chọn"></div>
@@ -620,7 +641,13 @@ async function deleteDebtAdjustment(id, debtId) {
   } catch (e) { toast(e.message, true); }
 }
 function debtAdjustmentRow(x) {
-  return `<div class="tx"><div class="tx-main"><strong class="${x.direction === 'increase' ? 'red' : 'green'}">${x.direction === 'increase' ? '+' : '−'}${money(x.amount)}</strong><span>${esc(String(x.adjustment_date).slice(0, 10))}${x.note ? ` · ${esc(x.note)}` : ''}</span></div>
+  // Red/green only makes sense for a payable (owing more is bad, paying it
+  // off is good) — a receivable growing or being collected is never a loss
+  // to the household either way, so it stays neutral instead of flipping
+  // the same red/green to mean the opposite thing.
+  const debt = F.debts().find(d => d.id === x.debt_id);
+  const cls = debt?.direction === 'receivable' ? '' : (x.direction === 'increase' ? 'red' : 'green');
+  return `<div class="tx"><div class="tx-main"><strong class="${cls}">${x.direction === 'increase' ? '+' : '−'}${money(x.amount)}</strong><span>${esc(String(x.adjustment_date).slice(0, 10))}${x.note ? ` · ${esc(x.note)}` : ''}</span></div>
     <div class="tx-actions"><button class="btn sm" ${act('reopenAfterModal', 'openDebtAdjustment', x.debt_id, x.direction, x.id)}>Sửa</button><button class="btn sm" ${act('deleteDebtAdjustment', x.id, x.debt_id)}>Xóa</button></div></div>`;
 }
 function openDebtAdjustmentHistory(debtId) {
@@ -628,16 +655,17 @@ function openDebtAdjustmentHistory(debtId) {
   const rows = F.debtAdjustmentsFor(d).slice().sort((x, y) => String(y.adjustment_date).localeCompare(String(x.adjustment_date)));
   const months = [...new Set(rows.map(x => monthKey(x.adjustment_date)))].sort().reverse();
   const years = [...new Set(rows.map(x => yearKey(x.adjustment_date)))].sort().reverse();
+  const lbl = DEBT_DIR_LABEL[d.direction];
   infoModal(`Lịch sử · ${esc(d.name)}`, `
-    ${(d.counterparty || d.due_date) ? `<p class="note">${[d.counterparty ? `Đối tác: ${esc(d.counterparty)}` : '', d.due_date ? `Đáo hạn: ${esc(String(d.due_date).slice(0, 10))}` : ''].filter(Boolean).join(' · ')}</p>` : ''}
+    ${(d.counterparty || d.due_date) ? `<p class="note">${[d.counterparty ? `${esc(lbl.counterparty)}: ${esc(d.counterparty)}` : '', d.due_date ? `<span class="due-date-tag">Đáo hạn: ${esc(String(d.due_date).slice(0, 10))}</span>` : ''].filter(Boolean).join(' · ')}</p>` : ''}
     <div class="form-grid">
       <div class="field"><label>Lọc theo tháng</label><select id="debtAdjFilterMonth"><option value="">Tất cả</option>${months.map(m => `<option value="${m}">${fmtMonthKey(m)}</option>`).join('')}</select></div>
       <div class="field"><label>Lọc theo năm</label><select id="debtAdjFilterYear"><option value="">Tất cả</option>${years.map(y => `<option value="${y}">${y}</option>`).join('')}</select></div>
     </div>
     <div class="list mt-10" id="debtAdjHistList">${rows.map(debtAdjustmentRow).join('') || '<div class="empty compact">Chưa có lần điều chỉnh nào.</div>'}</div>
     <div class="row mt-14 wrap">
-      <button class="btn primary" ${act('reopenAfterModal', 'openDebtAdjustment', debtId, 'increase')}>Tăng dư nợ</button>
-      <button class="btn" ${act('reopenAfterModal', 'openDebtAdjustment', debtId, 'decrease')}>Giảm dư nợ</button>
+      <button class="btn primary" ${act('reopenAfterModal', 'openDebtAdjustment', debtId, 'increase')}>${esc(lbl.increase)}</button>
+      <button class="btn" ${act('reopenAfterModal', 'openDebtAdjustment', debtId, 'decrease')}>${esc(lbl.decrease)}</button>
       <button class="btn" ${act('reopenAfterModal', 'openDebt', debtId, d.direction)}>Sửa</button>
       <button class="btn" ${act('reopenAfterModal', 'openRecurringManager', 'debt', debtId)}>🔁 Định kỳ</button>
     </div>`);

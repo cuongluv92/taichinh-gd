@@ -51,6 +51,7 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 .muted{color:var(--text-dim)}
 .green,.positive{color:var(--positive)}
 .red,.negative{color:var(--negative)}
+.due-date-tag{background:var(--accent-dim);color:var(--accent);padding:1px 6px;border-radius:var(--radius-sm);font-weight:600}
 .amber{color:var(--accent)}
 
 /* ---------- Buttons ---------- */
