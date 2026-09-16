@@ -20,13 +20,16 @@ function investmentRow(inv) {
   const val = F.investmentCurrentValue(inv);
   return `<button class="money-line" ${act('openInvestmentEventHistory', inv.id)}><span class="line-label">${esc(inv.name)}<small>${esc(INVESTMENT_KIND_LABEL[inv.kind] || '')}</small></span><strong>${money(val, inv.currency)}</strong></button>`;
 }
+function debtRowMeta(d) {
+  return esc([d.counterparty, d.due_date ? `Đáo hạn ${String(d.due_date).slice(0, 10)}` : ''].filter(Boolean).join(' · '));
+}
 function receivableRow(d) {
-  const bal = F.debtBalance(d);
-  return `<button class="money-line" ${act('openDebtAdjustmentHistory', d.id)}><span class="line-label">${esc(d.name)}${d.counterparty ? `<small>${esc(d.counterparty)}</small>` : ''}</span><strong class="green">${money(bal, d.currency)}</strong></button>`;
+  const bal = F.debtBalance(d), meta = debtRowMeta(d);
+  return `<button class="money-line" ${act('openDebtAdjustmentHistory', d.id)}><span class="line-label">${esc(d.name)}${meta ? `<small>${meta}</small>` : ''}</span><strong class="green">${money(bal, d.currency)}</strong></button>`;
 }
 function payableRow(d) {
-  const bal = F.debtBalance(d);
-  return `<button class="money-line" ${act('openDebtAdjustmentHistory', d.id)}><span class="line-label">${esc(d.name)}${d.counterparty ? `<small>${esc(d.counterparty)}</small>` : ''}</span><strong class="red">${money(bal, d.currency)}</strong></button>`;
+  const bal = F.debtBalance(d), meta = debtRowMeta(d);
+  return `<button class="money-line" ${act('openDebtAdjustmentHistory', d.id)}><span class="line-label">${esc(d.name)}${meta ? `<small>${meta}</small>` : ''}</span><strong class="red">${money(bal, d.currency)}</strong></button>`;
 }
 
 function assetColumn() {

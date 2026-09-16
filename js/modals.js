@@ -531,7 +531,7 @@ function openDebtColumnManager(direction) {
   const title = direction === 'receivable' ? 'Khoản phải thu' : 'Nợ phải trả';
   const items = direction === 'receivable' ? F.receivables() : F.payables();
   infoModal(`Quản lý · ${esc(title)}`, `
-    <div class="list">${items.map(d => `<div class="tx"><div class="tx-main"><strong>${esc(d.name)}</strong><span>${d.counterparty ? esc(d.counterparty) + ' · ' : ''}${money(F.debtBalance(d), d.currency)}</span></div>
+    <div class="list">${items.map(d => `<div class="tx"><div class="tx-main"><strong>${esc(d.name)}</strong><span>${[d.counterparty, d.due_date ? `Đáo hạn ${String(d.due_date).slice(0, 10)}` : ''].filter(Boolean).map(esc).join(' · ')}${(d.counterparty || d.due_date) ? ' · ' : ''}${money(F.debtBalance(d), d.currency)}</span></div>
       <div class="tx-actions"><button class="btn sm" ${act('reopenAfterModal', 'openDebt', d.id, d.direction)}>Sửa</button><button class="btn sm" ${act('deleteDebt', d.id)}>Xóa</button></div></div>`).join('') || `<div class="empty compact">Chưa có ${esc(direction === 'receivable' ? 'khoản phải thu' : 'khoản nợ')}</div>`}</div>
     <div class="row mt-14 wrap"><button class="btn primary" ${act('reopenAfterModal', 'openDebt', '', direction)}>＋ Thêm</button></div>`);
 }
@@ -566,6 +566,7 @@ function openDebtAdjustmentHistory(debtId) {
   const months = [...new Set(rows.map(x => monthKey(x.adjustment_date)))].sort().reverse();
   const years = [...new Set(rows.map(x => yearKey(x.adjustment_date)))].sort().reverse();
   infoModal(`Lịch sử · ${esc(d.name)}`, `
+    ${(d.counterparty || d.due_date) ? `<p class="note">${[d.counterparty ? `Đối tác: ${esc(d.counterparty)}` : '', d.due_date ? `Đáo hạn: ${esc(String(d.due_date).slice(0, 10))}` : ''].filter(Boolean).join(' · ')}</p>` : ''}
     <div class="form-grid">
       <div class="field"><label>Lọc theo tháng</label><select id="debtAdjFilterMonth"><option value="">Tất cả</option>${months.map(m => `<option value="${m}">${fmtMonthKey(m)}</option>`).join('')}</select></div>
       <div class="field"><label>Lọc theo năm</label><select id="debtAdjFilterYear"><option value="">Tất cả</option>${years.map(y => `<option value="${y}">${y}</option>`).join('')}</select></div>
