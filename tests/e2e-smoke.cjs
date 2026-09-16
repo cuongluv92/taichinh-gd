@@ -367,6 +367,13 @@ const RPC_HANDLERS = {
   results.push(`DASHBOARD shows "năm nay so với năm trước" section: ${dashboardText.includes('Năm nay so với năm trước')}`);
   const dashColHeights = await rowHeightsEqual('#content .dash-col');
   results.push(`DASHBOARD laid out as 2 equal-height columns (not one long stack): ${dashColHeights.ok} ${JSON.stringify(dashColHeights.heights)}`);
+  results.push(`  "Từng tháng trong năm" (redundant second chart showing the same thu/chi-per-month info) is gone: ${!dashboardText.includes('Từng tháng trong năm')}`);
+  results.push(`  "Thu nhập vs Chi tiêu" defaults to 12 tháng gần nhất: ${await page.locator('.chart-card', { hasText: 'Thu nhập vs Chi tiêu' }).locator('button:has-text("12 tháng")').getAttribute('class').then(c => c.includes('primary'))}`);
+  await page.click('.chart-card button:has-text("Theo năm")');
+  await page.waitForTimeout(100);
+  results.push(`CLICK "Theo năm" on Thu nhập vs Chi tiêu: switches mode, chart still renders: ${await page.locator('.chart-card', { hasText: 'Thu nhập vs Chi tiêu' }).locator('p').textContent().then(t => t.includes('Theo năm')) && await page.locator('.chart-card svg').count() > 0}`);
+  await page.click('.chart-card button:has-text("12 tháng")');
+  await page.waitForTimeout(100);
   await page.screenshot({ path: path.join(SHOT_DIR, 'shot-dashboard-1440.png'), fullPage: true });
 
   // ---- Chi tiêu: 4 columns now (Nợ removed) ----

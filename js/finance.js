@@ -431,10 +431,9 @@ function sparklineSvg(data, w = 108, h = 28, sharedMax = 0) {
   }).join('');
   return `<svg class="sparkline" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="Xu hướng">${bars}</svg>`;
 }
-function trendSvg() {
-  const keys = Array.from({ length: 12 }, (_, i) => addMonths(state.month, i - 11));
+function trendSvg(keys = Array.from({ length: 12 }, (_, i) => addMonths(state.month, i - 11))) {
   const data = keys.map(k => { const s = F.statsFor(k); return { k, inc: s.income, exp: s.expense }; });
-  const W = 720, H = 150, pad = 26, max = Math.max(1, ...data.flatMap(x => [x.inc, x.exp])), group = (W - pad * 2) / 12, bw = 12;
+  const W = 720, H = 150, pad = 26, max = Math.max(1, ...data.flatMap(x => [x.inc, x.exp])), group = (W - pad * 2) / keys.length, bw = 12;
   const grid = [0, 1, 2, 3].map(i => { const y = pad + (H - pad * 2) * i / 3; return `<line class="v-gridline" x1="${pad}" y1="${y}" x2="${W - pad}" y2="${y}"/>`; }).join('');
   const bars = data.map((x, i) => {
     const cx = pad + group * i + group / 2, ih = (H - pad * 2) * x.inc / max, eh = (H - pad * 2) * x.exp / max;

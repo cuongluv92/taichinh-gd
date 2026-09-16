@@ -69,16 +69,17 @@ function categoryTrendHtml() {
   }).join('')}</div>`;
 }
 
-// "Tổng theo từng tháng trong năm" — the 12 calendar months of the selected
-// year (Jan..Dec), not a rolling window, so it reads as one fiscal year.
-function yearMonthlyHtml() {
-  const year = state.month.slice(0, 4);
-  const rows = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`).map(k => ({ k, s: F.statsFor(k) }));
-  const max = Math.max(1, ...rows.flatMap(r => [r.s.income, r.s.expense]));
-  return `<div class="list">${rows.map(r => `<div class="category-trend-row">
-    <div class="tx-main"><strong>${fmtMonthKey(r.k)}</strong><span>Thu ${money(r.s.income)} · Chi ${money(r.s.expense)}</span></div>
-    ${sparklineSvg([{ month: 'Thu', value: r.s.income }, { month: 'Chi', value: r.s.expense }], 60, 28, max)}
-  </div>`).join('')}</div>`;
+// "Thu nhập vs Chi tiêu" toggle — was two separate charts (a rolling
+// 12-month bar chart AND a full Jan..Dec calendar-year list) showing the
+// same thu/chi-per-month information twice. One chart now: "12 tháng gần
+// nhất" (rolling, default) or "Theo năm" (Jan..Dec of the currently
+// selected month's year, via the month-picker at the top) — same toggle
+// pattern as Tài sản's "Lịch sử theo tháng" chart.
+let dashboardChartMode = 12;
+function setDashboardChartMode(mode) { dashboardChartMode = mode; render(); }
+function dashboardChartMonthKeys() {
+  if (dashboardChartMode === 'year') return F.yearMonthKeys(state.month.slice(0, 4));
+  return F.trailingMonthKeys(12);
 }
 // "Năm nay so với năm trước" — year-to-date through the selected month, so
 // both years compare the same number of months.
@@ -147,10 +148,15 @@ function renderDashboard() {
           <div class="compare-row"><div class="label"><b>Thẻ & trả góp</b></div><div>—</div><div>${money(s.card)}</div><div>${yoy(s.card, prevYearStats.card)}</div></div>
         </div>
       </section>
-      <section class="card section chart-card"><div class="section-head"><div><h2>Thu nhập vs Chi tiêu</h2><p>12 tháng gần nhất</p></div></div>${trendSvg()}</section>
-      <section class="card section">
-        <div class="section-head"><div><h2>Từng tháng trong năm ${state.month.slice(0, 4)}</h2><p>Thu / chi theo từng tháng</p></div></div>
-        ${yearMonthlyHtml()}
+      <section class="card section chart-card">
+        <div class="section-head">
+          <div><h2>Thu nhập vs Chi tiêu</h2><p>${dashboardChartMode === 'year' ? `Theo năm ${state.month.slice(0, 4)}` : '12 tháng gần nhất'}</p></div>
+          <div class="row">
+            <button class="btn sm ${dashboardChartMode === 12 ? 'primary' : ''}" ${act('setDashboardChartMode', 12)}>12 tháng</button>
+            <button class="btn sm ${dashboardChartMode === 'year' ? 'primary' : ''}" ${act('setDashboardChartMode', 'year')}>Theo năm</button>
+          </div>
+        </div>
+        ${trendSvg(dashboardChartMonthKeys())}
       </section>
     </div>
     <div class="dash-col">
@@ -178,4 +184,4 @@ function renderDashboard() {
   </div>`;
 }
 
-Object.assign(window, { renderDashboard, incomePlanTotal, txListHtml });
+Object.assign(window, { renderDashboard, incomePlanTotal, txListHtml, setDashboardChartMode });
