@@ -314,9 +314,9 @@ F.expenseByCategory = txs => {
 };
 // Chi cố định (Nhà ở, bảo hiểm...) is the same amount every month by
 // definition — a "trend" chart for it is just a flat line, not useful.
-// Only chi biến động categories move month to month, and Thẻ & trả góp
-// (its own ledger, not a category transaction) is just as "biến động" —
-// so it gets folded in here as its own synthetic series instead.
+// Only chi biến động categories move month to month, and Thẻ / Trả góp
+// (their own ledger, not category transactions) are just as "biến động" —
+// so they get folded in here as two separate synthetic series instead.
 F.categoryTrendData = (count = 5, months = 6, month = state.month) => {
   const keys = Array.from({ length: months }, (_, i) => addMonths(month, i - (months - 1)));
   const byId = new Map();
@@ -330,8 +330,10 @@ F.categoryTrendData = (count = 5, months = 6, month = state.month) => {
       entry.name = c.name || t.category_name || entry.name;
     });
   });
-  const cardSeries = keys.map(k => F.cardColumnTotalBase(k));
-  if (cardSeries.some(v => v > 0)) byId.set('_card', { name: 'Thẻ & trả góp', values: cardSeries });
+  const cardSeries = keys.map(k => F.cardExpenseTotalBase(k));
+  if (cardSeries.some(v => v > 0)) byId.set('_card', { name: 'Thẻ', values: cardSeries });
+  const instSeries = keys.map(k => F.installmentTotalBase(k));
+  if (instSeries.some(v => v > 0)) byId.set('_installment', { name: 'Trả góp', values: instSeries });
   return [...byId.entries()]
     .map(([id, v]) => ({ id, name: v.name, total: v.values.reduce((s, x) => s + x, 0), series: keys.map((k, i) => ({ month: k, value: v.values[i] })) }))
     .sort((a, b) => b.total - a.total)
@@ -370,10 +372,17 @@ F.cardExpenseMonthTotal = (cardId, month = state.month) => F.cardExpensesFor(car
   .filter(x => monthKey(x.expense_date) === month).reduce((s, x) => s + n(x.amount), 0);
 F.installmentMonthDue = (cardId, month = state.month) => F.installmentsFor(cardId)
   .reduce((s, inst) => s + (inst.schedule || []).filter(row => monthKey(row.payment_month) === month).reduce((s2, row) => s2 + n(row.principal_amount) + n(row.fee_amount), 0), 0);
+// Per-card combined total (used by the per-card ledger drill-down modal,
+// which still shows one card's Chi tiêu thẻ + Trả góp together).
 F.cardColumnMonthTotal = (cardId, month = state.month) => F.cardExpenseMonthTotal(cardId, month) + F.installmentMonthDue(cardId, month);
-F.cardColumnTotalBase = (month = state.month) => F.cardAccounts()
+// Thẻ and Trả góp are separate board columns/KPI figures now — each sums
+// its own thing across every card, never blended into one combined number.
+F.cardExpenseTotalBase = (month = state.month) => F.cardAccounts()
   .filter(c => (c.currency || state.base) === state.base)
-  .reduce((s, c) => s + F.cardColumnMonthTotal(c.id, month), 0);
+  .reduce((s, c) => s + F.cardExpenseMonthTotal(c.id, month), 0);
+F.installmentTotalBase = (month = state.month) => F.cardAccounts()
+  .filter(c => (c.currency || state.base) === state.base)
+  .reduce((s, c) => s + F.installmentMonthDue(c.id, month), 0);
 
 // ---------------- Monthly stats (Tổng quan / Chi tiêu) ----------------
 // Month-only, cash-basis-of-record report. Never reads accounts, never
@@ -390,21 +399,24 @@ F.statsFor = (month = state.month) => {
       else (F.expenseKind(t) === 'fixed' ? fixed += amt : variable += amt);
     }
   });
-  const card = F.cardColumnTotalBase(month);
-  const expense = fixed + variable + card;
-  return { income, fixed, variable, exceptional, card, expense, remaining: income - expense };
+  const card = F.cardExpenseTotalBase(month);
+  const installment = F.installmentTotalBase(month);
+  const expense = fixed + variable + card + installment;
+  return { income, fixed, variable, exceptional, card, installment, expense, remaining: income - expense };
 };
 
 // ---------------- Charts ----------------
 const CHART_COLORS = ['#f5a623', '#30d17f', '#5aa9e6', '#c67af0', '#f25c66', '#3fd2c7', '#8b93a1', '#e6a5c1', '#e2c94f', '#8fd15e'];
-// Solid pie (not a ring). Only the 3 biggest lát cắt get their name written
-// directly inside the slice, rotated to run along its own radial direction
-// (like a spoke) — no external leader lines to manage/collide.
+// Solid pie (not a ring). Any lát cắt that's a real share of the whole pie
+// (>5% of total) gets its name written directly inside the slice, rotated
+// to run along its own radial direction (like a spoke) — no external
+// leader lines to manage/collide, no fixed top-N cap (adapts to however
+// many categories actually clear 5% this month). A name too long for one
+// line wraps onto a second line instead of spilling past the wedge.
 function donutSvg(items) {
   const clean = items.filter(x => n(x.value) > 0);
   const total = clean.reduce((s, x) => s + n(x.value), 0);
   if (!total) return `<div class="empty compact">Chưa có dữ liệu</div>`;
-  const trim = label => label.length > 12 ? label.slice(0, 11) + '…' : label;
   const cx = 95, cy = 95, r = 80;
   const pointAt = (theta, radius) => [cx + radius * Math.sin(theta), cy - radius * Math.cos(theta)];
   let cum = 0;
@@ -415,16 +427,29 @@ function donutSvg(items) {
     const [sx, sy] = pointAt(startA, r), [ex, ey] = pointAt(endA, r);
     const large = frac > 0.5 ? 1 : 0;
     const path = `M${cx},${cy} L${sx.toFixed(2)},${sy.toFixed(2)} A${r},${r} 0 ${large} 1 ${ex.toFixed(2)},${ey.toFixed(2)} Z`;
-    return { path, color: CHART_COLORS[i % CHART_COLORS.length], midA, label: x.label };
+    return { path, color: CHART_COLORS[i % CHART_COLORS.length], midA, frac, label: x.label };
   });
-  // clean/slices already come in descending value order (see dashboard.js),
-  // so the first 3 ARE the 3 biggest — the only ones with room to actually
-  // fit a readable label inside their own wedge.
-  const labels = slices.slice(0, 3).map(s => {
+  // A label wider than ~8 chars would run past its own wedge at this font
+  // size, so it breaks onto a second line instead (at a word boundary when
+  // there is one, otherwise a hard character split).
+  const wrapLabel = label => {
+    if (label.length <= 8) return [label];
+    const words = label.split(' ');
+    if (words.length === 1) return [label.slice(0, 8), label.slice(8, 16)].filter(Boolean);
+    let l1 = '', l2 = '';
+    words.forEach(w => {
+      if (!l1 || (l1 + ' ' + w).trim().length <= 8) l1 = (l1 + ' ' + w).trim();
+      else l2 = (l2 + ' ' + w).trim();
+    });
+    return l2 ? [l1, l2] : [l1];
+  };
+  const labels = slices.filter(s => s.frac > 0.05).map(s => {
     const [lx, ly] = pointAt(s.midA, r * 0.62);
     let deg = ((s.midA * 180 / Math.PI - 90) % 360 + 360) % 360;
     if (deg > 90 && deg < 270) deg -= 180;
-    return `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" transform="rotate(${deg.toFixed(1)} ${lx.toFixed(1)} ${ly.toFixed(1)})" text-anchor="middle" dominant-baseline="middle" font-size="10.5" font-weight="600" fill="#fff" stroke="rgba(0,0,0,.55)" stroke-width="3" paint-order="stroke" stroke-linejoin="round">${esc(trim(s.label))}</text>`;
+    const lines = wrapLabel(s.label), lineH = 10.5;
+    const tspans = lines.map((ln, i) => `<tspan x="${lx.toFixed(1)}" dy="${i === 0 ? -(lines.length - 1) * lineH / 2 : lineH}">${esc(ln)}</tspan>`).join('');
+    return `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" transform="rotate(${deg.toFixed(1)} ${lx.toFixed(1)} ${ly.toFixed(1)})" text-anchor="middle" dominant-baseline="middle" font-size="9.5" font-weight="600" fill="#fff" stroke="rgba(0,0,0,.45)" stroke-width="1.4" paint-order="stroke" stroke-linejoin="round">${tspans}</text>`;
   });
   const wedgePaths = slices.map(s => `<path d="${s.path}" fill="${s.color}" stroke="var(--panel)" stroke-width="0.75"/>`).join('');
   return `<div class="donut-wrap"><svg viewBox="0 0 190 190" width="190" height="190" role="img" aria-label="Biểu đồ tròn">${wedgePaths}${labels.join('')}</svg></div>`;

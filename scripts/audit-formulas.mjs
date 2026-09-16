@@ -50,6 +50,7 @@ vm.createContext(sandbox);
 vm.runInContext(financeSrc, sandbox, { filename: 'finance.js' });
 const F = sandbox.F;
 const legendHtml = sandbox.legendHtml;
+const donutSvg = sandbox.donutSvg;
 
 function resetState(patch) { Object.assign(sandbox.state, BASE_STATE, patch); }
 function acc(id, type, currency, opening = 0, extra = {}) { return { id, account_type: type, currency, opening_balance: opening, is_active: true, ...extra }; }
@@ -77,7 +78,7 @@ function debtAdj(id, debtId, direction, amount, date) { return { id, debt_id: de
 }
 
 // ---------------------------------------------------------------------
-// B. Rakuten card expense ¥10,000: only Thẻ & trả góp increases. C. Trả góp.
+// B. Rakuten card expense ¥10,000: only Thẻ (not Trả góp) increases.
 // ---------------------------------------------------------------------
 {
   resetState({
@@ -85,11 +86,35 @@ function debtAdj(id, debtId, direction, amount, date) { return { id, debt_id: de
     cardExpenses: [{ id: 'ce1', card_account_id: 'rakuten', entry_mode: 'detail', expense_date: '2026-09-15', amount: 10000 }]
   });
   let s = F.statsFor('2026-09');
-  eq('B. Thẻ & trả góp increases by exactly 10,000', s.card, 10000);
+  eq('B. Thẻ increases by exactly 10,000', s.card, 10000);
+  eq('B. Trả góp stays 0 — a card expense never bleeds into it', s.installment, 0);
   eq('B. Tổng chi tiêu tháng = the card amount only', s.expense, 10000);
   sandbox.state.cardExpenses[0].amount = 12000;
   s = F.statsFor('2026-09');
   eq('B. After editing to 12,000, Tổng chi tiêu tháng = 12,000', s.expense, 12000);
+}
+
+// ---------------------------------------------------------------------
+// C. Thẻ and Trả góp are independent columns/figures — a card with BOTH a
+//    direct card expense AND an installment kỳ due the same month must
+//    report them as two separate numbers that still add up to the same
+//    Tổng chi tiêu tháng total as before the split.
+// ---------------------------------------------------------------------
+{
+  resetState({
+    accounts: [acc('rakuten', 'credit', 'JPY', 0)],
+    cardExpenses: [{ id: 'ce1', card_account_id: 'rakuten', entry_mode: 'detail', expense_date: '2026-09-05', amount: 10000 }],
+    installments: [{
+      id: 'inst1', card_account_id: 'rakuten', name: 'iPhone', principal_amount: 120000, total_installments: 12,
+      schedule: [{ id: 'sch1', installment_no: 9, payment_month: '2026-09-01', principal_amount: 10000, fee_amount: 0, is_paid: false }]
+    }]
+  });
+  const s = F.statsFor('2026-09');
+  eq('C. Thẻ = the card expense only (10,000)', s.card, 10000);
+  eq('C. Trả góp = the installment kỳ due only (10,000)', s.installment, 10000);
+  eq('C. Tổng chi tiêu tháng sums both (20,000), unchanged by the split', s.expense, 20000);
+  const trend = F.categoryTrendData(5, 1, '2026-09');
+  eq('C. categoryTrendData reports Thẻ and Trả góp as two separate rows', trend.filter(r => r.name === 'Thẻ' || r.name === 'Trả góp').length, 2);
 }
 
 // ---------------------------------------------------------------------
@@ -342,9 +367,10 @@ function debtAdj(id, debtId, direction, amount, date) { return { id, debt_id: de
 // ---------------------------------------------------------------------
 // "Xu hướng theo danh mục" (Tổng quan) must exclude chi cố định — a fixed
 // category is the same amount every month by definition, so a trend chart
-// for it is just a flat line. Thẻ & trả góp isn't a category transaction
-// at all (own ledger), but moves month to month just like chi biến động,
-// so it's folded in as its own synthetic row instead.
+// for it is just a flat line. Thẻ isn't a category transaction at all (own
+// ledger), but moves month to month just like chi biến động, so it's
+// folded in as its own synthetic row instead (Trả góp likewise, when a kỳ
+// is actually due that month — see case C above).
 // ---------------------------------------------------------------------
 {
   resetState({
@@ -368,8 +394,9 @@ function debtAdj(id, debtId, direction, amount, date) { return { id, debt_id: de
   const names = fixedTrend.map(r => r.name);
   eq('Chi cố định ("Nhà ở") never appears in Xu hướng theo danh mục', names.includes('Nhà ở'), false);
   eq('Chi biến động ("Ăn uống") still appears', names.includes('Ăn uống'), true);
-  eq('Thẻ & trả góp appears as its own row even though it is not a category transaction', names.includes('Thẻ & trả góp'), true);
-  eq('Thẻ & trả góp row total matches the card expense (8,000)', fixedTrend.find(r => r.name === 'Thẻ & trả góp')?.total, 8000);
+  eq('Thẻ appears as its own row even though it is not a category transaction', names.includes('Thẻ'), true);
+  eq('Thẻ row total matches the card expense (8,000)', fixedTrend.find(r => r.name === 'Thẻ')?.total, 8000);
+  eq('Trả góp does NOT appear this month — no installment kỳ was due', names.includes('Trả góp'), false);
 }
 
 // ---------------------------------------------------------------------
@@ -417,6 +444,24 @@ function debtAdj(id, debtId, direction, amount, date) { return { id, debt_id: de
   const html = legendHtml([{ label: 'Nhà ở', value: 30 }, { label: 'Ăn uống', value: 70 }]);
   eq('legendHtml % is share of the composition total (30/100=30.0%), not of an outside thu nhập figure', /30\.0%/.test(html), true);
   eq('legendHtml % for the other slice is 70.0% — both slices together sum to exactly 100%', /70\.0%/.test(html), true);
+}
+
+// ---------------------------------------------------------------------
+// donutSvg labels any slice that's a real share of the pie (>5% of total),
+// not a fixed top-N count — so a 4th/5th category can still get a label
+// when it clears 5%, and a tiny sliver just under 5% never does. A label
+// too long for one line wraps into a second <tspan> line instead of being
+// silently truncated.
+// ---------------------------------------------------------------------
+{
+  const svg = donutSvg([
+    { label: 'Nhà ở', value: 40 }, { label: 'Ăn uống', value: 25 }, { label: 'Đi lại', value: 20 },
+    { label: 'Giải trí', value: 10 }, { label: 'Vặt', value: 4.9 }, { label: 'Khác', value: 0.1 }
+  ]);
+  eq('donutSvg labels a 4th slice that clears 5% (Giải trí=10%)', svg.includes('Giải trí'), true);
+  eq('donutSvg does NOT label a slice just under 5% (Vặt=4.9%)', svg.includes('Vặt'), false);
+  const svgLong = donutSvg([{ label: 'Bảo hiểm sức khỏe', value: 100 }]);
+  eq('donutSvg wraps a long label into 2 <tspan> lines instead of one overflowing line', (svgLong.match(/<tspan/g) || []).length >= 2, true);
 }
 
 // ---------------------------------------------------------------------

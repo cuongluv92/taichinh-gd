@@ -63,22 +63,23 @@ function renderDashboard() {
   const s = F.statsFor(state.month);
   const incomePlan = incomePlanTotal();
   // F.expenseByCategory only sums category-based Chi cố định/Chi biến động
-  // transactions — Thẻ & trả góp is its own independent ledger, never a
-  // category transaction, so it needs to be folded in explicitly as its
-  // own slice for this donut to actually represent 100% of Tổng chi tiêu
-  // tháng (s.expense), matching what the KPI above already breaks down as
-  // "Cố định + Biến động + Thẻ&góp".
+  // transactions — Thẻ and Trả góp are each their own independent ledger,
+  // never a category transaction, so they need to be folded in explicitly
+  // as two separate slices for this donut to actually represent 100% of
+  // Tổng chi tiêu tháng (s.expense), matching what the KPI above already
+  // breaks down as "Cố định + Biến động + Thẻ + Trả góp".
   const expenseComposition = F.expenseByCategory(F.periodTransactions(state.month));
-  if (s.card > 0) expenseComposition.push({ label: 'Thẻ & trả góp', value: s.card });
+  if (s.card > 0) expenseComposition.push({ label: 'Thẻ', value: s.card });
+  if (s.installment > 0) expenseComposition.push({ label: 'Trả góp', value: s.installment });
   expenseComposition.sort((a, b) => b.value - a.value);
   const prevStats = F.statsFor(addMonths(state.month, -1));
-  const hasAnyActivity = (state.transactions || []).some(t => ['income', 'expense'].includes(t.transaction_type)) || s.card > 0;
+  const hasAnyActivity = (state.transactions || []).some(t => ['income', 'expense'].includes(t.transaction_type)) || s.card > 0 || s.installment > 0;
   const ratio = pctText(s.expense, s.income);
 
   return `
   <div class="grid kpi-grid">
     ${kpiCard('Thu nhập tháng', money(s.income), `Kế hoạch ${money(incomePlan)}${momText(s.income, prevStats.income)}`, 'green')}
-    ${kpiCard('Tổng chi tiêu tháng', money(s.expense), `Cố định ${money(s.fixed)} · Biến động ${money(s.variable)} · Thẻ&góp ${money(s.card)}${momText(s.expense, prevStats.expense)}`, '')}
+    ${kpiCard('Tổng chi tiêu tháng', money(s.expense), `Cố định ${money(s.fixed)} · Biến động ${money(s.variable)} · Thẻ ${money(s.card)} · Trả góp ${money(s.installment)}${momText(s.expense, prevStats.expense)}`, '')}
     ${kpiCard('Còn lại trong tháng', signedMoney(s.remaining), 'Thu nhập − Tổng chi tiêu tháng', s.remaining < 0 ? 'red' : 'green')}
     ${kpiCard('Tỷ lệ chi tiêu / thu nhập', ratio, s.exceptional > 0 ? `Chưa tính ${money(s.exceptional)} chi bất thường` : 'Tổng chi tiêu so với thu nhập tháng', s.expense > s.income ? 'red' : '')}
   </div>
@@ -110,7 +111,7 @@ function renderDashboard() {
     </div>
     <div class="dash-col">
       <section class="card section">
-        <div class="section-head"><div><h2>Xu hướng theo danh mục</h2><p>Chi biến động & Thẻ&góp — 5 khoản nhiều nhất tháng này · 6 tháng gần nhất</p></div></div>
+        <div class="section-head"><div><h2>Xu hướng theo danh mục</h2><p>Chi biến động, Thẻ & Trả góp — 5 khoản nhiều nhất tháng này · 6 tháng gần nhất</p></div></div>
         ${categoryTrendHtml()}
       </section>
     </div>

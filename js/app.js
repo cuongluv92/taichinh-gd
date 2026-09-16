@@ -105,7 +105,7 @@ async function changeMonth(delta) {
 
 const VIEW_META = {
   dashboard: ['Tổng quan', 'Thu chi tháng đang chọn — không gồm tài sản, đầu tư'],
-  budget: ['Chi tiêu', 'Thu nhập, chi cố định, chi biến động, thẻ & trả góp, nợ trong tháng'],
+  budget: ['Chi tiêu', 'Thu nhập, chi cố định, chi biến động, thẻ, trả góp, nợ trong tháng'],
   investments: ['Đầu tư', 'Vốn, giá trị hiện tại và lãi/lỗ từng khoản đầu tư'],
   accounts: ['Tài sản', 'Số dư thủ công của tiền mặt, ngân hàng, tiết kiệm — độc lập với Chi tiêu'],
   settings: ['Cài đặt', 'Gia đình, tiền tệ và sao lưu dữ liệu']

@@ -376,17 +376,18 @@ const RPC_HANDLERS = {
   await page.waitForTimeout(100);
   await page.screenshot({ path: path.join(SHOT_DIR, 'shot-dashboard-1440.png'), fullPage: true });
 
-  // ---- Chi tiêu: 4 columns now (Nợ removed) ----
+  // ---- Chi tiêu: 5 columns now (Nợ removed, Thẻ/Trả góp split apart) ----
   await page.click('[data-view="budget"]');
   await page.waitForSelector('.money-board');
   const cols = await page.$$('.money-column');
-  results.push(`BUDGET column count = ${cols.length} (expect 4 — Nợ moved to Tài sản)`);
+  results.push(`BUDGET column count = ${cols.length} (expect 5 — Nợ moved to Tài sản, Thẻ/Trả góp are separate columns)`);
   results.push(`  No ".money-column.debt" exists in Chi tiêu anymore: ${await page.locator('.money-column.debt').count() === 0}`);
   const budgetText = await page.textContent('#content');
-  results.push(`  Thẻ & trả góp column shows the card expense (Rakuten), Chi biến động untouched: ${budgetText.includes('Rakuten')}`);
+  results.push(`  Thẻ column shows the card expense (Rakuten), Chi biến động untouched: ${budgetText.includes('Rakuten')}`);
+  results.push(`  Thẻ and Trả góp are two separate columns, not one combined "Thẻ & trả góp": ${await page.locator('.money-column.credit .money-column-head h3:has-text("Thẻ")').count() === 1 && await page.locator('.money-column.installment .money-column-head h3:has-text("Trả góp")').count() === 1 && !budgetText.includes('Thẻ & trả góp')}`);
   results.push(`  Per-row "Ghi thu/chi thực tế" ("+") buttons removed from Thu nhập/Chi tiêu rows (redundant now that quick-entry prefills): ${await page.locator('.money-column.income .mini-btn, .money-column.fixed .mini-btn, .money-column.variable .mini-btn').count() === 0}`);
   const budgetColHeights = await rowHeightsEqual('.money-board .money-column');
-  results.push(`  All 4 Chi tiêu columns render the same height: ${budgetColHeights.ok} ${JSON.stringify(budgetColHeights.heights)}`);
+  results.push(`  All 5 Chi tiêu columns render the same height: ${budgetColHeights.ok} ${JSON.stringify(budgetColHeights.heights)}`);
   await page.screenshot({ path: path.join(SHOT_DIR, 'shot-budget-1440.png'), fullPage: true });
 
   results.push(`  Mini KPI row (Thu nhập/Tổng chi/Còn lại/Tỷ lệ) shows on Chi tiêu, same labels as Tổng quan: ${await page.locator('.kpi-grid.sm .kpi .label', { hasText: 'Thu nhập tháng' }).count() > 0 && await page.locator('.kpi-grid.sm .kpi .label', { hasText: 'Tổng chi tiêu tháng' }).count() > 0}`);
@@ -397,7 +398,7 @@ const RPC_HANDLERS = {
   // the rounding remainder, bonus is netted OUT of principal_amount first
   // so the whole schedule still sums to exactly principal_amount, and any
   // kỳ can be hand-corrected afterward via "Sửa".
-  await page.click('.money-column.credit .money-line:has-text("Rakuten")');
+  await page.click('.money-column.installment .money-line:has-text("Rakuten")');
   await page.waitForSelector('#modal[open]', { timeout: 1500 });
   await page.click('#modalBody button:has-text("＋ Thêm khoản trả góp")');
   await page.waitForSelector('[name=name]', { timeout: 1500 });
@@ -418,7 +419,7 @@ const RPC_HANDLERS = {
   await page.waitForSelector('#toast.show', { timeout: 1500 }).then(() => results.push('SUBMIT installment with per-month bonus (tháng 7=80,000, tháng 12=150,000): saved - OK')).catch(() => results.push('SUBMIT installment with bonus: no toast - FAIL'));
   await page.waitForTimeout(150);
 
-  await page.click('.money-column.credit .money-line:has-text("Rakuten")');
+  await page.click('.money-column.installment .money-line:has-text("Rakuten")');
   await page.waitForSelector('#modal[open]', { timeout: 1500 });
   const ledgerText = await page.textContent('#modalBody');
   results.push(`  Installment row shows each month's OWN bonus amount (Tháng 7 +¥80,000, Tháng 12 +¥150,000, not the same number twice): ${ledgerText.includes('Tháng 7') && ledgerText.includes('80,000') && ledgerText.includes('Tháng 12') && ledgerText.includes('150,000')}`);
@@ -438,7 +439,7 @@ const RPC_HANDLERS = {
   await page.click('#modalForm [type=submit]');
   await page.waitForSelector('#toast.show', { timeout: 1500 }).then(() => results.push('SUBMIT sửa tay kỳ 2 (90,000): saved - OK')).catch(() => results.push('SUBMIT sửa tay kỳ: no toast - FAIL'));
   await page.waitForTimeout(150);
-  await page.click('.money-column.credit .money-line:has-text("Rakuten")');
+  await page.click('.money-column.installment .money-line:has-text("Rakuten")');
   await page.waitForSelector('#modal[open]', { timeout: 1500 });
   await page.click('#modalBody button:has-text("Xem lịch")');
   await page.waitForTimeout(100);

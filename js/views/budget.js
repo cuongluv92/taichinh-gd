@@ -76,19 +76,31 @@ function expenseColumn(kind, title) {
   });
   return moneyColumn({ title, tone: kind, items, total: `${money(total)} <span class="pct">${pctText(total, basis)}</span>`, settingsAction: act('openColumnSettings', kind), settingsLabel: '⚙ Lập kế hoạch', emptyText: kind === 'fixed' ? 'Chưa có chi cố định' : 'Chưa có chi biến động' });
 }
-// Thẻ & trả góp: card_expenses (detail/lump) + this month's installment
-// schedule due — never category-based, never touches an account balance.
-function creditColumn() {
+// Thẻ và Trả góp are two independent columns now — same underlying ledger
+// (card_expenses detail/lump for Thẻ, installment schedule due for Trả
+// góp) but never blended into one number, never category-based, never
+// touches an account balance.
+function cardColumn() {
   const cards = F.cardAccounts(), basis = F.statsFor(state.month).income;
   let total = 0;
   const items = cards.map(card => {
-    const due = F.cardColumnMonthTotal(card.id, state.month);
+    const due = F.cardExpenseMonthTotal(card.id, state.month);
+    if ((card.currency || state.base) === state.base) total += due;
+    return `<button class="money-line" ${act('openCardLedger', card.id)} aria-label="Xem danh sách ${esc(card.name)}"><span class="line-label">${esc(card.name)}</span><span class="line-amount"><strong class="${due > 0 ? '' : 'muted'}">${money(due, card.currency)}</strong>${(card.currency || state.base) === state.base ? `<span class="pct">${pctText(due, basis)}</span>` : '<span class="pct">ngoại tệ</span>'}</span><span class="line-icon" aria-hidden="true">☰</span></button>`;
+  });
+  return moneyColumn({ title: 'Thẻ', tone: 'credit', items, total: `${money(total)} <span class="pct">${pctText(total, basis)}</span>`, settingsAction: act('openCreditColumnManager'), emptyText: 'Chưa có thẻ tín dụng' });
+}
+function installmentColumn() {
+  const cards = F.cardAccounts(), basis = F.statsFor(state.month).income;
+  let total = 0;
+  const items = cards.map(card => {
+    const due = F.installmentMonthDue(card.id, state.month);
     if ((card.currency || state.base) === state.base) total += due;
     const instCount = F.installmentsFor(card.id).length;
     const note = instCount ? `${instCount} khoản trả góp đang theo dõi` : 'Chưa có khoản trả góp';
-    return `<button class="money-line" ${act('openCardLedger', card.id)} aria-label="Xem danh sách ${esc(card.name)}"><span class="line-label">${esc(card.name)}<small>${esc(note)}</small></span><span class="line-amount"><strong class="${due > 0 ? '' : 'muted'}">${money(due, card.currency)}</strong>${(card.currency || state.base) === state.base ? `<span class="pct">${pctText(due, basis)}</span>` : '<span class="pct">ngoại tệ</span>'}</span><span class="line-icon" aria-hidden="true">☰</span></button>`;
+    return `<button class="money-line" ${act('openCardLedger', card.id)} aria-label="Xem danh sách trả góp ${esc(card.name)}"><span class="line-label">${esc(card.name)}<small>${esc(note)}</small></span><span class="line-amount"><strong class="${due > 0 ? '' : 'muted'}">${money(due, card.currency)}</strong>${(card.currency || state.base) === state.base ? `<span class="pct">${pctText(due, basis)}</span>` : '<span class="pct">ngoại tệ</span>'}</span><span class="line-icon" aria-hidden="true">☰</span></button>`;
   });
-  return moneyColumn({ title: 'Thẻ & trả góp', tone: 'credit', items, total: `${money(total)} <span class="pct">${pctText(total, basis)}</span>`, settingsAction: act('openCreditColumnManager'), emptyText: 'Chưa có thẻ tín dụng' });
+  return moneyColumn({ title: 'Trả góp', tone: 'installment', items, total: `${money(total)} <span class="pct">${pctText(total, basis)}</span>`, settingsAction: act('openCreditColumnManager'), emptyText: 'Chưa có khoản trả góp' });
 }
 function moneyColumn({ title, tone, items, total, settingsAction, settingsLabel = '⚙ Cài đặt', emptyText }) {
   return `<section class="card money-column ${tone}">
@@ -104,7 +116,7 @@ function openCreditColumnManager() {
     const inst = F.installmentsFor(card.id);
     return `<div class="tx"><div class="tx-main"><strong>${esc(card.name)}</strong><span>${esc(card.currency || state.base)}${inst.length ? ` · ${inst.length} khoản trả góp` : ''}</span></div><div class="tx-actions"><button class="btn sm" ${act('reopenAfterModal', 'openCardLedger', card.id)}>Xem danh sách</button></div></div>`;
   }).join('');
-  infoModal('Cài đặt · Thẻ & trả góp', `<p class="note">Chi tiêu bằng thẻ và trả góp chỉ nằm trong cột này — không tự động đưa sang Chi biến động, không tự động trừ tài khoản ngân hàng.</p>
+  infoModal('Cài đặt · Thẻ & Trả góp', `<p class="note">Chi tiêu bằng thẻ và trả góp chỉ nằm trong 2 cột này — không tự động đưa sang Chi biến động, không tự động trừ tài khoản ngân hàng.</p>
     <div class="list">${rows || '<div class="empty compact">Chưa có thẻ tín dụng.</div>'}</div>
     <button class="btn primary mt-14" ${act('reopenAfterModal', 'openCreditCard')}>＋ Thẻ tín dụng mới</button>`);
 }
@@ -114,11 +126,11 @@ function renderBudget() {
   return `<div class="view-head"><div><h2>Tháng ${fmtMonthKey(state.month)}</h2><p>Mỗi cột độc lập — một giao dịch chỉ nằm trong đúng một cột. Nợ được quản lý riêng ở Tài sản. Nhấn một mục để nhập tiền.</p></div></div>
   <div class="grid kpi-grid sm">
     ${kpiCard('Thu nhập tháng', money(s.income), `Kế hoạch ${money(incomePlanTotal())}`, 'green')}
-    ${kpiCard('Tổng chi tiêu tháng', money(s.expense), `Cố định ${money(s.fixed)} · Biến động ${money(s.variable)} · Thẻ&góp ${money(s.card)}`, '')}
+    ${kpiCard('Tổng chi tiêu tháng', money(s.expense), `Cố định ${money(s.fixed)} · Biến động ${money(s.variable)} · Thẻ ${money(s.card)} · Trả góp ${money(s.installment)}`, '')}
     ${kpiCard('Còn lại trong tháng', signedMoney(s.remaining), 'Thu nhập − Tổng chi tiêu tháng', s.remaining < 0 ? 'red' : 'green')}
     ${kpiCard('Tỷ lệ chi tiêu / thu nhập', ratio, s.exceptional > 0 ? `Chưa tính ${money(s.exceptional)} chi bất thường` : 'Tổng chi tiêu so với thu nhập tháng', s.expense > s.income ? 'red' : '')}
   </div>
-  <div class="money-board mt-16">${incomeColumn()}${expenseColumn('fixed', 'Chi cố định')}${expenseColumn('variable', 'Chi biến động')}${creditColumn()}</div>`;
+  <div class="money-board board-5 mt-16">${incomeColumn()}${expenseColumn('fixed', 'Chi cố định')}${expenseColumn('variable', 'Chi biến động')}${cardColumn()}${installmentColumn()}</div>`;
 }
 
 Object.assign(window, { renderBudget, openCreditColumnManager });
