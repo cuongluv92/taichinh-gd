@@ -54,7 +54,11 @@ function incomeColumn() {
 }
 function expenseColumn(kind, title) {
   const cats = F.orderedCategories('expense').filter(c => (kind === 'fixed' ? c.cost_type === 'fixed' : c.cost_type !== 'fixed'));
-  const basis = incomePlanTotal();
+  // % basis is thu nhập THỰC TẾ đã nhận tháng này (F.statsFor().income) —
+  // same figure the "Thu nhập tháng" KPI and "Tỷ lệ chi tiêu/thu nhập" KPI
+  // already use, so every % on this page reads against the same number
+  // instead of silently switching to kế hoạch (planned) income here.
+  const basis = F.statsFor(state.month).income;
   let total = 0;
   const items = cats.map(c => {
     const actual = F.categoryActualBase(c.id, 'expense');
@@ -67,7 +71,7 @@ function expenseColumn(kind, title) {
 // Thẻ & trả góp: card_expenses (detail/lump) + this month's installment
 // schedule due — never category-based, never touches an account balance.
 function creditColumn() {
-  const cards = F.cardAccounts(), basis = incomePlanTotal();
+  const cards = F.cardAccounts(), basis = F.statsFor(state.month).income;
   let total = 0;
   const items = cards.map(card => {
     const due = F.cardColumnMonthTotal(card.id, state.month);
