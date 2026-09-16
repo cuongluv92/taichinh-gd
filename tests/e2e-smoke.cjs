@@ -396,6 +396,9 @@ const RPC_HANDLERS = {
   await page.fill('[name=principal_amount]', '1200000');
   await page.fill('[name=total_installments]', '12');
   await page.fill('[name=purchase_date]', `${MONTH}-01`);
+  results.push(`  Bonus month picker stays collapsed until the toggle is checked: ${!(await page.isVisible('#instBonusFields'))}`);
+  await page.check('#instBonusToggle');
+  results.push(`  Checking the bonus toggle reveals the month picker: ${await page.isVisible('#instBonusFields')}`);
   await page.check('#instBonus7');
   await page.check('#instBonus12');
   await page.fill('#instBonusAmount', '100000');
