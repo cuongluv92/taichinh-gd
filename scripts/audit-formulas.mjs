@@ -274,6 +274,17 @@ function debtAdj(id, debtId, direction, amount, date) { return { id, debt_id: de
 
   const secWithRealized = { ...sec, realized_pl: 5000 };
   eq('CK. Lãi/lỗ tổng (PL) cộng cả phần đã thực hiện: 5,000 (đã) + 10,000 (chưa) = 15,000', F.investmentPL(secWithRealized), 15000);
+
+  // BUGFIX (Đầu tư page "Tổng lãi/lỗ thực tế" KPI): the portfolio total
+  // used to be totalValue-totalCap directly, which drops realized_pl for
+  // any chứng khoán that's ever been sold at a gain/loss (netCapital only
+  // reflects shares still held). The KPI must sum F.investmentPL per
+  // khoản instead — same formula every individual card already uses.
+  const portfolio = [sec, secWithRealized];
+  const wrongPortfolioPL = portfolio.reduce((s, i) => s + F.investmentCurrentValue(i), 0) - portfolio.reduce((s, i) => s + F.investmentNetCapital(i), 0);
+  const correctPortfolioPL = portfolio.reduce((s, i) => s + F.investmentPL(i), 0);
+  eq('Portfolio Tổng lãi/lỗ = tổng F.investmentPL từng khoản (10,000 + 15,000), không phải (totalValue-totalCap)', correctPortfolioPL, 25000);
+  eq('(totalValue-totalCap) một mình sẽ làm mất 5,000 realized_pl — đúng lỗi đã sửa (cho thấy 20,000 thay vì 25,000)', wrongPortfolioPL, 20000);
 }
 
 // ---------------------------------------------------------------------

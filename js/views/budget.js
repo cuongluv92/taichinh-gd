@@ -44,7 +44,11 @@ function openCategoryTransactions(type, categoryId, categoryName) {
 }
 function incomeColumn() {
   const cats = F.orderedCategories('income');
-  const total = cats.reduce((s, c) => { const actual = F.categoryActualBase(c.id, 'income'); return s + (actual > 0 ? actual : n(c.planned_amount)); }, 0);
+  // TỔNG must be thực tế only (matches "Thu nhập tháng" KPI = F.statsFor().income)
+  // — a row still shows its kế hoạch as a muted placeholder when nothing's
+  // logged yet (amountLine's `shown`), but that placeholder must not leak
+  // into the column footer, or the footer stops matching the KPI above it.
+  const total = cats.reduce((s, c) => s + F.categoryActualBase(c.id, 'income'), 0);
   const items = cats.map(c => {
     const actual = F.categoryActualBase(c.id, 'income');
     const line = amountLine('income', n(c.planned_amount), actual, null);
@@ -59,11 +63,15 @@ function expenseColumn(kind, title) {
   // already use, so every % on this page reads against the same number
   // instead of silently switching to kế hoạch (planned) income here.
   const basis = F.statsFor(state.month).income;
+  // TỔNG must be thực tế only (matches "Tổng chi tiêu tháng" KPI's Cố định/
+  // Biến động breakdown = F.statsFor().fixed/variable) — same reasoning as
+  // incomeColumn: a row's own muted kế hoạch placeholder must not leak into
+  // the footer total.
   let total = 0;
   const items = cats.map(c => {
     const actual = F.categoryActualBase(c.id, 'expense');
     const line = amountLine(kind, n(c.planned_amount), actual, basis);
-    total += line.shown;
+    total += actual;
     return `<button class="money-line" ${categoryRowAction('expense', actual, c.id, c.name)}><span class="line-label">${esc(c.name)}${line.sub}</span><span class="line-amount"><strong class="${line.cls}">${money(line.shown)}</strong><span class="pct">${line.pct}</span></span></button>`;
   });
   return moneyColumn({ title, tone: kind, items, total: `${money(total)} <span class="pct">${pctText(total, basis)}</span>`, settingsAction: act('openColumnSettings', kind), settingsLabel: '⚙ Lập kế hoạch', emptyText: kind === 'fixed' ? 'Chưa có chi cố định' : 'Chưa có chi biến động' });

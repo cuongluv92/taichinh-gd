@@ -167,9 +167,16 @@ function renderInvestments() {
   // into its parent via F.investmentCurrentValue()'s rollup, so counting
   // both here would double it.
   const list = F.investments().filter(inv => !inv.parent_investment_id);
-  const totalValue = list.filter(inv => (inv.currency || state.base) === state.base).reduce((s, inv) => s + F.investmentCurrentValue(inv), 0);
-  const totalCap = list.filter(inv => (inv.currency || state.base) === state.base).reduce((s, inv) => s + F.investmentNetCapital(inv), 0);
-  const totalPL = totalValue - totalCap;
+  const baseList = list.filter(inv => (inv.currency || state.base) === state.base);
+  const totalValue = baseList.reduce((s, inv) => s + F.investmentCurrentValue(inv), 0);
+  const totalCap = baseList.reduce((s, inv) => s + F.investmentNetCapital(inv), 0);
+  // NOT totalValue - totalCap: for chứng khoán, F.investmentPL adds back
+  // realized_pl from past sales, since F.investmentNetCapital (quantity ×
+  // avg_cost) only reflects shares still held — selling shares at a gain
+  // shrinks netCapital without ever showing up in (value − cap) again.
+  // Every individual card already uses F.investmentPL; the portfolio KPI
+  // must sum the same per-investment formula, not re-derive its own.
+  const totalPL = baseList.reduce((s, inv) => s + F.investmentPL(inv), 0);
   return `<div class="view-head"><div><h2>Đầu tư</h2><p>Độc lập với Chi tiêu và Tổng quan. Tổng giá trị hiện tại tự động chuyển sang Tài sản → "Tổng đầu tư".</p></div>
     <button class="btn primary" ${act('openInvestmentNew')}>＋ Đầu tư mới</button></div>
   <div class="grid kpi-grid">
