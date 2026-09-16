@@ -32,16 +32,15 @@ function investmentCardOther(inv) {
   const netCap = F.investmentNetCapital(inv), value = F.investmentCurrentValue(inv), pl = F.investmentPL(inv), pct = F.investmentPLPercent(inv);
   return `
     <div class="invest-head">
-      <div class="invest-id"><div class="big">${money(value, inv.currency)}</div><strong>${esc(inv.name)}</strong></div>
-      <div class="card-actions wrap">
-        <button class="btn sm primary" ${act('openInvestmentEvent', inv.id, 'contribution')}>Thêm vốn</button>
-        <button class="btn sm" ${act('openInvestmentEvent', inv.id, 'withdrawal')}>Rút vốn</button>
-        <button class="btn sm" ${act('openInvestmentEvent', inv.id, 'valuation')}>Cập nhật giá trị</button>
-        <button class="btn sm" ${act('openInvestmentEventHistory', inv.id)}>Xem lịch sử</button>
-        <button class="btn sm" ${act('openInvestmentNew', inv.id)}>Sửa</button>
-        <button class="btn sm" ${act('deleteInvestment', inv.id)}>Xóa</button>
-      </div>
+      <div class="big">${money(value, inv.currency)}</div>
+      <button class="btn sm primary" ${act('openInvestmentEvent', inv.id, 'contribution')}>Thêm vốn</button>
+      <button class="btn sm" ${act('openInvestmentEvent', inv.id, 'withdrawal')}>Rút vốn</button>
+      <button class="btn sm" ${act('openInvestmentEvent', inv.id, 'valuation')}>Cập nhật giá trị</button>
+      <button class="btn sm" ${act('openInvestmentEventHistory', inv.id)}>Xem lịch sử</button>
+      <button class="btn sm" ${act('openInvestmentNew', inv.id)}>Sửa</button>
+      <button class="btn sm" ${act('deleteInvestment', inv.id)}>Xóa</button>
     </div>
+    <strong>${esc(inv.name)}</strong>
     <div class="invest-summary"><span>Vốn ròng ${money(netCap, inv.currency)}</span><span class="${pl >= 0 ? 'green' : 'red'}">${pl >= 0 ? '+' : ''}${money(pl, inv.currency)}${pct !== null ? ` (${pct.toFixed(1)}%)` : ''}</span></div>
     ${inv.latest_value_date ? `<small class="muted">Cập nhật ${esc(String(inv.latest_value_date).slice(0, 10))}</small>` : '<small class="muted">Chưa cập nhật giá trị — đang hiện theo vốn ròng</small>'}
     ${simulationWidget(inv)}`;
@@ -76,15 +75,14 @@ function investmentCardNisa(inv) {
       <button class="btn sm" ${act('openInvestmentEvent', inv.id, 'valuation')}>Cập nhật giá trị</button>`;
   return `
     <div class="invest-head">
-      <div class="invest-id"><div class="big">${money(value, inv.currency)}</div><strong>${esc(inv.name)}</strong></div>
-      <div class="card-actions wrap">
-        ${accountActions}
-        <button class="btn sm primary" ${act('openNisaHolding', inv.id)}>＋ Thêm quỹ/ETF</button>
-        <button class="btn sm" ${act('openInvestmentEventHistory', inv.id)}>Xem lịch sử</button>
-        <button class="btn sm" ${act('openInvestmentNew', inv.id)}>Sửa</button>
-        <button class="btn sm" ${act('deleteInvestment', inv.id)}>Xóa</button>
-      </div>
+      <div class="big">${money(value, inv.currency)}</div>
+      ${accountActions}
+      <button class="btn sm primary" ${act('openNisaHolding', inv.id)}>＋ Thêm quỹ/ETF</button>
+      <button class="btn sm" ${act('openInvestmentEventHistory', inv.id)}>Xem lịch sử</button>
+      <button class="btn sm" ${act('openInvestmentNew', inv.id)}>Sửa</button>
+      <button class="btn sm" ${act('deleteInvestment', inv.id)}>Xóa</button>
     </div>
+    <strong>${esc(inv.name)}</strong>
     <div class="invest-summary"><span>Vốn ròng ${money(netCap, inv.currency)}</span><span class="${pl >= 0 ? 'green' : 'red'}">${pl >= 0 ? '+' : ''}${money(pl, inv.currency)}${pct !== null ? ` (${pct.toFixed(1)}%)` : ''}</span></div>
     ${inv.nisa_annual_limit ? `<small class="muted">Hạn mức năm (tham khảo): ${money(inv.nisa_annual_limit, inv.currency)}</small>` : ''}
     ${holdings.length ? `<div class="list mt-6">${holdings.map(nisaHoldingRow).join('')}</div><small class="muted">Giá trị và vốn ròng NISA tính theo tổng các quỹ/ETF bên trên.</small>` : ''}
@@ -95,17 +93,16 @@ function investmentCardSecurities(inv) {
   const value = F.investmentCurrentValue(inv), netCap = F.investmentNetCapital(inv), unrealized = value - netCap, realized = n(inv.realized_pl);
   return `
     <div class="invest-head">
-      <div class="invest-id"><div class="big">${money(value, inv.currency)}</div><strong>${esc(inv.name)}</strong></div>
-      <div class="card-actions wrap">
-        <button class="btn sm primary" ${act('openSecurityTrade', inv.id, 'buy')}>Mua</button>
-        <button class="btn sm" ${act('openSecurityTrade', inv.id, 'sell')}>Bán</button>
-        <button class="btn sm" ${act('openSecurityTrade', inv.id, 'dividend')}>Nhận cổ tức</button>
-        <button class="btn sm" ${act('openSecurityTrade', inv.id, 'valuation')}>Cập nhật giá</button>
-        <button class="btn sm" ${act('openInvestmentEventHistory', inv.id)}>Xem lịch sử</button>
-        <button class="btn sm" ${act('openInvestmentNew', inv.id)}>Sửa</button>
-        <button class="btn sm" ${act('deleteInvestment', inv.id)}>Xóa</button>
-      </div>
+      <div class="big">${money(value, inv.currency)}</div>
+      <button class="btn sm primary" ${act('openSecurityTrade', inv.id, 'buy')}>Mua</button>
+      <button class="btn sm" ${act('openSecurityTrade', inv.id, 'sell')}>Bán</button>
+      <button class="btn sm" ${act('openSecurityTrade', inv.id, 'dividend')}>Nhận cổ tức</button>
+      <button class="btn sm" ${act('openSecurityTrade', inv.id, 'valuation')}>Cập nhật giá</button>
+      <button class="btn sm" ${act('openInvestmentEventHistory', inv.id)}>Xem lịch sử</button>
+      <button class="btn sm" ${act('openInvestmentNew', inv.id)}>Sửa</button>
+      <button class="btn sm" ${act('deleteInvestment', inv.id)}>Xóa</button>
     </div>
+    <strong>${esc(inv.name)}</strong>
     <div class="invest-summary"><span>${n(inv.quantity)} × ${money(inv.current_price ?? inv.avg_cost, inv.currency)}</span><span>Giá vốn TB ${money(inv.avg_cost, inv.currency)}</span></div>
     <div class="invest-summary"><span class="${unrealized >= 0 ? 'green' : 'red'}">Chưa thực hiện ${unrealized >= 0 ? '+' : ''}${money(unrealized, inv.currency)}</span><span class="${realized >= 0 ? 'green' : 'red'}">Đã thực hiện ${realized >= 0 ? '+' : ''}${money(realized, inv.currency)}</span></div>
     ${n(inv.total_dividends) > 0 ? `<small class="muted">Cổ tức đã nhận: ${money(inv.total_dividends, inv.currency)}</small>` : ''}
@@ -115,17 +112,16 @@ function investmentCardSavings(inv) {
   const netCap = F.investmentNetCapital(inv), value = F.investmentCurrentValue(inv), interestReceived = n(inv.total_interest);
   return `
     <div class="invest-head">
-      <div class="invest-id"><div class="big">${money(value, inv.currency)}</div><strong>${esc(inv.name)}</strong></div>
-      <div class="card-actions wrap">
-        <button class="btn sm primary" ${act('openInvestmentEvent', inv.id, 'contribution')}>Gửi thêm</button>
-        <button class="btn sm" ${act('openInvestmentEvent', inv.id, 'withdrawal')}>Rút tiền</button>
-        <button class="btn sm" ${act('openInvestmentEvent', inv.id, 'interest')}>Nhận lãi</button>
-        <button class="btn sm" ${act('openInvestmentEvent', inv.id, 'valuation')}>Cập nhật số dư</button>
-        <button class="btn sm" ${act('openInvestmentEventHistory', inv.id)}>Xem lịch sử</button>
-        <button class="btn sm" ${act('openInvestmentNew', inv.id)}>Sửa</button>
-        <button class="btn sm" ${act('deleteInvestment', inv.id)}>Xóa</button>
-      </div>
+      <div class="big">${money(value, inv.currency)}</div>
+      <button class="btn sm primary" ${act('openInvestmentEvent', inv.id, 'contribution')}>Gửi thêm</button>
+      <button class="btn sm" ${act('openInvestmentEvent', inv.id, 'withdrawal')}>Rút tiền</button>
+      <button class="btn sm" ${act('openInvestmentEvent', inv.id, 'interest')}>Nhận lãi</button>
+      <button class="btn sm" ${act('openInvestmentEvent', inv.id, 'valuation')}>Cập nhật số dư</button>
+      <button class="btn sm" ${act('openInvestmentEventHistory', inv.id)}>Xem lịch sử</button>
+      <button class="btn sm" ${act('openInvestmentNew', inv.id)}>Sửa</button>
+      <button class="btn sm" ${act('deleteInvestment', inv.id)}>Xóa</button>
     </div>
+    <strong>${esc(inv.name)}</strong>
     <div class="invest-summary"><span>Gốc + góp thêm ${money(netCap, inv.currency)}</span><span class="green">Lãi thực nhận +${money(interestReceived, inv.currency)}</span></div>
     <small class="muted">${esc(inv.bank_name || '')}${inv.interest_rate_annual ? ` · ${inv.interest_rate_annual}%/năm` : ''}${inv.interest_payment_method ? ` · ${esc(INTEREST_METHOD_LABEL[inv.interest_payment_method] || inv.interest_payment_method)}` : ''}${inv.term_end_date ? ` · Đáo hạn ${esc(String(inv.term_end_date).slice(0, 10))}` : ''}</small>
     ${planStatusWidget(inv)}
