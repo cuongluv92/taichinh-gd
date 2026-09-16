@@ -36,7 +36,7 @@ function debtConvertedEstimate(d, bal) {
   if ((d.currency || state.base) === state.base) return '';
   const converted = F.convertToBase(bal, d.currency);
   if (converted == null) return '<small class="muted">Chưa đặt tỷ giá quy đổi ở Cài đặt</small>';
-  return `<small class="muted">≈ ${money(converted, state.base)} (đã tính vào Tổng)</small>`;
+  return `<small class="muted">≈ ${money(converted, state.base)}</small>`;
 }
 function receivableRow(d) {
   const bal = F.debtBalance(d), meta = debtRowMeta(d);

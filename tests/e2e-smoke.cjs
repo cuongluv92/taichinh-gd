@@ -791,7 +791,7 @@ const RPC_HANDLERS = {
   const tongNoAfterRate = await page.locator('.kpi').filter({ has: page.locator('.label', { hasText: 'Tổng nợ' }) }).locator('.value').textContent();
   results.push(`  Sau khi đặt tỷ giá, Tổng nợ cộng thêm phần quy đổi VND (¥1,279,762 = 1,250,000 + 5,000,000/168), không còn dừng ở ¥1,250,000: ${tongNoAfterRate.includes('1,279,762')}`);
   const debtColumnTextAfterRate = await page.textContent('.money-column.debt');
-  results.push(`  Dòng "Vay chị Hoa" giờ ghi rõ khoản quy đổi đã tính vào Tổng, không còn nhắc "chưa đặt tỷ giá": ${debtColumnTextAfterRate.includes('đã tính vào Tổng') && !debtColumnTextAfterRate.includes('Chưa đặt tỷ giá')}`);
+  results.push(`  Dòng "Vay chị Hoa" giờ hiện số quy đổi (≈), không còn nhắc "chưa đặt tỷ giá": ${debtColumnTextAfterRate.includes('29,762') && !debtColumnTextAfterRate.includes('Chưa đặt tỷ giá')}`);
 
   const csvBtn = await page.$('button:has-text("Xuất CSV")');
   if (csvBtn) {
