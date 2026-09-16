@@ -19,17 +19,17 @@ function compareText(cur, prev, label) {
 const momText = (cur, prev) => compareText(cur, prev, 'tháng trước');
 const yoyText = (cur, prev) => compareText(cur, prev, 'cùng kỳ năm trước');
 
-function categoryTrendHtml() {
-  const rows = F.categoryTrendData(5, 6);
-  if (!rows.length) return '<div class="empty">Chưa có giao dịch thực tế trong tháng này.</div>';
-  const sharedMax = Math.max(1, ...rows.flatMap(r => r.series.map(x => x.value)));
-  return `<div class="list">${rows.map(r => {
-    const cur = r.series[r.series.length - 1].value, prev = r.series[r.series.length - 2]?.value || 0;
-    return `<div class="category-trend-row">
-      <div class="tx-main"><strong>${esc(r.name)}</strong><span>${money(cur)}${momText(cur, prev)}</span></div>
-      ${sparklineSvg(r.series, 108, 28, sharedMax)}
-    </div>`;
-  }).join('')}</div>`;
+// Same slices as "Cơ cấu chi tiêu tháng" (expenseComposition), plus one
+// more: "Còn dư" — the unspent leftover (s.remaining) — so this pie's
+// total is the FULL thu nhập tháng (100%), not just what got spent. Only
+// added when remaining > 0 (a negative remaining/overspend has no "dư"
+// slice to show; donutSvg already drops non-positive values on its own).
+function incomeAllocationHtml(expenseComposition, remaining) {
+  const items = expenseComposition.slice();
+  if (remaining > 0) items.push({ label: 'Còn dư', value: remaining });
+  items.sort((a, b) => b.value - a.value);
+  if (!items.length) return '<div class="empty">Chưa có giao dịch thực tế trong tháng này.</div>';
+  return `<div class="donut-layout">${donutSvg(items)}${legendHtml(items)}</div>`;
 }
 
 // "Thu nhập vs Chi tiêu" toggle — was two separate charts (a rolling
@@ -117,8 +117,8 @@ function renderDashboard() {
     </div>
     <div class="dash-col">
       <section class="card section">
-        <div class="section-head"><div><h2>Xu hướng theo danh mục</h2><p>Chi biến động, Thẻ & Trả góp — 5 khoản nhiều nhất tháng này · 6 tháng gần nhất</p></div></div>
-        ${categoryTrendHtml()}
+        <div class="section-head"><div><h2>Phân bổ thu nhập tháng</h2><p>${fmtMonthKey(state.month)} — gồm cả phần Còn dư chưa dùng</p></div></div>
+        ${incomeAllocationHtml(expenseComposition, s.remaining)}
       </section>
     </div>
   </div>`;

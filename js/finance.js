@@ -312,33 +312,6 @@ F.expenseByCategory = txs => {
   });
   return [...map.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
 };
-// Chi cố định (Nhà ở, bảo hiểm...) is the same amount every month by
-// definition — a "trend" chart for it is just a flat line, not useful.
-// Only chi biến động categories move month to month, and Thẻ / Trả góp
-// (their own ledger, not category transactions) are just as "biến động" —
-// so they get folded in here as two separate synthetic series instead.
-F.categoryTrendData = (count = 5, months = 6, month = state.month) => {
-  const keys = Array.from({ length: months }, (_, i) => addMonths(month, i - (months - 1)));
-  const byId = new Map();
-  keys.forEach((k, idx) => {
-    F.periodTransactions(k).filter(t => F.baseTx(t) && t.transaction_type === 'expense' && !F.isExceptional(t) && F.expenseKind(t) !== 'fixed').forEach(t => {
-      const c = F.categoryVersionAt(t.category_id, t.transaction_date);
-      const id = t.category_id || `_${c.name || t.category_name || 'Khác'}`;
-      if (!byId.has(id)) byId.set(id, { name: c.name || t.category_name || 'Khác', values: Array(months).fill(0) });
-      const entry = byId.get(id);
-      entry.values[idx] += F.baseAmount(t);
-      entry.name = c.name || t.category_name || entry.name;
-    });
-  });
-  const cardSeries = keys.map(k => F.cardExpenseTotalBase(k));
-  if (cardSeries.some(v => v > 0)) byId.set('_card', { name: 'Thẻ', values: cardSeries });
-  const instSeries = keys.map(k => F.installmentTotalBase(k));
-  if (instSeries.some(v => v > 0)) byId.set('_installment', { name: 'Trả góp', values: instSeries });
-  return [...byId.entries()]
-    .map(([id, v]) => ({ id, name: v.name, total: v.values.reduce((s, x) => s + x, 0), series: keys.map((k, i) => ({ month: k, value: v.values[i] })) }))
-    .sort((a, b) => b.total - a.total)
-    .slice(0, count);
-};
 // ---------------- FX (JPY -> VND, manual current rate only) ----------------
 F.fxRate = () => { const r = n(state.reporting?.jpy_vnd_rate); return r > 0 ? r : null; };
 F.toVND = (amount, currency) => {
@@ -474,15 +447,6 @@ function legendHtml(items, incomeBasis = null) {
   }).join('');
   return `<div class="chart-legend">${head}${rows}</div>`;
 }
-function sparklineSvg(data, w = 108, h = 28, sharedMax = 0) {
-  const max = Math.max(1, sharedMax, ...data.map(x => n(x.value)));
-  const slot = w / data.length, bw = Math.max(1, slot - 2);
-  const bars = data.map((x, i) => {
-    const bh = Math.max(1, (h - 2) * n(x.value) / max);
-    return `<rect x="${(i * slot).toFixed(1)}" y="${(h - bh).toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="1.5"><title>${esc(x.month)}: ${money(x.value)}</title></rect>`;
-  }).join('');
-  return `<svg class="sparkline" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="Xu hướng">${bars}</svg>`;
-}
 // "49.5万" (÷10,000, 1 decimal) for JPY — the household's primary currency
 // and the only one this chart's month-label lines are sized for. VND falls
 // back to a "tr"/"k" (triệu/nghìn) shorthand instead.
@@ -571,4 +535,4 @@ function multiLineSvg(rows, series) {
   const legend = `<div class="chart-legend">${series.map((s, i) => { const ci = CHART_COLORS.indexOf(s.color); return `<div><span><i class="legend-dot legend-c${ci >= 0 ? ci : i % 10}"></i>${esc(s.label)}</span></div>`; }).join('')}</div>`;
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Lịch sử tài sản theo tháng">${grid}${lines}${labels}</svg>${legend}`;
 }
-Object.assign(window, { CHART_COLORS, donutSvg, legendHtml, sparklineSvg, trendSvg, barChartSvg, multiLineSvg });
+Object.assign(window, { CHART_COLORS, donutSvg, legendHtml, trendSvg, barChartSvg, multiLineSvg });

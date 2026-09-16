@@ -116,8 +116,6 @@ function debtAdj(id, debtId, direction, amount, date) { return { id, debt_id: de
   eq('C. Thẻ = the card expense only (10,000)', s.card, 10000);
   eq('C. Trả góp = the installment kỳ due only (10,000)', s.installment, 10000);
   eq('C. Tổng chi tiêu tháng sums both (20,000), unchanged by the split', s.expense, 20000);
-  const trend = F.categoryTrendData(5, 1, '2026-09');
-  eq('C. categoryTrendData reports Thẻ and Trả góp as two separate rows', trend.filter(r => r.name === 'Thẻ' || r.name === 'Trả góp').length, 2);
 }
 
 // ---------------------------------------------------------------------
@@ -349,57 +347,6 @@ function debtAdj(id, debtId, direction, amount, date) { return { id, debt_id: de
   });
   eq('September still resolves to the old 280,000 plan', F.categoryVersionAt('salary', '2026-09-20').planned_amount, 280000);
   eq('October resolves to the new 300,000 plan', F.categoryVersionAt('salary', '2026-10-02').planned_amount, 300000);
-}
-{
-  resetState({
-    categories: [{ id: 'eat1', direction: 'expense', cost_type: 'variable', name: 'Ăn uống ngoài', is_active: true }],
-    categoryVersions: [
-      { category_id: 'eat1', effective_month: '2026-07-01', name: 'Ăn uống', cost_type: 'variable' },
-      { category_id: 'eat1', effective_month: '2026-09-01', name: 'Ăn uống ngoài', cost_type: 'variable' }
-    ],
-    fullTransactions: [
-      tx({ category_id: 'eat1', transaction_type: 'expense', amount: 40000, transaction_date: '2026-07-15' }),
-      tx({ category_id: 'eat1', transaction_type: 'expense', amount: 50000, transaction_date: '2026-09-15' })
-    ]
-  });
-  const trend = F.categoryTrendData(5, 3, '2026-09');
-  eq('Renamed category collapses to exactly one trend row, not two', trend.length, 1);
-  eq('Row label uses the current name', trend[0]?.name, 'Ăn uống ngoài');
-}
-
-// ---------------------------------------------------------------------
-// "Xu hướng theo danh mục" (Tổng quan) must exclude chi cố định — a fixed
-// category is the same amount every month by definition, so a trend chart
-// for it is just a flat line. Thẻ isn't a category transaction at all (own
-// ledger), but moves month to month just like chi biến động, so it's
-// folded in as its own synthetic row instead (Trả góp likewise, when a kỳ
-// is actually due that month — see case C above).
-// ---------------------------------------------------------------------
-{
-  resetState({
-    accounts: [acc('card1', 'credit', 'JPY')],
-    categories: [
-      { id: 'rent1', direction: 'expense', cost_type: 'fixed', name: 'Nhà ở', is_active: true },
-      { id: 'eat2', direction: 'expense', cost_type: 'variable', name: 'Ăn uống', is_active: true }
-    ],
-    categoryVersions: [
-      { category_id: 'rent1', effective_month: '2026-01-01', name: 'Nhà ở', cost_type: 'fixed' },
-      { category_id: 'eat2', effective_month: '2026-01-01', name: 'Ăn uống', cost_type: 'variable' }
-    ],
-    fullTransactions: [
-      tx({ category_id: 'rent1', transaction_type: 'expense', amount: 95000, transaction_date: '2026-09-27' }),
-      tx({ category_id: 'eat2', transaction_type: 'expense', amount: 40000, transaction_date: '2026-09-15' })
-    ],
-    cardExpenses: [{ id: 'ce1', card_account_id: 'card1', expense_date: '2026-09-10', amount: 8000 }],
-    installments: []
-  });
-  const fixedTrend = F.categoryTrendData(5, 1, '2026-09');
-  const names = fixedTrend.map(r => r.name);
-  eq('Chi cố định ("Nhà ở") never appears in Xu hướng theo danh mục', names.includes('Nhà ở'), false);
-  eq('Chi biến động ("Ăn uống") still appears', names.includes('Ăn uống'), true);
-  eq('Thẻ appears as its own row even though it is not a category transaction', names.includes('Thẻ'), true);
-  eq('Thẻ row total matches the card expense (8,000)', fixedTrend.find(r => r.name === 'Thẻ')?.total, 8000);
-  eq('Trả góp does NOT appear this month — no installment kỳ was due', names.includes('Trả góp'), false);
 }
 
 // ---------------------------------------------------------------------

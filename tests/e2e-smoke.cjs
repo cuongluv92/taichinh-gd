@@ -365,6 +365,7 @@ const RPC_HANDLERS = {
   results.push(`  NISA / investment name never appears on Tổng quan: ${!dashboardText.includes('NISA')}`);
   results.push(`DASHBOARD shows month-over-month comparison text: ${dashboardText.includes('so với tháng trước') || dashboardText.includes('Bằng tháng trước')}`);
   results.push(`DASHBOARD shows "năm nay so với năm trước" section: ${dashboardText.includes('Năm nay so với năm trước')}`);
+  results.push(`  "Xu hướng theo danh mục" is gone, replaced by "Phân bổ thu nhập tháng" (with a "Còn dư" slice for unspent income): ${!dashboardText.includes('Xu hướng theo danh mục') && dashboardText.includes('Phân bổ thu nhập tháng') && dashboardText.includes('Còn dư')}`);
   const dashColHeights = await rowHeightsEqual('#content .dash-col');
   results.push(`DASHBOARD laid out as 2 equal-height columns (not one long stack): ${dashColHeights.ok} ${JSON.stringify(dashColHeights.heights)}`);
   results.push(`  "Từng tháng trong năm" (redundant second chart showing the same thu/chi-per-month info) is gone: ${!dashboardText.includes('Từng tháng trong năm')}`);
