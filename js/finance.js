@@ -312,11 +312,16 @@ F.expenseByCategory = txs => {
   });
   return [...map.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
 };
+// Chi cố định (Nhà ở, bảo hiểm...) is the same amount every month by
+// definition — a "trend" chart for it is just a flat line, not useful.
+// Only chi biến động categories move month to month, and Thẻ & trả góp
+// (its own ledger, not a category transaction) is just as "biến động" —
+// so it gets folded in here as its own synthetic series instead.
 F.categoryTrendData = (count = 5, months = 6, month = state.month) => {
   const keys = Array.from({ length: months }, (_, i) => addMonths(month, i - (months - 1)));
   const byId = new Map();
   keys.forEach((k, idx) => {
-    F.periodTransactions(k).filter(t => F.baseTx(t) && t.transaction_type === 'expense' && !F.isExceptional(t)).forEach(t => {
+    F.periodTransactions(k).filter(t => F.baseTx(t) && t.transaction_type === 'expense' && !F.isExceptional(t) && F.expenseKind(t) !== 'fixed').forEach(t => {
       const c = F.categoryVersionAt(t.category_id, t.transaction_date);
       const id = t.category_id || `_${c.name || t.category_name || 'Khác'}`;
       if (!byId.has(id)) byId.set(id, { name: c.name || t.category_name || 'Khác', values: Array(months).fill(0) });
@@ -325,23 +330,13 @@ F.categoryTrendData = (count = 5, months = 6, month = state.month) => {
       entry.name = c.name || t.category_name || entry.name;
     });
   });
+  const cardSeries = keys.map(k => F.cardColumnTotalBase(k));
+  if (cardSeries.some(v => v > 0)) byId.set('_card', { name: 'Thẻ & trả góp', values: cardSeries });
   return [...byId.entries()]
     .map(([id, v]) => ({ id, name: v.name, total: v.values.reduce((s, x) => s + x, 0), series: keys.map((k, i) => ({ month: k, value: v.values[i] })) }))
     .sort((a, b) => b.total - a.total)
     .slice(0, count);
 };
-F.biggestCategoryMover = (month = state.month, prevMonth = addMonths(month, -1)) => {
-  const cur = new Map(F.expenseByCategory(F.periodTransactions(month)).map(x => [x.label, x.value]));
-  const prev = new Map(F.expenseByCategory(F.periodTransactions(prevMonth)).map(x => [x.label, x.value]));
-  const names = new Set([...cur.keys(), ...prev.keys()]);
-  let best = null;
-  names.forEach(name => {
-    const diff = (cur.get(name) || 0) - (prev.get(name) || 0);
-    if (!best || Math.abs(diff) > Math.abs(best.diff)) best = { name, diff, current: cur.get(name) || 0, previous: prev.get(name) || 0 };
-  });
-  return best;
-};
-
 // ---------------- FX (JPY -> VND, manual current rate only) ----------------
 F.fxRate = () => { const r = n(state.reporting?.jpy_vnd_rate); return r > 0 ? r : null; };
 F.toVND = (amount, currency) => {
@@ -415,12 +410,21 @@ function donutSvg(items, size = 168, thickness = 22) {
   }).join('');
   return `<div class="donut-wrap"><svg viewBox="0 0 160 160" width="${size}" height="${size}" role="img" aria-label="Biểu đồ tròn"><circle cx="80" cy="80" r="${r}" fill="none" stroke="var(--panel-3)" stroke-width="${thickness}"/>${circles}</svg></div>`;
 }
-// Percent of each slice is always share-of-the-donut (items sum to 100%),
-// matching what the donut itself visually draws — it used to be computed
-// against thu nhập instead, which never added up to 100% across slices.
-function legendHtml(items) {
+// First % is always share-of-the-donut (items sum to 100%), matching what
+// the donut itself visually draws — it used to be computed against thu
+// nhập instead, which never added up to 100% across slices. Passing
+// incomeBasis adds a SECOND, separate % column (share of thu nhập tháng)
+// alongside it — two different questions ("how much of my spending is
+// this" vs "how much of my income is this"), not one blended number.
+function legendHtml(items, incomeBasis = null) {
   const total = items.reduce((s, x) => s + n(x.value), 0);
-  return `<div class="chart-legend">${items.filter(x => n(x.value) > 0).map((x, i) => `<div><span class="legend-label"><i class="legend-dot legend-c${i % 10}"></i>${esc(x.label)}</span><strong>${money(x.value)}</strong><small class="legend-pct">${total > 0 ? pctText(x.value, total) : ''}</small></div>`).join('')}</div>`;
+  const head = incomeBasis != null ? `<div class="chart-legend-head"><span class="legend-label"></span><span class="legend-pct">% Chi</span><span class="legend-pct">% Thu</span></div>` : '';
+  const rows = items.filter(x => n(x.value) > 0).map((x, i) => {
+    const pctExpense = total > 0 ? pctText(x.value, total) : '';
+    const pctIncome = incomeBasis == null ? '' : `<small class="legend-pct">${incomeBasis > 0 ? pctText(x.value, incomeBasis) : '—'}</small>`;
+    return `<div><span class="legend-label"><i class="legend-dot legend-c${i % 10}"></i>${esc(x.label)}</span><strong>${money(x.value)}</strong><small class="legend-pct">${pctExpense}</small>${pctIncome}</div>`;
+  }).join('');
+  return `<div class="chart-legend">${head}${rows}</div>`;
 }
 function sparklineSvg(data, w = 108, h = 28, sharedMax = 0) {
   const max = Math.max(1, sharedMax, ...data.map(x => n(x.value)));

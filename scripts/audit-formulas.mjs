@@ -340,6 +340,39 @@ function debtAdj(id, debtId, direction, amount, date) { return { id, debt_id: de
 }
 
 // ---------------------------------------------------------------------
+// "Xu hướng theo danh mục" (Tổng quan) must exclude chi cố định — a fixed
+// category is the same amount every month by definition, so a trend chart
+// for it is just a flat line. Thẻ & trả góp isn't a category transaction
+// at all (own ledger), but moves month to month just like chi biến động,
+// so it's folded in as its own synthetic row instead.
+// ---------------------------------------------------------------------
+{
+  resetState({
+    accounts: [acc('card1', 'credit', 'JPY')],
+    categories: [
+      { id: 'rent1', direction: 'expense', cost_type: 'fixed', name: 'Nhà ở', is_active: true },
+      { id: 'eat2', direction: 'expense', cost_type: 'variable', name: 'Ăn uống', is_active: true }
+    ],
+    categoryVersions: [
+      { category_id: 'rent1', effective_month: '2026-01-01', name: 'Nhà ở', cost_type: 'fixed' },
+      { category_id: 'eat2', effective_month: '2026-01-01', name: 'Ăn uống', cost_type: 'variable' }
+    ],
+    fullTransactions: [
+      tx({ category_id: 'rent1', transaction_type: 'expense', amount: 95000, transaction_date: '2026-09-27' }),
+      tx({ category_id: 'eat2', transaction_type: 'expense', amount: 40000, transaction_date: '2026-09-15' })
+    ],
+    cardExpenses: [{ id: 'ce1', card_account_id: 'card1', expense_date: '2026-09-10', amount: 8000 }],
+    installments: []
+  });
+  const fixedTrend = F.categoryTrendData(5, 1, '2026-09');
+  const names = fixedTrend.map(r => r.name);
+  eq('Chi cố định ("Nhà ở") never appears in Xu hướng theo danh mục', names.includes('Nhà ở'), false);
+  eq('Chi biến động ("Ăn uống") still appears', names.includes('Ăn uống'), true);
+  eq('Thẻ & trả góp appears as its own row even though it is not a category transaction', names.includes('Thẻ & trả góp'), true);
+  eq('Thẻ & trả góp row total matches the card expense (8,000)', fixedTrend.find(r => r.name === 'Thẻ & trả góp')?.total, 8000);
+}
+
+// ---------------------------------------------------------------------
 // Foreign currency: JPY and VND must never be summed 1:1.
 // ---------------------------------------------------------------------
 {
