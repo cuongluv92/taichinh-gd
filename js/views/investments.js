@@ -54,7 +54,7 @@ function investmentCardOther(inv) {
 // nested under its parent NISA card instead of as its own top-level card.
 function nisaHoldingRow(h) {
   const val = F.investmentCurrentValue(h), pl = F.investmentPL(h), pct = F.investmentPLPercent(h);
-  return `<div class="tx">
+  return `<div class="tx tx-wrap">
     <div class="tx-main"><strong>${esc(h.name)}</strong><span>${h.ticker ? `${esc(h.ticker)} · ` : ''}${n(h.quantity)} × ${money(h.current_price ?? h.avg_cost, h.currency)} (mua TB ${money(h.avg_cost, h.currency)})</span></div>
     <div class="tx-actions wrap">
       <span class="${pl >= 0 ? 'green' : 'red'}">${money(val, h.currency)}${pct !== null ? ` (${pl >= 0 ? '+' : ''}${pct.toFixed(1)}%)` : ''}</span>
