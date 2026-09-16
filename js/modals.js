@@ -223,7 +223,9 @@ async function deleteAccount(id) {
 // Thêm/Xóa a whole account live now; each row's own history modal only
 // handles Tăng/Giảm/Sửa for that one account.
 function openAccountColumnManager() {
-  const items = F.assetAccounts();
+  // All currencies here (not just base) — a foreign-currency account only
+  // sits out of the main board/JPY totals, it still needs a Sửa/Xóa path.
+  const items = F.activeAccounts().filter(a => ['cash', 'bank', 'savings'].includes(a.account_type));
   infoModal('Quản lý · Tiền mặt & ngân hàng', `
     <div class="list">${items.map(a => `<div class="tx"><div class="tx-main"><strong>${esc(a.name)}</strong><span>${esc(ACCOUNT_TYPE_LABEL[a.account_type] || a.account_type)} · ${money(F.accountBalance(a), a.currency)}</span></div>
       <div class="tx-actions"><button class="btn sm" ${act('reopenAfterModal', 'openAccount', a.id)}>Sửa</button><button class="btn sm" ${act('deleteAccount', a.id)}>Xóa</button></div></div>`).join('') || '<div class="empty compact">Chưa có tài khoản</div>'}</div>
