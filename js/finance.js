@@ -397,18 +397,45 @@ F.statsFor = (month = state.month) => {
 
 // ---------------- Charts ----------------
 const CHART_COLORS = ['#f5a623', '#30d17f', '#5aa9e6', '#c67af0', '#f25c66', '#3fd2c7', '#8b93a1', '#e6a5c1', '#e2c94f', '#8fd15e'];
-function donutSvg(items, size = 168, thickness = 22) {
+// Solid pie (not a ring) with CAD-style leader lines pointing out from each
+// lát cắt to its own name, instead of making someone match a color dot in
+// a separate legend back to a slice by eye. Labels for slices on the right
+// half stack top-to-bottom on the right, left-half slices stack on the
+// left — same "external label" convention most pie-chart tools use.
+function donutSvg(items) {
   const clean = items.filter(x => n(x.value) > 0);
   const total = clean.reduce((s, x) => s + n(x.value), 0);
-  const r = 58, c = 2 * Math.PI * r;
   if (!total) return `<div class="empty compact">Chưa có dữ liệu</div>`;
-  let offset = 0;
-  const circles = clean.map((x, i) => {
-    const len = c * n(x.value) / total;
-    const el = `<circle cx="80" cy="80" r="${r}" fill="none" stroke="${CHART_COLORS[i % CHART_COLORS.length]}" stroke-width="${thickness}" stroke-dasharray="${len} ${c - len}" stroke-dashoffset="${-offset}" transform="rotate(-90 80 80)"/>`;
-    offset += len; return el;
-  }).join('');
-  return `<div class="donut-wrap"><svg viewBox="0 0 160 160" width="${size}" height="${size}" role="img" aria-label="Biểu đồ tròn"><circle cx="80" cy="80" r="${r}" fill="none" stroke="var(--panel-3)" stroke-width="${thickness}"/>${circles}</svg></div>`;
+  const trim = label => label.length > 15 ? label.slice(0, 14) + '…' : label;
+  const cx = 170, cy = 95, r = 52;
+  const pointAt = (theta, radius) => [cx + radius * Math.sin(theta), cy - radius * Math.cos(theta)];
+  let cum = 0;
+  const slices = clean.map((x, i) => {
+    const frac = n(x.value) / total;
+    const startA = cum * 2 * Math.PI, endA = (cum + frac) * 2 * Math.PI, midA = (cum + frac / 2) * 2 * Math.PI;
+    cum += frac;
+    const [sx, sy] = pointAt(startA, r), [ex, ey] = pointAt(endA, r);
+    const large = frac > 0.5 ? 1 : 0;
+    const path = `M${cx},${cy} L${sx.toFixed(2)},${sy.toFixed(2)} A${r},${r} 0 ${large} 1 ${ex.toFixed(2)},${ey.toFixed(2)} Z`;
+    return { path, color: CHART_COLORS[i % CHART_COLORS.length], midA, label: x.label };
+  });
+  const right = slices.filter(s => Math.sin(s.midA) >= 0).sort((a, b) => a.midA - b.midA);
+  const left = slices.filter(s => Math.sin(s.midA) < 0).sort((a, b) => a.midA - b.midA);
+  const top = 14, bottom = 176;
+  const slotY = (arr, idx) => arr.length <= 1 ? (top + bottom) / 2 : top + (bottom - top) * idx / (arr.length - 1);
+  const leaders = [];
+  right.forEach((s, idx) => {
+    const [ex, ey] = pointAt(s.midA, r + 3);
+    const ly = slotY(right, idx), lx = 258;
+    leaders.push(`<polyline points="${ex.toFixed(1)},${ey.toFixed(1)} ${(lx - 16).toFixed(1)},${ly.toFixed(1)} ${lx.toFixed(1)},${ly.toFixed(1)}" fill="none" stroke="${s.color}" stroke-width="1.2"/><circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="2" fill="${s.color}"/><text x="${(lx + 4).toFixed(1)}" y="${(ly + 3).toFixed(1)}" font-size="9.5" fill="var(--text-dim)">${esc(trim(s.label))}</text>`);
+  });
+  left.forEach((s, idx) => {
+    const [ex, ey] = pointAt(s.midA, r + 3);
+    const ly = slotY(left, idx), lx = 82;
+    leaders.push(`<polyline points="${ex.toFixed(1)},${ey.toFixed(1)} ${(lx + 16).toFixed(1)},${ly.toFixed(1)} ${lx.toFixed(1)},${ly.toFixed(1)}" fill="none" stroke="${s.color}" stroke-width="1.2"/><circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="2" fill="${s.color}"/><text x="${(lx - 4).toFixed(1)}" y="${(ly + 3).toFixed(1)}" font-size="9.5" text-anchor="end" fill="var(--text-dim)">${esc(trim(s.label))}</text>`);
+  });
+  const wedgePaths = slices.map(s => `<path d="${s.path}" fill="${s.color}" stroke="var(--panel)" stroke-width="1.5"/>`).join('');
+  return `<div class="donut-wrap"><svg viewBox="0 0 340 190" width="340" height="190" role="img" aria-label="Biểu đồ tròn">${wedgePaths}${leaders.join('')}</svg></div>`;
 }
 // First % is always share-of-the-donut (items sum to 100%), matching what
 // the donut itself visually draws — it used to be computed against thu
