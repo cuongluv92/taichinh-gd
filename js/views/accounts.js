@@ -8,43 +8,25 @@
 
 const ACCOUNT_TYPE_LABEL = { cash: 'Tiền mặt', bank: 'Ngân hàng', savings: 'Tiết kiệm' };
 
+// Rows are just the clickable line — no inline +/−/Sửa/Xóa buttons
+// cluttering the board. Every action lives one click away inside the
+// row's own history modal instead (matches Chi tiêu's pattern: the row
+// records/shows, the detail view is where you manage it).
 function assetAccountRow(a) {
   const bal = F.accountBalance(a);
-  return `<div class="money-line-wrap">
-    <button class="money-line" ${act('openAccountAdjustmentHistory', a.id)}><span class="line-label">${esc(a.name)}<small>${esc(ACCOUNT_TYPE_LABEL[a.account_type] || a.account_type)}</small></span><strong class="${bal < 0 ? 'red' : ''}">${money(bal, a.currency)}</strong></button>
-    <button class="mini-btn" type="button" aria-label="Tăng tiền ${esc(a.name)}" title="＋ Tiền" ${act('openAccountAdjustment', a.id, 'increase')}>＋</button>
-    <button class="mini-btn" type="button" aria-label="Giảm tiền ${esc(a.name)}" title="− Tiền" ${act('openAccountAdjustment', a.id, 'decrease')}>−</button>
-    <button class="mini-btn" type="button" aria-label="Sửa ${esc(a.name)}" title="Sửa" ${act('openAccount', a.id)}>✎</button>
-    <button class="mini-btn" type="button" aria-label="Xóa ${esc(a.name)}" title="Xóa" ${act('deleteAccount', a.id)}>🗑</button>
-  </div>`;
+  return `<button class="money-line" ${act('openAccountAdjustmentHistory', a.id)}><span class="line-label">${esc(a.name)}<small>${esc(ACCOUNT_TYPE_LABEL[a.account_type] || a.account_type)}</small></span><strong class="${bal < 0 ? 'red' : ''}">${money(bal, a.currency)}</strong></button>`;
 }
 function investmentRow(inv) {
   const val = F.investmentCurrentValue(inv);
-  return `<div class="money-line-wrap">
-    <button class="money-line" ${act('openInvestmentEventHistory', inv.id)}><span class="line-label">${esc(inv.name)}<small>${esc(INVESTMENT_KIND_LABEL[inv.kind] || '')}</small></span><strong>${money(val, inv.currency)}</strong></button>
-    <button class="mini-btn" type="button" aria-label="Sửa ${esc(inv.name)}" title="Sửa" ${act('openInvestmentNew', inv.id)}>✎</button>
-    <button class="mini-btn" type="button" aria-label="Xóa ${esc(inv.name)}" title="Xóa" ${act('deleteInvestment', inv.id)}>🗑</button>
-  </div>`;
+  return `<button class="money-line" ${act('openInvestmentEventHistory', inv.id)}><span class="line-label">${esc(inv.name)}<small>${esc(INVESTMENT_KIND_LABEL[inv.kind] || '')}</small></span><strong>${money(val, inv.currency)}</strong></button>`;
 }
 function receivableRow(d) {
   const bal = F.debtBalance(d);
-  return `<div class="money-line-wrap">
-    <button class="money-line" ${act('openDebtAdjustmentHistory', d.id)}><span class="line-label">${esc(d.name)}${d.counterparty ? `<small>${esc(d.counterparty)}</small>` : ''}</span><strong class="green">${money(bal, d.currency)}</strong></button>
-    <button class="mini-btn" type="button" aria-label="Tăng ${esc(d.name)}" title="Tăng" ${act('openDebtAdjustment', d.id, 'increase')}>＋</button>
-    <button class="mini-btn" type="button" aria-label="Giảm ${esc(d.name)}" title="Giảm" ${act('openDebtAdjustment', d.id, 'decrease')}>−</button>
-    <button class="mini-btn" type="button" aria-label="Sửa ${esc(d.name)}" title="Sửa" ${act('openDebt', d.id, d.direction)}>✎</button>
-    <button class="mini-btn" type="button" aria-label="Xóa ${esc(d.name)}" title="Xóa" ${act('deleteDebt', d.id)}>🗑</button>
-  </div>`;
+  return `<button class="money-line" ${act('openDebtAdjustmentHistory', d.id)}><span class="line-label">${esc(d.name)}${d.counterparty ? `<small>${esc(d.counterparty)}</small>` : ''}</span><strong class="green">${money(bal, d.currency)}</strong></button>`;
 }
 function payableRow(d) {
   const bal = F.debtBalance(d);
-  return `<div class="money-line-wrap">
-    <button class="money-line" ${act('openDebtAdjustmentHistory', d.id)}><span class="line-label">${esc(d.name)}${d.counterparty ? `<small>${esc(d.counterparty)}</small>` : ''}</span><strong class="red">${money(bal, d.currency)}</strong></button>
-    <button class="mini-btn" type="button" aria-label="Tăng ${esc(d.name)}" title="Tăng" ${act('openDebtAdjustment', d.id, 'increase')}>＋</button>
-    <button class="mini-btn" type="button" aria-label="Giảm ${esc(d.name)}" title="Giảm" ${act('openDebtAdjustment', d.id, 'decrease')}>−</button>
-    <button class="mini-btn" type="button" aria-label="Sửa ${esc(d.name)}" title="Sửa" ${act('openDebt', d.id, d.direction)}>✎</button>
-    <button class="mini-btn" type="button" aria-label="Xóa ${esc(d.name)}" title="Xóa" ${act('deleteDebt', d.id)}>🗑</button>
-  </div>`;
+  return `<button class="money-line" ${act('openDebtAdjustmentHistory', d.id)}><span class="line-label">${esc(d.name)}${d.counterparty ? `<small>${esc(d.counterparty)}</small>` : ''}</span><strong class="red">${money(bal, d.currency)}</strong></button>`;
 }
 
 function assetColumn() {

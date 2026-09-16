@@ -418,26 +418,41 @@ const RPC_HANDLERS = {
   results.push('CLICK "6 tháng" period toggle: no crash - OK');
   await page.screenshot({ path: path.join(SHOT_DIR, 'shot-accounts-1440.png'), fullPage: true });
 
-  // Account +/- adjustment.
+  // Account +/- adjustment. Sửa/Xóa now live inside the row's own history
+  // modal instead of as inline row mini-buttons (declutter: matches Chi
+  // tiêu's "row shows, detail view manages" pattern).
   await page.click('.money-line:has-text("UFJ")');
   await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK account row (UFJ, adjustment history): modal opened - OK')).catch(() => results.push('CLICK account row: modal did NOT open - FAIL'));
   const adjHistText = await page.textContent('#modalBody');
   results.push(`  Adjustment history lists the fixture row and a month/year filter: ${adjHistText.includes('100') && (await page.locator('#adjHistFilter').count()) > 0}`);
+  results.push(`  Account history modal has Sửa + Xóa actions (real delete, not add-only, not archive): ${await page.locator('#modalBody .row.wrap button:has-text("Sửa")').count() > 0 && await page.locator('#modalBody .row.wrap button:has-text("Xóa")').count() > 0}`);
+  await page.click('#modalBody .row.wrap button:has-text("Sửa")');
+  await page.waitForSelector('[name="name"]', { timeout: 1500 }).then(() => results.push('CLICK account "Sửa" (from UFJ history modal): edit form opened - OK')).catch(() => results.push('CLICK account "Sửa": edit form did NOT open - FAIL'));
   await page.evaluate(() => document.getElementById('modal')?.close());
   await page.waitForTimeout(50);
   await clickAndCheckModal('account "＋ Thêm" (Tiền mặt & ngân hàng column)', '.money-column.income .column-settings', '[name="name"]');
-  await clickAndCheckModal('account row "Sửa" mini-btn (UFJ)', '.money-column.income .mini-btn[title="Sửa"]', '[name="name"]');
-  results.push(`  Account row also has an "Xóa" mini-btn (real delete, not add-only, not archive): ${await page.locator('.money-column.income .mini-btn[title="Xóa"]').count() > 0}`);
 
   // Nợ phải trả: view, adjust, add.
   await page.click('.money-column.debt .money-line:has-text("Vay mua xe")');
   await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK Nợ row (Vay mua xe): history modal opened - OK')).catch(() => results.push('CLICK Nợ row: modal did NOT open - FAIL'));
+  results.push(`  Nợ history modal has Tăng/Giảm/Sửa/Xóa actions (real delete, not add-only, not archive): ${await page.locator('#modalBody .row.wrap button:has-text("Tăng dư nợ")').count() > 0 && await page.locator('#modalBody .row.wrap button:has-text("Giảm dư nợ")').count() > 0 && await page.locator('#modalBody .row.wrap button:has-text("Sửa")').count() > 0 && await page.locator('#modalBody .row.wrap button:has-text("Xóa")').count() > 0}`);
+  await page.click('#modalBody .row.wrap button:has-text("Tăng dư nợ")');
+  await page.waitForSelector('[name="amount"]', { timeout: 1500 }).then(() => results.push('CLICK Nợ "Tăng dư nợ" (from history modal): form opened - OK')).catch(() => results.push('CLICK Nợ "Tăng dư nợ": form did NOT open - FAIL'));
   await page.evaluate(() => document.getElementById('modal')?.close());
   await page.waitForTimeout(50);
-  await clickAndCheckModal('Nợ inline "Tăng" button', '.money-column.debt .mini-btn[title="Tăng"]', '[name="amount"]');
-  await clickAndCheckModal('Nợ row "Sửa" mini-btn', '.money-column.debt .mini-btn[title="Sửa"]', '[name="name"]');
-  results.push(`  Nợ row also has an "Xóa" mini-btn (real delete, not add-only, not archive): ${await page.locator('.money-column.debt .mini-btn[title="Xóa"]').count() > 0}`);
-  results.push(`  Đầu tư row (Tài sản page) has a "Xóa" mini-btn (was Sửa-only before): ${await page.locator('.money-column.credit .mini-btn[title^="Xóa"]').count() > 0}`);
+  await page.click('.money-column.debt .money-line:has-text("Vay mua xe")');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 });
+  await page.click('#modalBody .row.wrap button:has-text("Sửa")');
+  await page.waitForSelector('[name="name"]', { timeout: 1500 }).then(() => results.push('CLICK Nợ "Sửa" (from history modal): edit form opened - OK')).catch(() => results.push('CLICK Nợ "Sửa": edit form did NOT open - FAIL'));
+  await page.evaluate(() => document.getElementById('modal')?.close());
+  await page.waitForTimeout(50);
+
+  await page.click('.money-column.credit .money-line');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 });
+  results.push(`  Đầu tư row (Tài sản page) history modal has a "Xóa" action (was Sửa-only before): ${await page.locator('#modalBody .row.wrap button:has-text("Xóa")').count() > 0}`);
+  await page.evaluate(() => document.getElementById('modal')?.close());
+  await page.waitForTimeout(50);
+
   await clickAndCheckModal('Nợ column "＋ Thêm"', '.money-column.debt .column-settings', '[name="name"]');
   await page.click('.money-column.debt .column-settings');
   await page.waitForSelector('#modal[open]', { timeout: 1500 });
@@ -461,21 +476,29 @@ const RPC_HANDLERS = {
 
   // Xóa: an account with no adjustment history deletes for real and
   // disappears; one WITH history is refused with a clear message instead
-  // of silently archiving. window.confirm() is stubbed false for this whole
-  // "real clicks" phase, so flip it true just for these two confirm()-gated
-  // deletes and put it back after.
+  // of silently archiving. Xóa now lives inside the row's own history modal
+  // (not an inline row button), so open the modal first each time.
+  // window.confirm() is stubbed false for this whole "real clicks" phase,
+  // so flip it true just for these two confirm()-gated deletes and put it
+  // back after.
   await page.evaluate(() => { window.confirm = () => true; });
   await resetToast();
-  await page.locator('.money-column.income .mini-btn[title="Xóa"]').nth(1).click(); // "Tiền mặt" — 2nd row, no adjustment history
+  await page.click('.money-column.income .money-line:has-text("Tiền mặt")'); // no adjustment history
+  await page.waitForSelector('#modal[open]', { timeout: 1500 });
+  await page.click('#modalBody .row.wrap button:has-text("Xóa")');
   await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`CLICK Xóa "Tiền mặt": saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('CLICK Xóa "Tiền mặt": no toast - FAIL'));
   const incomeRowCount = await page.locator('.money-column.income .money-line').count();
   results.push(`  Xóa "Tiền mặt" (no history): row actually removed (1 row left — UFJ only, not 2): ${incomeRowCount === 1}`);
   await resetToast();
-  await page.click('.money-column.income .mini-btn[title="Xóa"]'); // "UFJ" — has adjustment history in the fixture
+  await page.click('.money-column.income .money-line:has-text("UFJ")'); // has adjustment history in the fixture
+  await page.waitForSelector('#modal[open]', { timeout: 1500 });
+  await page.click('#modalBody .row.wrap button:has-text("Xóa")');
   await page.waitForSelector('#toast.show', { timeout: 1500 });
   const blockedToast = await page.textContent('#toast');
   results.push(`  Xóa "UFJ" (has history): blocked with a clear message, not silently archived: ${blockedToast.includes('đã có lịch sử')} (toast: "${blockedToast}")`);
   results.push(`  UFJ is still there after the blocked delete: ${(await page.textContent('.money-column.income')).includes('UFJ')}`);
+  await page.evaluate(() => document.getElementById('modal')?.close());
+  await page.waitForTimeout(50);
   await page.evaluate(() => { window.confirm = () => false; });
 
   // ---- Đầu tư: NISA plan, securities trade, savings interest ----

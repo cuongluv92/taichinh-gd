@@ -265,7 +265,7 @@ progress.bad::-webkit-progress-value{background:var(--negative)}
 /* ---------- Charts ---------- */
 .chart-card svg{width:100%;height:auto;display:block}
 .chart-grid line,.v-gridline{stroke:var(--border)}
-.axis-label,.chart-axis{fill:var(--text-dim);font-size:10.5px}
+.axis-label,.chart-axis{fill:var(--text);font-size:11px;font-weight:600}
 .bar-income{fill:var(--positive)}
 .bar-expense{fill:var(--negative)}
 .legend{display:flex;gap:14px;margin-top:8px;font-size:11.5px;color:var(--text-dim)}
@@ -387,6 +387,7 @@ input[type=color]{padding:3px;height:36px}
    style="..." attribute is silently dropped by the browser — every ad-hoc
    layout tweak has to be a real class instead. */
 .row{display:flex;align-items:center;gap:8px}
+.row.wrap{flex-wrap:wrap}
 .row-6{display:flex;align-items:center;gap:6px}
 .row-6 select,.row-6 input{flex:1;min-width:0}
 .row-6 .mini-btn{flex:none}

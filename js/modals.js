@@ -217,7 +217,7 @@ function openAccount(id = '') {
 }
 async function deleteAccount(id) {
   if (!confirm('Xóa tài khoản này? Chỉ xóa được khi chưa có lịch sử +/− tiền.')) return;
-  try { await api.core('delete_account', { id }); await window.refresh(); toast('Đã xóa tài khoản'); } catch (e) { toast(e.message, true); }
+  try { await api.core('delete_account', { id }); closeModal(); await window.refresh(); toast('Đã xóa tài khoản'); } catch (e) { toast(e.message, true); }
 }
 
 // ---------------- Tài sản: manual +Tiền / −Tiền adjustments ----------------
@@ -253,7 +253,12 @@ function openAccountAdjustmentHistory(accountId) {
   infoModal(`Lịch sử điều chỉnh · ${esc(a.name)}`, `
     <div class="field"><label>Lọc theo tháng</label><select id="adjHistFilter"><option value="">Tất cả</option>${months.map(m => `<option value="${m}">${fmtMonthKey(m)}</option>`).join('')}</select></div>
     <div class="list mt-10" id="adjHistList">${rows.map(accountAdjustmentRow).join('') || '<div class="empty compact">Chưa có lần điều chỉnh nào.</div>'}</div>
-    <div class="row mt-14"><button class="btn primary" ${act('reopenAfterModal', 'openAccountAdjustment', accountId, 'increase')}>＋ Tiền</button><button class="btn" ${act('reopenAfterModal', 'openAccountAdjustment', accountId, 'decrease')}>− Tiền</button></div>`);
+    <div class="row mt-14 wrap">
+      <button class="btn primary" ${act('reopenAfterModal', 'openAccountAdjustment', accountId, 'increase')}>＋ Tiền</button>
+      <button class="btn" ${act('reopenAfterModal', 'openAccountAdjustment', accountId, 'decrease')}>− Tiền</button>
+      <button class="btn" ${act('reopenAfterModal', 'openAccount', accountId)}>Sửa</button>
+      <button class="btn" ${act('deleteAccount', accountId)}>Xóa</button>
+    </div>`);
   $('#adjHistFilter').addEventListener('change', e => {
     const m = e.target.value;
     const filtered = m ? rows.filter(x => monthKey(x.adjustment_date) === m) : rows;
@@ -341,7 +346,7 @@ function openInvestmentNew(id = '') {
 }
 async function deleteInvestment(id) {
   if (!confirm('Xóa khoản đầu tư này? Lịch sử vẫn được giữ lại nhưng khoản này sẽ không còn hiển thị.')) return;
-  try { await api.investment('delete', { id }); await window.refresh(); toast('Đã xóa khoản đầu tư'); } catch (e) { toast(e.message, true); }
+  try { await api.investment('delete', { id }); closeModal(); await window.refresh(); toast('Đã xóa khoản đầu tư'); } catch (e) { toast(e.message, true); }
 }
 
 // ---- Quỹ/ETF bên trong một tài khoản NISA — một khoản đầu tư kind='securities'
@@ -458,7 +463,10 @@ function openInvestmentEventHistory(investmentId) {
        <button class="btn" ${act('reopenAfterModal', 'openInvestmentEvent', investmentId, 'valuation')}>Cập nhật giá trị</button>`;
   infoModal(`Lịch sử · ${esc(inv.name)}`, `
     <div class="list">${rows.map(x => investmentEventRow(x, investmentId, isSecurities)).join('') || '<div class="empty compact">Chưa có lịch sử nào.</div>'}</div>
-    <div class="row mt-14">${actions}</div>`);
+    <div class="row mt-14 wrap">${actions}
+      <button class="btn" ${act('reopenAfterModal', 'openInvestmentNew', investmentId)}>Sửa</button>
+      <button class="btn" ${act('deleteInvestment', investmentId)}>Xóa</button>
+    </div>`);
 }
 
 // ---- Kế hoạch góp hàng tháng (NISA + Tiết kiệm sinh lời) ----
@@ -498,7 +506,7 @@ function openDebt(id = '', direction = 'payable') {
 }
 async function deleteDebt(id) {
   if (!confirm('Xóa khoản nợ này? Chỉ xóa được khi chưa có lịch sử điều chỉnh.')) return;
-  try { await api.debtLedger('delete', { id }); await window.refresh(); toast('Đã xóa khoản nợ'); } catch (e) { toast(e.message, true); }
+  try { await api.debtLedger('delete', { id }); closeModal(); await window.refresh(); toast('Đã xóa khoản nợ'); } catch (e) { toast(e.message, true); }
 }
 function openDebtAdjustment(debtId, direction = 'increase', id = '') {
   const d = F.debts().find(x => x.id === debtId); if (!d) return toast('Không tìm thấy khoản nợ.', true);
@@ -536,7 +544,12 @@ function openDebtAdjustmentHistory(debtId) {
       <div class="field"><label>Lọc theo năm</label><select id="debtAdjFilterYear"><option value="">Tất cả</option>${years.map(y => `<option value="${y}">${y}</option>`).join('')}</select></div>
     </div>
     <div class="list mt-10" id="debtAdjHistList">${rows.map(debtAdjustmentRow).join('') || '<div class="empty compact">Chưa có lần điều chỉnh nào.</div>'}</div>
-    <div class="row mt-14"><button class="btn primary" ${act('reopenAfterModal', 'openDebtAdjustment', debtId, 'increase')}>Tăng dư nợ</button><button class="btn" ${act('reopenAfterModal', 'openDebtAdjustment', debtId, 'decrease')}>Giảm dư nợ</button></div>`);
+    <div class="row mt-14 wrap">
+      <button class="btn primary" ${act('reopenAfterModal', 'openDebtAdjustment', debtId, 'increase')}>Tăng dư nợ</button>
+      <button class="btn" ${act('reopenAfterModal', 'openDebtAdjustment', debtId, 'decrease')}>Giảm dư nợ</button>
+      <button class="btn" ${act('reopenAfterModal', 'openDebt', debtId, d.direction)}>Sửa</button>
+      <button class="btn" ${act('deleteDebt', debtId)}>Xóa</button>
+    </div>`);
   const applyFilter = () => {
     const m = $('#debtAdjFilterMonth').value, y = $('#debtAdjFilterYear').value;
     const filtered = rows.filter(x => (!m || monthKey(x.adjustment_date) === m) && (!y || yearKey(x.adjustment_date) === y));

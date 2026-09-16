@@ -412,16 +412,26 @@ function trendSvg() {
   }).join('');
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Thu chi 12 tháng">${grid}${bars}</svg><div class="legend"><span><i class="swatch-positive"></i>Thu nhập</span><span><i class="swatch-negative"></i>Chi tiêu</span></div>`;
 }
+// Splits a label into at most 2 horizontal lines at a word boundary near
+// maxChars, instead of shrinking/rotating it — greedily fills line 1, the
+// rest (if any) goes on line 2.
+function wrapLabel(label, maxChars = 10) {
+  const words = String(label).split(' ');
+  let line1 = '', line2 = '';
+  for (const w of words) {
+    if (!line1 || (line1 + ' ' + w).trim().length <= maxChars) line1 = (line1 + ' ' + w).trim();
+    else line2 = (line2 + ' ' + w).trim();
+  }
+  return line2 ? [line1, line2] : [line1];
+}
 // Vertical bar chart — used for Tài sản's composition chart (§11). Negative
 // values (Tổng nợ) render downward from the zero baseline in red.
 function barChartSvg(items, w = 720, h = 190) {
   const clean = items.filter(x => n(x.value) !== 0);
   if (!clean.length) return '<div class="empty compact">Chưa có dữ liệu</div>';
-  // Bottom padding is taller than a typical chart's because the group names
-  // (e.g. "Tiết kiệm sinh lời") are too long to sit flat under a narrow bar
-  // without crowding/clipping each other — angled labels read clearly at
-  // any chart width instead.
-  const padTop = 20, padBottom = 54, max = Math.max(1, ...items.map(x => n(x.value))), min = Math.min(0, ...items.map(x => n(x.value)));
+  // Bottom padding leaves room for a 2-line wrapped label (e.g. "Tiết kiệm" /
+  // "sinh lời") instead of crowding a long name into one line or rotating it.
+  const padTop = 20, padBottom = 40, max = Math.max(1, ...items.map(x => n(x.value))), min = Math.min(0, ...items.map(x => n(x.value)));
   const span = Math.max(1, max - min);
   const zeroY = padTop + (h - padTop - padBottom) * max / span;
   const slot = (w - 40) / items.length, bw = Math.max(6, slot * 0.55);
@@ -429,7 +439,11 @@ function barChartSvg(items, w = 720, h = 190) {
     const val = n(x.value), barH = Math.abs(val) / span * (h - padTop - padBottom);
     const cx = 20 + slot * i + slot / 2;
     const y = val >= 0 ? zeroY - barH : zeroY;
-    return `<g><rect x="${(cx - bw / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1, barH).toFixed(1)}" rx="3" fill="${val >= 0 ? CHART_COLORS[i % CHART_COLORS.length] : 'var(--negative, #f25c66)'}"><title>${esc(x.label)}: ${money(val)}</title></rect><text class="axis-label" x="${cx}" y="${h - padBottom + 14}" text-anchor="end" transform="rotate(-40 ${cx} ${h - padBottom + 14})">${esc(x.label)}</text></g>`;
+    const lines = wrapLabel(x.label, Math.max(8, Math.floor(slot / 5.5)));
+    const label = lines.length > 1
+      ? `<text class="axis-label" x="${cx}" y="${h - padBottom + 14}" text-anchor="middle"><tspan x="${cx}">${esc(lines[0])}</tspan><tspan x="${cx}" dy="13">${esc(lines[1])}</tspan></text>`
+      : `<text class="axis-label" x="${cx}" y="${h - padBottom + 20}" text-anchor="middle">${esc(lines[0])}</text>`;
+    return `<g><rect x="${(cx - bw / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1, barH).toFixed(1)}" rx="3" fill="${val >= 0 ? CHART_COLORS[i % CHART_COLORS.length] : 'var(--negative, #f25c66)'}"><title>${esc(x.label)}: ${money(val)}</title></rect>${label}</g>`;
   }).join('');
   return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Cơ cấu tài sản"><line class="v-gridline" x1="20" y1="${zeroY}" x2="${w - 20}" y2="${zeroY}"/>${bars}</svg>`;
 }
@@ -443,10 +457,14 @@ function multiLineSvg(rows, series) {
   const xAt = i => p + (W - p * 2) * (rows.length === 1 ? 0 : i / (rows.length - 1));
   const yAt = v => H - p - (H - p * 2) * (v - min) / span;
   const grid = [0, 1, 2, 3].map(i => { const y = p + (H - p * 2) * i / 3; return `<line class="v-gridline" x1="${p}" y1="${y}" x2="${W - p}" y2="${y}"/>`; }).join('');
+  // A lone data point (a household's first month of data) would otherwise
+  // render nothing at all — a path with just one "M" and no line segment
+  // draws invisibly — so every point also gets a small filled dot.
   const lines = series.map(s => {
     const pts = rows.map((r, i) => ({ x: xAt(i), y: yAt(n(r[s.key])) }));
     const path = pts.map((q, i) => `${i ? 'L' : 'M'} ${q.x.toFixed(1)} ${q.y.toFixed(1)}`).join(' ');
-    return `<path d="${path}" fill="none" stroke="${s.color}" stroke-width="2.5"><title>${esc(s.label)}</title></path>`;
+    const dots = pts.map(q => `<circle cx="${q.x.toFixed(1)}" cy="${q.y.toFixed(1)}" r="3" fill="${s.color}"/>`).join('');
+    return `<path d="${path}" fill="none" stroke="${s.color}" stroke-width="2.5"><title>${esc(s.label)}</title></path>${dots}`;
   }).join('');
   const labels = rows.map((r, i) => i % 2 === 0 ? `<text class="axis-label" x="${xAt(i)}" y="${H - 8}" text-anchor="middle">${r.month.slice(5)}</text>` : '').join('');
   const legend = `<div class="chart-legend">${series.map((s, i) => { const ci = CHART_COLORS.indexOf(s.color); return `<div><span><i class="legend-dot legend-c${ci >= 0 ? ci : i % 10}"></i>${esc(s.label)}</span></div>`; }).join('')}</div>`;
