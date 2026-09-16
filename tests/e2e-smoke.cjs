@@ -85,6 +85,10 @@ const DEBTS = [
   { id: 'd1', name: 'Vay mua xe', counterparty: 'Ngân hàng ABC', direction: 'payable', currency: 'JPY', opening_amount: 1250000, start_date: `${MONTH}-15`, due_date: '2026-12-01', interest_rate: 0, is_active: true }
 ];
 const DEBT_ADJUSTMENTS = [];
+const RECURRING_ITEMS = [
+  { id: 'rec1', target_type: 'account', target_id: 'bank', name: 'Wifi', direction: 'decrease', amount: 6000, currency: 'JPY', day_of_month: 10, is_active: true, note: '' }
+];
+const RECURRING_SKIPS = [];
 const INVESTMENTS = [
   { id: 'nisa1', name: 'NISA Rakuten', kind: 'nisa', currency: 'JPY', initial_capital: 400000, note: '', created_at: `${MONTH}-01T00:00:00Z`, start_date: '2026-01-01', broker_name: 'Rakuten Securities', nisa_frame: 'both', nisa_annual_limit: 3600000, monthly_amount: 30000, monthly_day: 5, plan_start_month: `${MONTH}-01`, plan_paused: false, expected_return_rate: 5, expected_return_period: 'annual', reinvest_mode: 'none', total_contributed: 100000, total_withdrawn: 0, latest_value: 550000, latest_value_date: `${MONTH}-10`, parent_investment_id: null },
   { id: 'fund1', name: 'eMAXIS Slim toàn cầu', kind: 'securities', currency: 'JPY', initial_capital: 0, note: '', created_at: `${MONTH}-03T00:00:00Z`, ticker: '2559', market: 'TSE', quantity: 10, avg_cost: 15000, current_price: 16500, realized_pl: 0, total_contributed: 150000, total_withdrawn: 0, total_dividends: 0, parent_investment_id: 'nisa1' },
@@ -175,6 +179,47 @@ const RPC_HANDLERS = {
       return { ok: true, id };
     }
     if (action === 'delete_adjustment') { const i = DEBT_ADJUSTMENTS.findIndex(x => x.id === p.id); if (i >= 0) DEBT_ADJUSTMENTS.splice(i, 1); return { ok: true }; }
+    return { ok: true };
+  },
+  taichinh_gd_recurring_account_api: (action, body) => {
+    const p = body?.p_payload || {};
+    const monthOf = d => String(d || '').slice(0, 7);
+    const month = (p.month || `${MONTH}-01`).slice(0, 7);
+    if (action === 'list') {
+      const items = RECURRING_ITEMS.map(r => {
+        let status = 'pending';
+        if (RECURRING_SKIPS.some(s => s.recurring_item_id === r.id && monthOf(s.month) === month)) status = 'skipped';
+        else if (r.target_type === 'account' && ADJUSTMENTS.some(a => a.recurring_item_id === r.id && monthOf(a.adjustment_date) === month)) status = 'confirmed';
+        else if (r.target_type === 'debt' && DEBT_ADJUSTMENTS.some(a => a.recurring_item_id === r.id && monthOf(a.adjustment_date) === month)) status = 'confirmed';
+        return { ...r, status };
+      });
+      return { month: `${month}-01`, items };
+    }
+    if (action === 'save') {
+      if (p.id) { const row = RECURRING_ITEMS.find(x => x.id === p.id); if (row) Object.assign(row, p, { amount: Number(p.amount), day_of_month: Number(p.day_of_month || 1) }); return { ok: true, id: p.id }; }
+      const id = newId('rec');
+      RECURRING_ITEMS.push({ id, target_type: p.target_type, target_id: p.target_id, name: p.name, direction: p.direction, amount: Number(p.amount), currency: 'JPY', day_of_month: Number(p.day_of_month || 1), is_active: true, note: p.note || '' });
+      return { ok: true, id };
+    }
+    if (action === 'delete') { const i = RECURRING_ITEMS.findIndex(x => x.id === p.id); if (i >= 0) RECURRING_ITEMS.splice(i, 1); return { ok: true }; }
+    if (action === 'confirm') {
+      const item = RECURRING_ITEMS.find(x => x.id === p.id);
+      const date = `${month}-${String(item.day_of_month).padStart(2, '0')}`;
+      if (item.target_type === 'account') {
+        const id = newId('adj');
+        ADJUSTMENTS.push({ id, account_id: item.target_id, account_name: (ACCOUNTS.find(a => a.id === item.target_id) || {}).name, direction: item.direction, amount: item.amount, currency: item.currency, adjustment_date: date, note: item.name, recurring_item_id: item.id });
+        return { ok: true, id };
+      }
+      const id = newId('dadj');
+      DEBT_ADJUSTMENTS.push({ id, debt_id: item.target_id, direction: item.direction, amount: item.amount, adjustment_date: date, note: item.name, recurring_item_id: item.id });
+      return { ok: true, id };
+    }
+    if (action === 'skip') { RECURRING_SKIPS.push({ recurring_item_id: p.id, month: `${month}-01` }); return { ok: true }; }
+    if (action === 'unskip') {
+      const i = RECURRING_SKIPS.findIndex(s => s.recurring_item_id === p.id && monthOf(s.month) === month);
+      if (i >= 0) RECURRING_SKIPS.splice(i, 1);
+      return { ok: true };
+    }
     return { ok: true };
   },
   taichinh_gd_card_ledger_api: (action, body) => {
@@ -430,6 +475,30 @@ const RPC_HANDLERS = {
   await page.waitForSelector('[name="name"]', { timeout: 1500 }).then(() => results.push('CLICK account "Sửa" (from UFJ history modal): edit form opened - OK')).catch(() => results.push('CLICK account "Sửa": edit form did NOT open - FAIL'));
   await page.evaluate(() => document.getElementById('modal')?.close());
   await page.waitForTimeout(50);
+
+  // Khoản định kỳ: a recurring "Wifi" template on UFJ (fixture) starts
+  // pending, gets confirmed, and a brand-new one can be added — the whole
+  // "pick once, stop re-typing every month" flow the account owner asked for.
+  await page.click('.money-line:has-text("UFJ")');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 });
+  await page.click('#modalBody .row.wrap button:has-text("🔁 Định kỳ")');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK "🔁 Định kỳ" (from UFJ history modal): manager opened - OK')).catch(() => results.push('CLICK "🔁 Định kỳ": manager did NOT open - FAIL'));
+  const recurringText = await page.textContent('#modalBody');
+  results.push(`  Recurring manager lists the fixture "Wifi" item as pending: ${recurringText.includes('Wifi') && recurringText.includes('Chưa xác nhận tháng này')}`);
+  await resetToast();
+  await page.click('#modalBody .tx:has-text("Wifi") button:has-text("Xác nhận")');
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`CLICK "Xác nhận" (Wifi): saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('CLICK "Xác nhận": no toast - FAIL'));
+  results.push(`  After confirming, "Wifi" shows as confirmed for this month: ${(await page.textContent('#modalBody')).includes('Đã xác nhận tháng này')}`);
+  await page.screenshot({ path: path.join(SHOT_DIR, 'shot-recurring-manager.png') });
+  await page.click('#modalBody button:has-text("＋ Thêm khoản định kỳ")');
+  await page.waitForSelector('[name="name"]', { timeout: 1500 }).then(() => results.push('CLICK "＋ Thêm khoản định kỳ": add form opened - OK')).catch(() => results.push('CLICK "＋ Thêm khoản định kỳ": did NOT open - FAIL'));
+  await page.fill('[name="name"]', 'Lương');
+  await page.selectOption('[name="direction"]', 'increase');
+  await page.fill('[name="amount"]', '300000');
+  await page.fill('[name="day_of_month"]', '25');
+  await resetToast();
+  await page.click('#modalForm [type=submit]');
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`SUBMIT new recurring item (Lương): saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('SUBMIT new recurring item: no toast - FAIL'));
 
   await page.click('.money-column.income .column-settings');
   await page.waitForSelector('#modal[open]', { timeout: 1500 }).then(() => results.push('CLICK account column "⚙ Cài đặt": manager opened - OK')).catch(() => results.push('CLICK account column "⚙ Cài đặt": did NOT open - FAIL'));

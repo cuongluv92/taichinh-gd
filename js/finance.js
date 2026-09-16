@@ -78,6 +78,13 @@ F.receivables = () => F.debts().filter(d => d.direction === 'receivable');
 F.totalPayablesAt = endDate => F.payables().filter(d => (d.currency || state.base) === state.base).reduce((s, d) => s + F.debtBalanceAt(d, endDate), 0);
 F.totalReceivablesAt = endDate => F.receivables().filter(d => (d.currency || state.base) === state.base).reduce((s, d) => s + F.debtBalanceAt(d, endDate), 0);
 
+// ---------------- Recurring items (Tiền mặt & ngân hàng / Nợ phải trả) ----------------
+// Templates for amounts that repeat every month (lương, tiền nhà, wifi...)
+// so they don't have to be re-typed each month. `status` (pending/confirmed/
+// skipped) for the currently loaded month is computed server-side and comes
+// back on each item already — see taichinh_gd_recurring_account_api.
+F.recurringItemsFor = (targetType, targetId) => (state.recurringAccountItems || []).filter(x => x.target_type === targetType && x.target_id === targetId);
+
 // ---------------- Investments (Đầu tư) ----------------
 // state.investments items carry the server-computed total_contributed /
 // total_withdrawn / total_dividends / total_fees / total_interest /

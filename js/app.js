@@ -14,14 +14,15 @@ function applyBootstrap(d) {
 }
 
 async function loadExtras(month = state.month) {
-  const [ext, exceptional, adjustments, cardExpenses, installments, investments, debts] = await Promise.all([
+  const [ext, exceptional, adjustments, cardExpenses, installments, investments, debts, recurring] = await Promise.all([
     api.extension('get'),
     api.exceptional('list'),
     api.accountAdjustment('list'),
     api.cardLedger('list_expenses'),
     api.cardLedger('list_installments'),
     api.investment('list'),
-    api.debtLedger('list')
+    api.debtLedger('list'),
+    api.recurringAccount('list', { month: monthDate(month) })
   ]);
   state.reporting = { show_vnd_conversion: false, jpy_vnd_rate: null, ...(ext?.reporting || {}) };
   state.exceptionalIds = exceptional?.ids || [];
@@ -30,6 +31,9 @@ async function loadExtras(month = state.month) {
   state.installments = installments?.items || [];
   state.investments = investments?.items || [];
   state.debts = debts?.items || [];
+  // Status (pending/confirmed/skipped) is computed server-side for
+  // `month`, matching whichever month is currently selected.
+  state.recurringAccountItems = recurring?.items || [];
   // Per-investment event history — small dataset for a personal app, needed
   // (not just today's totals) so the Tài sản history chart can show an
   // accurate point-in-time invested value for past months.

@@ -267,12 +267,75 @@ function openAccountAdjustmentHistory(accountId) {
       <button class="btn primary" ${act('reopenAfterModal', 'openAccountAdjustment', accountId, 'increase')}>＋ Tiền</button>
       <button class="btn" ${act('reopenAfterModal', 'openAccountAdjustment', accountId, 'decrease')}>− Tiền</button>
       <button class="btn" ${act('reopenAfterModal', 'openAccount', accountId)}>Sửa</button>
+      <button class="btn" ${act('reopenAfterModal', 'openRecurringManager', 'account', accountId)}>🔁 Định kỳ</button>
     </div>`);
   $('#adjHistFilter').addEventListener('change', e => {
     const m = e.target.value;
     const filtered = m ? rows.filter(x => monthKey(x.adjustment_date) === m) : rows;
     $('#adjHistList').innerHTML = filtered.map(accountAdjustmentRow).join('') || '<div class="empty compact">Không có lần điều chỉnh nào trong tháng này.</div>';
   });
+}
+
+// ---------------- Khoản định kỳ (Tiền mặt & ngân hàng / Nợ phải trả) ----------------
+// Named templates that repeat every month (lương, tiền nhà, wifi...), so
+// they don't have to be typed in by hand each month. Confirming one writes
+// a real account/debt adjustment (linked back via recurring_item_id) —
+// nothing posts automatically; a pending item just waits until confirmed or
+// explicitly skipped for that month. Mirrors NISA's "Kế hoạch góp tháng"
+// pattern in Đầu tư, generalized to multiple named items per account/debt.
+const RECURRING_STATUS_LABEL = { pending: 'Chưa xác nhận tháng này', confirmed: 'Đã xác nhận tháng này', skipped: 'Đã bỏ qua tháng này' };
+function recurringTargetName(targetType, targetId) {
+  return targetType === 'account' ? (F.accountById(targetId)?.name || '') : (F.debts().find(x => x.id === targetId)?.name || '');
+}
+function recurringItemRow(item) {
+  const statusActions = item.status === 'pending'
+    ? `<button class="btn sm primary" ${act('confirmRecurringItem', item.id)}>Xác nhận</button><button class="btn sm" ${act('skipRecurringItem', item.id)}>Bỏ qua tháng này</button>`
+    : item.status === 'skipped' ? `<button class="btn sm" ${act('unskipRecurringItem', item.id)}>Hoàn tác bỏ qua</button>` : '';
+  return `<div class="tx"><div class="tx-main">
+      <strong class="${item.direction === 'increase' ? 'green' : 'red'}">${item.direction === 'increase' ? '+' : '−'}${money(item.amount, item.currency)}</strong>
+      <span>${esc(item.name)} · Ngày ${item.day_of_month} hàng tháng · <b>${esc(RECURRING_STATUS_LABEL[item.status] || '')}</b>${item.note ? ` · ${esc(item.note)}` : ''}</span>
+    </div>
+    <div class="tx-actions wrap">
+      ${statusActions}
+      <button class="btn sm" ${act('reopenAfterModal', 'openRecurringItemForm', item.target_type, item.target_id, item.id)}>Sửa</button>
+      <button class="btn sm" ${act('deleteRecurringItem', item.id, item.target_type, item.target_id)}>Xóa</button>
+    </div></div>`;
+}
+function openRecurringManager(targetType, targetId) {
+  const items = F.recurringItemsFor(targetType, targetId);
+  infoModal(`Khoản định kỳ · ${esc(recurringTargetName(targetType, targetId))}`, `
+    <p class="note">Xác nhận mỗi tháng để ghi nhận thật vào số dư — chưa xác nhận thì chưa tính. Bỏ qua nếu tháng này không có khoản đó.</p>
+    <div class="list">${items.map(recurringItemRow).join('') || '<div class="empty compact">Chưa có khoản định kỳ nào.</div>'}</div>
+    <button class="btn primary mt-14" ${act('reopenAfterModal', 'openRecurringItemForm', targetType, targetId)}>＋ Thêm khoản định kỳ</button>`);
+}
+function openRecurringItemForm(targetType, targetId, id = '') {
+  const item = id ? (state.recurringAccountItems || []).find(x => x.id === id) : null;
+  modal(item ? 'Sửa khoản định kỳ' : 'Thêm khoản định kỳ', `<div class="form-grid">
+    <div class="field full"><label>Tên khoản</label><input name="name" value="${esc(item?.name || '')}" placeholder="VD: Lương, Tiền nhà, Wifi" required autofocus></div>
+    <div class="field"><label>Loại</label><select name="direction"><option value="increase" ${(item?.direction || 'increase') === 'increase' ? 'selected' : ''}>Thu (＋)</option><option value="decrease" ${item?.direction === 'decrease' ? 'selected' : ''}>Chi (−)</option></select></div>
+    <div class="field"><label>Số tiền / tháng</label><input name="amount" type="number" min="1" step="1" value="${esc(item?.amount || '')}" required></div>
+    <div class="field"><label>Ngày trong tháng</label><input name="day_of_month" type="number" min="1" max="31" value="${esc(item?.day_of_month ?? 1)}" required></div>
+    <div class="field full"><label>Ghi chú</label><input name="note" value="${esc(item?.note || '')}" placeholder="Tùy chọn"></div>
+  </div>`, fd => api.recurringAccount('save', { ...fd, id: id || null, target_type: targetType, target_id: targetId }), item ? 'Lưu' : 'Tạo');
+}
+async function deleteRecurringItem(id, targetType, targetId) {
+  if (!confirm('Xóa khoản định kỳ này? Các lần đã xác nhận trước đó vẫn giữ nguyên trong lịch sử.')) return;
+  try { await api.recurringAccount('delete', { id }); await window.refresh(); toast('Đã xóa khoản định kỳ'); openRecurringManager(targetType, targetId); } catch (e) { toast(e.message, true); }
+}
+async function confirmRecurringItem(id) {
+  const item = (state.recurringAccountItems || []).find(x => x.id === id);
+  try { await api.recurringAccount('confirm', { id, month: monthDate(state.month) }); await window.refresh(); toast('Đã xác nhận'); if (item) openRecurringManager(item.target_type, item.target_id); }
+  catch (e) { toast(e.message, true); }
+}
+async function skipRecurringItem(id) {
+  const item = (state.recurringAccountItems || []).find(x => x.id === id);
+  try { await api.recurringAccount('skip', { id, month: monthDate(state.month) }); await window.refresh(); toast('Đã bỏ qua tháng này'); if (item) openRecurringManager(item.target_type, item.target_id); }
+  catch (e) { toast(e.message, true); }
+}
+async function unskipRecurringItem(id) {
+  const item = (state.recurringAccountItems || []).find(x => x.id === id);
+  try { await api.recurringAccount('unskip', { id, month: monthDate(state.month) }); await window.refresh(); toast('Đã hoàn tác'); if (item) openRecurringManager(item.target_type, item.target_id); }
+  catch (e) { toast(e.message, true); }
 }
 
 // ---------------- Đầu tư: NISA / Chứng khoán / Tiết kiệm sinh lời / Khác ----------------
@@ -576,6 +639,7 @@ function openDebtAdjustmentHistory(debtId) {
       <button class="btn primary" ${act('reopenAfterModal', 'openDebtAdjustment', debtId, 'increase')}>Tăng dư nợ</button>
       <button class="btn" ${act('reopenAfterModal', 'openDebtAdjustment', debtId, 'decrease')}>Giảm dư nợ</button>
       <button class="btn" ${act('reopenAfterModal', 'openDebt', debtId, d.direction)}>Sửa</button>
+      <button class="btn" ${act('reopenAfterModal', 'openRecurringManager', 'debt', debtId)}>🔁 Định kỳ</button>
     </div>`);
   const applyFilter = () => {
     const m = $('#debtAdjFilterMonth').value, y = $('#debtAdjFilterYear').value;
@@ -700,6 +764,7 @@ Object.assign(window, {
   openQuickEntry, openTransactionEdit, deleteTransaction, openColumnSettings, openAccount, deleteAccount, openAccountColumnManager,
   openAccountAdjustment, deleteAccountAdjustment, openAccountAdjustmentHistory,
   openDebt, deleteDebt, openDebtColumnManager, openDebtAdjustment, deleteDebtAdjustment, openDebtAdjustmentHistory,
+  openRecurringManager, openRecurringItemForm, deleteRecurringItem, confirmRecurringItem, skipRecurringItem, unskipRecurringItem,
   openInvestmentNew, deleteInvestment, openInvestmentColumnManager, openNisaHolding, openInvestmentEvent, deleteInvestmentEvent, openInvestmentEventHistory,
   openSecurityTrade, openInvestmentPlanConfirm, skipInvestmentPlan,
   openCreditCard, openCardLedger, openCardExpenseForm, deleteCardExpense,
