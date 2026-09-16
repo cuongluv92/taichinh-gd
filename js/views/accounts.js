@@ -32,23 +32,23 @@ function payableRow(d) {
 function assetColumn() {
   const items = F.assetAccounts().map(assetAccountRow);
   const total = F.assetAccounts().reduce((s, a) => s + F.accountBalance(a), 0);
-  return moneyColumn({ title: 'Tiền mặt & ngân hàng', tone: 'income', items, total: money(total), settingsAction: act('openAccount'), settingsLabel: '＋ Thêm', emptyText: 'Chưa có tài khoản' });
+  return moneyColumn({ title: 'Tiền mặt & ngân hàng', tone: 'income', items, total: money(total), settingsAction: act('openAccountColumnManager'), settingsLabel: '⚙ Cài đặt', emptyText: 'Chưa có tài khoản' });
 }
 function investmentColumn() {
   const list = F.investments().filter(inv => (inv.currency || state.base) === state.base && !inv.parent_investment_id);
   const items = list.map(investmentRow);
   const total = F.investmentTotalValue();
-  return moneyColumn({ title: 'Đầu tư', tone: 'credit', items, total: money(total), settingsAction: act('openInvestmentNew'), settingsLabel: '＋ Thêm', emptyText: 'Chưa có khoản đầu tư' });
+  return moneyColumn({ title: 'Đầu tư', tone: 'credit', items, total: money(total), settingsAction: act('openInvestmentColumnManager'), settingsLabel: '⚙ Cài đặt', emptyText: 'Chưa có khoản đầu tư' });
 }
 function receivablesColumn() {
   const items = F.receivables().map(receivableRow);
   const total = F.totalReceivablesAt('9999-12-31');
-  return moneyColumn({ title: 'Khoản phải thu', tone: 'receivable', items, total: money(total), settingsAction: act('openDebt', '', 'receivable'), settingsLabel: '＋ Thêm', emptyText: 'Chưa có khoản phải thu' });
+  return moneyColumn({ title: 'Khoản phải thu', tone: 'receivable', items, total: money(total), settingsAction: act('openDebtColumnManager', 'receivable'), settingsLabel: '⚙ Cài đặt', emptyText: 'Chưa có khoản phải thu' });
 }
 function payablesColumn() {
   const items = F.payables().map(payableRow);
   const total = F.totalPayablesAt('9999-12-31');
-  return moneyColumn({ title: 'Nợ phải trả', tone: 'debt', items, total: money(total), settingsAction: act('openDebt', '', 'payable'), settingsLabel: '＋ Thêm', emptyText: 'Chưa có khoản nợ' });
+  return moneyColumn({ title: 'Nợ phải trả', tone: 'debt', items, total: money(total), settingsAction: act('openDebtColumnManager', 'payable'), settingsLabel: '⚙ Cài đặt', emptyText: 'Chưa có khoản nợ' });
 }
 
 // "Theo năm" / 6 / 12 tháng toggle for the history chart — module-level so

@@ -219,6 +219,16 @@ async function deleteAccount(id) {
   if (!confirm('Xóa tài khoản này? Chỉ xóa được khi chưa có lịch sử +/− tiền.')) return;
   try { await api.core('delete_account', { id }); closeModal(); await window.refresh(); toast('Đã xóa tài khoản'); } catch (e) { toast(e.message, true); }
 }
+// "⚙ Cài đặt" on the Tiền mặt & ngân hàng column header — the only place
+// Thêm/Xóa a whole account live now; each row's own history modal only
+// handles Tăng/Giảm/Sửa for that one account.
+function openAccountColumnManager() {
+  const items = F.assetAccounts();
+  infoModal('Quản lý · Tiền mặt & ngân hàng', `
+    <div class="list">${items.map(a => `<div class="tx"><div class="tx-main"><strong>${esc(a.name)}</strong><span>${esc(ACCOUNT_TYPE_LABEL[a.account_type] || a.account_type)} · ${money(F.accountBalance(a), a.currency)}</span></div>
+      <div class="tx-actions"><button class="btn sm" ${act('reopenAfterModal', 'openAccount', a.id)}>Sửa</button><button class="btn sm" ${act('deleteAccount', a.id)}>Xóa</button></div></div>`).join('') || '<div class="empty compact">Chưa có tài khoản</div>'}</div>
+    <div class="row mt-14 wrap"><button class="btn primary" ${act('reopenAfterModal', 'openAccount')}>＋ Thêm tài khoản</button></div>`);
+}
 
 // ---------------- Tài sản: manual +Tiền / −Tiền adjustments ----------------
 function openAccountAdjustment(accountId, direction = 'increase', id = '') {
@@ -257,7 +267,6 @@ function openAccountAdjustmentHistory(accountId) {
       <button class="btn primary" ${act('reopenAfterModal', 'openAccountAdjustment', accountId, 'increase')}>＋ Tiền</button>
       <button class="btn" ${act('reopenAfterModal', 'openAccountAdjustment', accountId, 'decrease')}>− Tiền</button>
       <button class="btn" ${act('reopenAfterModal', 'openAccount', accountId)}>Sửa</button>
-      <button class="btn" ${act('deleteAccount', accountId)}>Xóa</button>
     </div>`);
   $('#adjHistFilter').addEventListener('change', e => {
     const m = e.target.value;
@@ -347,6 +356,15 @@ function openInvestmentNew(id = '') {
 async function deleteInvestment(id) {
   if (!confirm('Xóa khoản đầu tư này? Lịch sử vẫn được giữ lại nhưng khoản này sẽ không còn hiển thị.')) return;
   try { await api.investment('delete', { id }); closeModal(); await window.refresh(); toast('Đã xóa khoản đầu tư'); } catch (e) { toast(e.message, true); }
+}
+// "⚙ Cài đặt" on the Đầu tư column header (Tài sản page) — top-level
+// investments only (NISA quỹ/ETF con vẫn quản lý trong card NISA riêng).
+function openInvestmentColumnManager() {
+  const items = F.investments().filter(inv => (inv.currency || state.base) === state.base && !inv.parent_investment_id);
+  infoModal('Quản lý · Đầu tư', `
+    <div class="list">${items.map(inv => `<div class="tx"><div class="tx-main"><strong>${esc(inv.name)}</strong><span>${esc(INVESTMENT_KIND_LABEL[inv.kind] || '')} · ${money(F.investmentCurrentValue(inv), inv.currency)}</span></div>
+      <div class="tx-actions"><button class="btn sm" ${act('reopenAfterModal', 'openInvestmentNew', inv.id)}>Sửa</button><button class="btn sm" ${act('deleteInvestment', inv.id)}>Xóa</button></div></div>`).join('') || '<div class="empty compact">Chưa có khoản đầu tư</div>'}</div>
+    <div class="row mt-14 wrap"><button class="btn primary" ${act('reopenAfterModal', 'openInvestmentNew')}>＋ Thêm khoản đầu tư</button></div>`);
 }
 
 // ---- Quỹ/ETF bên trong một tài khoản NISA — một khoản đầu tư kind='securities'
@@ -465,7 +483,6 @@ function openInvestmentEventHistory(investmentId) {
     <div class="list">${rows.map(x => investmentEventRow(x, investmentId, isSecurities)).join('') || '<div class="empty compact">Chưa có lịch sử nào.</div>'}</div>
     <div class="row mt-14 wrap">${actions}
       <button class="btn" ${act('reopenAfterModal', 'openInvestmentNew', investmentId)}>Sửa</button>
-      <button class="btn" ${act('deleteInvestment', investmentId)}>Xóa</button>
     </div>`);
 }
 
@@ -508,6 +525,16 @@ async function deleteDebt(id) {
   if (!confirm('Xóa khoản nợ này? Chỉ xóa được khi chưa có lịch sử điều chỉnh.')) return;
   try { await api.debtLedger('delete', { id }); closeModal(); await window.refresh(); toast('Đã xóa khoản nợ'); } catch (e) { toast(e.message, true); }
 }
+// "⚙ Cài đặt" on the Khoản phải thu / Nợ phải trả column headers — shared by
+// both directions, same as their row source (F.receivables()/F.payables()).
+function openDebtColumnManager(direction) {
+  const title = direction === 'receivable' ? 'Khoản phải thu' : 'Nợ phải trả';
+  const items = direction === 'receivable' ? F.receivables() : F.payables();
+  infoModal(`Quản lý · ${esc(title)}`, `
+    <div class="list">${items.map(d => `<div class="tx"><div class="tx-main"><strong>${esc(d.name)}</strong><span>${d.counterparty ? esc(d.counterparty) + ' · ' : ''}${money(F.debtBalance(d), d.currency)}</span></div>
+      <div class="tx-actions"><button class="btn sm" ${act('reopenAfterModal', 'openDebt', d.id, d.direction)}>Sửa</button><button class="btn sm" ${act('deleteDebt', d.id)}>Xóa</button></div></div>`).join('') || `<div class="empty compact">Chưa có ${esc(direction === 'receivable' ? 'khoản phải thu' : 'khoản nợ')}</div>`}</div>
+    <div class="row mt-14 wrap"><button class="btn primary" ${act('reopenAfterModal', 'openDebt', '', direction)}>＋ Thêm</button></div>`);
+}
 function openDebtAdjustment(debtId, direction = 'increase', id = '') {
   const d = F.debts().find(x => x.id === debtId); if (!d) return toast('Không tìm thấy khoản nợ.', true);
   const existing = id ? F.debtAdjustmentsFor(d).find(x => x.id === id) : null;
@@ -548,7 +575,6 @@ function openDebtAdjustmentHistory(debtId) {
       <button class="btn primary" ${act('reopenAfterModal', 'openDebtAdjustment', debtId, 'increase')}>Tăng dư nợ</button>
       <button class="btn" ${act('reopenAfterModal', 'openDebtAdjustment', debtId, 'decrease')}>Giảm dư nợ</button>
       <button class="btn" ${act('reopenAfterModal', 'openDebt', debtId, d.direction)}>Sửa</button>
-      <button class="btn" ${act('deleteDebt', debtId)}>Xóa</button>
     </div>`);
   const applyFilter = () => {
     const m = $('#debtAdjFilterMonth').value, y = $('#debtAdjFilterYear').value;
@@ -670,10 +696,10 @@ async function toggleInstallmentPaid(scheduleRowId, cardId) {
 }
 
 Object.assign(window, {
-  openQuickEntry, openTransactionEdit, deleteTransaction, openColumnSettings, openAccount, deleteAccount,
+  openQuickEntry, openTransactionEdit, deleteTransaction, openColumnSettings, openAccount, deleteAccount, openAccountColumnManager,
   openAccountAdjustment, deleteAccountAdjustment, openAccountAdjustmentHistory,
-  openDebt, deleteDebt, openDebtAdjustment, deleteDebtAdjustment, openDebtAdjustmentHistory,
-  openInvestmentNew, deleteInvestment, openNisaHolding, openInvestmentEvent, deleteInvestmentEvent, openInvestmentEventHistory,
+  openDebt, deleteDebt, openDebtColumnManager, openDebtAdjustment, deleteDebtAdjustment, openDebtAdjustmentHistory,
+  openInvestmentNew, deleteInvestment, openInvestmentColumnManager, openNisaHolding, openInvestmentEvent, deleteInvestmentEvent, openInvestmentEventHistory,
   openSecurityTrade, openInvestmentPlanConfirm, skipInvestmentPlan,
   openCreditCard, openCardLedger, openCardExpenseForm, deleteCardExpense,
   openInstallment, deleteInstallment, openInstallmentSchedule, toggleInstallmentPaid
