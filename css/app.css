@@ -136,6 +136,13 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 .two-cols{grid-template-columns:1fr 1fr}
 .chart-row{grid-template-columns:1fr 1fr;align-items:stretch}
 .dash-col{display:flex;flex-direction:column;gap:16px}
+/* .dash-col itself already stretches to the taller sibling's height (CSS
+   Grid's default align-items:stretch) — but its one <section class="card">
+   child was only ever as tall as its own content, leaving invisible empty
+   space below the shorter card instead of the two visible card boxes
+   actually matching in height. flex:1 makes the card itself grow to fill
+   that stretched space. */
+.dash-col>.card{flex:1 1 auto;display:flex;flex-direction:column}
 .empty{
   color:var(--text-faint);font-size:13px;padding:22px 10px;text-align:center;border:1px dashed var(--border);
   border-radius:var(--radius-md);
@@ -279,6 +286,7 @@ progress.bad::-webkit-progress-value{background:var(--negative)}
 .bar-value-line.income{fill:var(--positive)}
 .bar-value-line.expense{fill:var(--negative)}
 .bar-group{cursor:pointer}
+.trend-month-label{font-size:12.5px}
 .legend{display:flex;gap:14px;margin-top:8px;font-size:11.5px;color:var(--text-dim)}
 .legend span{display:inline-flex;align-items:center;gap:6px}
 .legend i{width:9px;height:9px;border-radius:2px;display:inline-block}
