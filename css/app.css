@@ -154,10 +154,8 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 .kpi .sub{color:var(--text-dim);font-size:11px}
 .kpi.hero{grid-column:span 1}
 
-/* ---------- Money board: equal columns (per-page column count) ---------- */
+/* ---------- Budget board: 4 equal columns ---------- */
 .money-board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
-/* Chi tiêu only: Thẻ and Trả góp are separate columns, so it has 5. */
-.money-board.board-5{grid-template-columns:repeat(5,minmax(0,1fr))}
 .money-column{display:flex;flex-direction:column;min-height:340px}
 .money-column-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
 .money-column-head h3{margin:0;font-size:13.5px;font-weight:700}
@@ -189,7 +187,7 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 }
 .money-total span{color:var(--text-dim);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.02em}
 .money-column.income .money-column-head h3,.money-column.receivable .money-column-head h3{color:var(--positive)}
-.money-column.debt .money-column-head h3,.money-column.credit .money-column-head h3,.money-column.installment .money-column-head h3{color:var(--negative)}
+.money-column.debt .money-column-head h3,.money-column.credit .money-column-head h3{color:var(--negative)}
 .money-total .pct{font-size:11px;color:var(--text-faint);font-weight:600;margin-left:6px}
 .line-amount{text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:1px;flex:none}
 .line-amount small{color:var(--text-faint);font-weight:500;font-size:10px;white-space:nowrap}
@@ -469,12 +467,12 @@ input[type=color]{padding:3px;height:36px}
 }
 @media (max-width:900px){
   .section-grid,.two-cols,.chart-row{grid-template-columns:1fr}
-  .money-board,.money-board.board-5{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .money-board{grid-template-columns:repeat(2,minmax(0,1fr))}
   .money-column{min-height:0}
 }
 @media (max-width:600px){
   .kpi-grid{grid-template-columns:1fr 1fr}
-  .money-board,.money-board.board-5{grid-template-columns:1fr}
+  .money-board{grid-template-columns:1fr}
   .form-grid{grid-template-columns:1fr}
   .compare-head,.compare-row{grid-template-columns:1.2fr 1fr 1fr}
   .compare-head span:last-child,.compare-row>div:last-child{display:none}
