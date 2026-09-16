@@ -374,6 +374,9 @@ const RPC_HANDLERS = {
   results.push(`CLICK "Theo năm" on Thu nhập vs Chi tiêu: switches mode, chart still renders: ${await page.locator('.chart-card', { hasText: 'Thu nhập vs Chi tiêu' }).locator('p').textContent().then(t => t.includes('Theo năm')) && await page.locator('.chart-card svg').count() > 0}`);
   await page.click('.chart-card button:has-text("12 tháng")');
   await page.waitForTimeout(100);
+  await resetToast();
+  await page.click('.chart-card .bar-group .bar-income >> nth=0');
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`CLICK a bar in Thu nhập vs Chi tiêu: toast shows the exact amounts ("${await page.textContent('#toast')}")`)).catch(() => results.push('CLICK a bar in Thu nhập vs Chi tiêu: no toast - FAIL'));
   await page.screenshot({ path: path.join(SHOT_DIR, 'shot-dashboard-1440.png'), fullPage: true });
 
   // ---- Chi tiêu: 4 columns now (Nợ removed) ----

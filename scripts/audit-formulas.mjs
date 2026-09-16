@@ -36,6 +36,7 @@ const sandbox = {
   clamp0: v => Math.max(0, Number(v || 0)),
   money: (v, c) => `${Math.round(Number(v || 0))} ${c || ''}`,
   esc: v => String(v),
+  act: (name, ...args) => `data-action="${name}"${args.length ? ` data-a="${JSON.stringify(args)}"` : ''}`,
   pctText: (v, base) => (base > 0 ? `${(Number(v) / base * 100).toFixed(1)}%` : '—'),
   monthKey: d => String(d || '').slice(0, 7),
   yearKey: d => String(d || '').slice(0, 4),
@@ -470,10 +471,12 @@ function debtAdj(id, debtId, direction, amount, date) { return { id, debt_id: de
 }
 
 // ---------------------------------------------------------------------
-// trendSvg (Thu nhập vs Chi tiêu) writes "Thu"/"Chi" + compact amount as
-// two lines under each month's own label (centered on that month's own
-// x, so it can never bleed into a neighboring month) instead of vertical
-// in-bar text, which the user found unreadable.
+// trendSvg (Thu nhập vs Chi tiêu) writes just the compact amount (no
+// "Thu"/"Chi" prefix — the legend below the chart already says which
+// color is which) as two lines under each month's own label, centered on
+// that month's own x so it can never bleed into a neighboring month.
+// Each month's bars are also clickable — showMonthBarAmounts (act()) pops
+// a toast with the exact, non-abbreviated amounts.
 // ---------------------------------------------------------------------
 {
   eq('compactMoney (JPY) uses 万 (÷10,000, 1 decimal)', compactMoney(495000, 'JPY'), '49.5万');
@@ -486,9 +489,10 @@ function debtAdj(id, debtId, direction, amount, date) { return { id, debt_id: de
     fullTransactions: [tx({ category_id: 'inc1', transaction_type: 'income', amount: 495000, transaction_date: '2026-09-05' })]
   });
   const svg = trendSvg(['2026-09']);
-  eq('trendSvg writes exactly 2 value lines per month (Thu + Chi), not vertical in-bar text', (svg.match(/bar-value-line/g) || []).length, 2);
-  eq('trendSvg\'s Thu line shows the month\'s own 万 amount (49.5万)', svg.includes('Thu 49.5万'), true);
-  eq('trendSvg\'s Chi line shows 0 when there is no expense that month', svg.includes('Chi 0.0万'), true);
+  eq('trendSvg writes exactly 2 value lines per month, not vertical in-bar text', (svg.match(/bar-value-line/g) || []).length, 2);
+  eq('trendSvg\'s value line shows the month\'s own 万 amount (49.5万), with no "Thu"/"Chi" prefix', svg.includes('>49.5万<') && !svg.includes('Thu 49.5万'), true);
+  eq('trendSvg\'s expense line shows 0.0万 with no "Chi" prefix', svg.includes('>0.0万<'), true);
+  eq('trendSvg wires each month\'s bars to showMonthBarAmounts via act() (clickable for the exact amount)', svg.includes('data-action="showMonthBarAmounts"') && svg.includes('2026-09'), true);
 }
 
 // ---------------------------------------------------------------------

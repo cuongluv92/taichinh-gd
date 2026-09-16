@@ -417,7 +417,7 @@ function donutSvg(items) {
   const clean = items.filter(x => n(x.value) > 0);
   const total = clean.reduce((s, x) => s + n(x.value), 0);
   if (!total) return `<div class="empty compact">Chưa có dữ liệu</div>`;
-  const cx = 105, cy = 105, r = 90;
+  const cx = 113, cy = 113, r = 98;
   const pointAt = (theta, radius) => [cx + radius * Math.sin(theta), cy - radius * Math.cos(theta)];
   let cum = 0;
   const slices = clean.map((x, i) => {
@@ -456,7 +456,7 @@ function donutSvg(items) {
     return `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" transform="rotate(${deg.toFixed(1)} ${lx.toFixed(1)} ${ly.toFixed(1)})" text-anchor="middle" dominant-baseline="middle" font-size="${fontSize}" font-weight="600" fill="#fff" stroke="rgba(0,0,0,.45)" stroke-width="1.4" paint-order="stroke" stroke-linejoin="round">${tspans}</text>`;
   });
   const wedgePaths = slices.map(s => `<path d="${s.path}" fill="${s.color}" stroke="var(--panel)" stroke-width="0.75"/>`).join('');
-  return `<div class="donut-wrap"><svg viewBox="0 0 210 210" width="210" height="210" role="img" aria-label="Biểu đồ tròn">${wedgePaths}${labels.join('')}</svg></div>`;
+  return `<div class="donut-wrap"><svg viewBox="0 0 226 226" width="226" height="226" role="img" aria-label="Biểu đồ tròn">${wedgePaths}${labels.join('')}</svg></div>`;
 }
 // First % is always share-of-the-donut (items sum to 100%), matching what
 // the donut itself visually draws — it used to be computed against thu
@@ -502,10 +502,14 @@ function trendSvg(keys = Array.from({ length: 12 }, (_, i) => addMonths(state.mo
   const W = 720, H = 176, padTop = 20, padBottom = 54, max = Math.max(1, ...data.flatMap(x => [x.inc, x.exp])), group = (W - padTop - padBottom) > 0 ? (W - 52) / keys.length : 0, bw = 12;
   const barH = H - padTop - padBottom;
   const grid = [0, 1, 2, 3].map(i => { const y = padTop + barH * i / 3; return `<line class="v-gridline" x1="26" y1="${y}" x2="${W - 26}" y2="${y}"/>`; }).join('');
+  // No "Thu"/"Chi" prefix — the legend right below the chart already says
+  // which color is which, so the number itself can run bigger and stay
+  // readable. Clicking/tapping a month's bars shows the full (non-
+  // abbreviated) amounts via showMonthBarAmounts (see dashboard.js).
   const bars = data.map((x, i) => {
     const cx = 26 + group * i + group / 2, ih = barH * x.inc / max, eh = barH * x.exp / max;
     const base = H - padBottom;
-    return `<g><title>${x.k}: Thu ${money(x.inc)} · Chi ${money(x.exp)}</title><rect class="bar-income" x="${cx - bw - 2}" y="${base - ih}" width="${bw}" height="${ih}" rx="3"/><rect class="bar-expense" x="${cx + 2}" y="${base - eh}" width="${bw}" height="${eh}" rx="3"/><text class="axis-label" x="${cx}" y="${base + 14}" text-anchor="middle">${x.k.slice(5)}</text><text class="bar-value-line income" x="${cx}" y="${base + 26}" text-anchor="middle">Thu ${esc(compactMoney(x.inc))}</text><text class="bar-value-line expense" x="${cx}" y="${base + 37}" text-anchor="middle">Chi ${esc(compactMoney(x.exp))}</text></g>`;
+    return `<g class="bar-group" ${act('showMonthBarAmounts', x.k)}><title>${x.k}: Thu ${money(x.inc)} · Chi ${money(x.exp)}</title><rect class="bar-income" x="${cx - bw - 2}" y="${base - ih}" width="${bw}" height="${ih}" rx="3"/><rect class="bar-expense" x="${cx + 2}" y="${base - eh}" width="${bw}" height="${eh}" rx="3"/><text class="axis-label" x="${cx}" y="${base + 14}" text-anchor="middle">${x.k.slice(5)}</text><text class="bar-value-line income" x="${cx}" y="${base + 28}" text-anchor="middle">${esc(compactMoney(x.inc))}</text><text class="bar-value-line expense" x="${cx}" y="${base + 41}" text-anchor="middle">${esc(compactMoney(x.exp))}</text></g>`;
   }).join('');
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Thu chi 12 tháng">${grid}${bars}</svg><div class="legend"><span><i class="swatch-positive"></i>Thu nhập</span><span><i class="swatch-negative"></i>Chi tiêu</span></div>`;
 }

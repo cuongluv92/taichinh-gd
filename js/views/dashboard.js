@@ -40,6 +40,12 @@ function categoryTrendHtml() {
 // pattern as Tài sản's "Lịch sử theo tháng" chart.
 let dashboardChartMode = 12;
 function setDashboardChartMode(mode) { dashboardChartMode = mode; render(); }
+// Bars only show a rounded "49.5万" — clicking/tapping a month's bars
+// surfaces the exact amounts via toast (Thu nhập vs Chi tiêu chart).
+function showMonthBarAmounts(k) {
+  const s = F.statsFor(k);
+  toast(`${fmtMonthKey(k)} · Thu ${money(s.income)} · Chi ${money(s.expense)}`);
+}
 function dashboardChartMonthKeys() {
   if (dashboardChartMode === 'year') return F.yearMonthKeys(state.month.slice(0, 4));
   return F.trailingMonthKeys(12);
@@ -118,4 +124,4 @@ function renderDashboard() {
   </div>`;
 }
 
-Object.assign(window, { renderDashboard, incomePlanTotal, setDashboardChartMode });
+Object.assign(window, { renderDashboard, incomePlanTotal, setDashboardChartMode, showMonthBarAmounts });
