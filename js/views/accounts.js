@@ -28,14 +28,15 @@ function debtRowMeta(d) {
 }
 // A foreign-currency khoản stays right here in its own column (the user
 // wants one list, not a second table to check) — its own currency is
-// still the real number; this is only a reference estimate in the
-// household's base currency, shown once a JPY↔VND rate is set in Cài đặt.
+// still the real number shown on the row. Once a JPY↔VND rate is set in
+// Cài đặt, the converted estimate is ALSO folded into Tổng nợ/Khoản phải
+// thu/Tài sản ròng (F.totalPayablesAt/totalReceivablesAt) — this line is
+// that same converted figure, not a separate number that never counts.
 function debtConvertedEstimate(d, bal) {
   if ((d.currency || state.base) === state.base) return '';
-  const rate = state.reporting?.jpy_vnd_rate;
-  if (!rate) return '<small class="muted">Chưa đặt tỷ giá quy đổi ở Cài đặt</small>';
-  const jpy = d.currency === 'JPY' ? bal * rate : bal / rate;
-  return `<small class="muted">≈ ${money(jpy, state.base)}</small>`;
+  const converted = F.convertToBase(bal, d.currency);
+  if (converted == null) return '<small class="muted">Chưa đặt tỷ giá quy đổi ở Cài đặt</small>';
+  return `<small class="muted">≈ ${money(converted, state.base)} (đã tính vào Tổng)</small>`;
 }
 function receivableRow(d) {
   const bal = F.debtBalance(d), meta = debtRowMeta(d);

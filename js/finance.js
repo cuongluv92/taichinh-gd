@@ -75,8 +75,16 @@ F.debtBalanceAt = (d, endDate = '9999-12-31') => {
 F.debtBalance = d => F.debtBalanceAt(d);
 F.payables = () => F.debts().filter(d => d.direction === 'payable');
 F.receivables = () => F.debts().filter(d => d.direction === 'receivable');
-F.totalPayablesAt = endDate => F.payables().filter(d => (d.currency || state.base) === state.base).reduce((s, d) => s + F.debtBalanceAt(d, endDate), 0);
-F.totalReceivablesAt = endDate => F.receivables().filter(d => (d.currency || state.base) === state.base).reduce((s, d) => s + F.debtBalanceAt(d, endDate), 0);
+// A foreign-currency khoản counts toward the total once a quy đổi rate is
+// on file (converted via F.convertToBase) — without a rate it's excluded,
+// same as before, since there's nothing to convert it with yet.
+F.debtBalanceInBaseAt = (d, endDate) => {
+  const bal = F.debtBalanceAt(d, endDate);
+  if ((d.currency || state.base) === state.base) return bal;
+  return F.convertToBase(bal, d.currency);
+};
+F.totalPayablesAt = endDate => F.payables().reduce((s, d) => s + (F.debtBalanceInBaseAt(d, endDate) || 0), 0);
+F.totalReceivablesAt = endDate => F.receivables().reduce((s, d) => s + (F.debtBalanceInBaseAt(d, endDate) || 0), 0);
 
 // ---------------- Recurring items (Tiền mặt & ngân hàng / Nợ phải trả) ----------------
 // Templates for amounts that repeat every month (lương, tiền nhà, wifi...)
@@ -339,6 +347,17 @@ F.fxRate = () => { const r = n(state.reporting?.jpy_vnd_rate); return r > 0 ? r 
 F.toVND = (amount, currency) => {
   if (currency === 'VND') return n(amount);
   if (currency === 'JPY') { const r = F.fxRate(); return r ? n(amount) * r : null; }
+  return null;
+};
+// Generic other-currency -> household's base currency, using the same
+// "1 JPY ≈ rate VND" rate on file. null when no rate is set yet (never
+// assumes 1:1) or the pair isn't JPY/VND.
+F.convertToBase = (amount, currency) => {
+  if ((currency || state.base) === state.base) return n(amount);
+  const r = F.fxRate();
+  if (!r) return null;
+  if (state.base === 'JPY' && currency === 'VND') return n(amount) / r;
+  if (state.base === 'VND' && currency === 'JPY') return n(amount) * r;
   return null;
 };
 F.positionInVND = pos => {

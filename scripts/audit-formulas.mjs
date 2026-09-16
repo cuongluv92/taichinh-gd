@@ -344,6 +344,25 @@ function debtAdj(id, debtId, direction, amount, date) { return { id, debt_id: de
 }
 
 // ---------------------------------------------------------------------
+// A foreign-currency khoản phải trả/thu is excluded from Tổng nợ/Khoản
+// phải thu while no quy đổi rate is on file, but folds into the SAME
+// total (converted) once a rate exists — it isn't just a cosmetic "≈" on
+// the row that never counts, per the household's explicit correction.
+// ---------------------------------------------------------------------
+{
+  resetState({ base: 'JPY', debts: [debt('vnd1', 'payable', 5000000, { currency: 'VND' })], reporting: { show_vnd_conversion: false, jpy_vnd_rate: null } });
+  eq('No fx rate on file: a VND payable is excluded from Tổng nợ entirely (not silently wrong, just not convertible yet)', F.totalPayablesAt('9999-12-31'), 0);
+  resetState({ base: 'JPY', debts: [debt('vnd1', 'payable', 5000000, { currency: 'VND' })], reporting: { show_vnd_conversion: true, jpy_vnd_rate: 168 } });
+  eq('Once a rate is set, the VND payable converts into Tổng nợ (5,000,000 / 168)', F.totalPayablesAt('9999-12-31'), 5000000 / 168);
+  resetState({
+    base: 'JPY',
+    debts: [debt('jpy1', 'payable', 100000), debt('vnd1', 'payable', 5000000, { currency: 'VND' })],
+    reporting: { show_vnd_conversion: true, jpy_vnd_rate: 168 }
+  });
+  eq('A base-currency payable and a converted foreign one sum together in Tổng nợ', F.totalPayablesAt('9999-12-31'), 100000 + 5000000 / 168);
+}
+
+// ---------------------------------------------------------------------
 // Print report
 // ---------------------------------------------------------------------
 const pass = results.filter(r => r.ok).length;

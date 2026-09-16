@@ -1,8 +1,10 @@
 -- ---------------------------------------------------------------------
 -- Bonus (ボーナス併用払い) cho trả góp + kỳ đầu gánh phần dư + kỳ có thể sửa tay.
 --
--- 1. bonus_months/bonus_amount: hộ gia đình chọn tháng 1/7/12 được cộng
---    thêm một khoản bonus cố định (nhập tay). Theo đúng cách người Nhật
+-- 1. bonus_months/bonus_amount: hộ gia đình tự chọn (những) tháng nào
+--    trong 12 tháng được cộng thêm một khoản bonus cố định (nhập tay) —
+--    không cố định 1/7/12, có thể chọn 1, 2 hay nhiều tháng cùng lúc.
+--    Theo đúng cách người Nhật
 --    tính ボーナス併用払い: khoản bonus (đã nhập tay, không tự suy ra) được
 --    TRỪ RA khỏi principal_amount trước, phần còn lại mới chia đều cho MỌI
 --    kỳ (kể cả kỳ bonus) — rồi kỳ bonus mới được cộng thêm đúng số bonus đó
@@ -119,9 +121,11 @@ begin
     v_first_month := coalesce(nullif(p_payload->>'first_payment_month','')::date, date_trunc('month', v_date)::date);
     v_fee_total := coalesce(nullif(p_payload->>'fee_total','')::numeric,0);
 
+    -- Tháng bonus do hộ gia đình TỰ CHỌN (không cố định 1/7/12, mỗi công ty
+    -- trả thưởng khác tháng nhau) — chọn được nhiều tháng cùng lúc.
     select coalesce(array_agg(x::smallint), '{}'::smallint[]) into v_bonus_months
     from jsonb_array_elements_text(coalesce(p_payload->'bonus_months', '[]'::jsonb)) x;
-    if exists (select 1 from unnest(v_bonus_months) m where m not in (1,7,12)) then
+    if exists (select 1 from unnest(v_bonus_months) m where m < 1 or m > 12) then
       raise exception 'invalid_bonus_month';
     end if;
     v_bonus_amount := coalesce(nullif(p_payload->>'bonus_amount','')::numeric, 0);

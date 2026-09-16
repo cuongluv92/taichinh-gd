@@ -81,6 +81,7 @@ const CARD_EXPENSES = [
   { id: 'ce1', card_account_id: 'card', card_name: 'Rakuten', entry_mode: 'detail', expense_date: `${MONTH}-15`, description: 'Điện · Ga', amount: 10000, note: '' }
 ];
 const INSTALLMENTS = [];
+const REPORTING = { show_vnd_conversion: false, jpy_vnd_rate: null };
 const DEBTS = [
   { id: 'd1', name: 'Vay mua xe', counterparty: 'Ngân hàng ABC', direction: 'payable', currency: 'JPY', opening_amount: 1250000, start_date: `${MONTH}-15`, due_date: '2026-12-01', interest_rate: 0, is_active: true },
   { id: 'd2', name: 'Vay chị Hoa', counterparty: 'Chị Hoa', direction: 'payable', currency: 'VND', opening_amount: 5000000, start_date: `${MONTH}-01`, due_date: null, interest_rate: 0, is_active: true }
@@ -142,9 +143,10 @@ const RPC_HANDLERS = {
     }
     return { ok: true, id: 'x' };
   },
-  taichinh_gd_extension_api: (action) => {
-    if (action === 'save_reporting') return { ok: true };
-    return { reporting: { show_vnd_conversion: false, jpy_vnd_rate: null }, loan_terms: [] };
+  taichinh_gd_extension_api: (action, body) => {
+    const p = body?.p_payload || {};
+    if (action === 'save_reporting') { Object.assign(REPORTING, { show_vnd_conversion: !!p.show_vnd_conversion, jpy_vnd_rate: p.jpy_vnd_rate ? Number(p.jpy_vnd_rate) : null }); return { ok: true }; }
+    return { reporting: REPORTING, loan_terms: [] };
   },
   taichinh_gd_exceptional_api: (action) => action === 'set' ? { ok: true } : { ids: [] },
   taichinh_gd_backup_api: () => ({ ok: true }),
@@ -776,6 +778,21 @@ const RPC_HANDLERS = {
   await resetToast();
   await page.click('#householdForm button[type=submit]');
   await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`SUBMIT "Gia đình" form: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('SUBMIT "Gia đình" form: no toast - FAIL'));
+
+  // Setting a JPY↔VND rate must fold the VND payable ("Vay chị Hoa") INTO
+  // Tổng nợ (converted), not just show a cosmetic "≈" that never counts.
+  await page.fill('#reportingForm [name=jpy_vnd_rate]', '168');
+  await page.check('#reportingForm [name=show_vnd_conversion]');
+  await resetToast();
+  await page.click('#reportingForm button[type=submit]');
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(() => results.push('SUBMIT tỷ giá quy đổi (1 JPY = 168 VND): saved - OK')).catch(() => results.push('SUBMIT tỷ giá quy đổi: no toast - FAIL'));
+  await page.click('[data-view="accounts"]');
+  await page.waitForTimeout(150);
+  const tongNoAfterRate = await page.locator('.kpi').filter({ has: page.locator('.label', { hasText: 'Tổng nợ' }) }).locator('.value').textContent();
+  results.push(`  Sau khi đặt tỷ giá, Tổng nợ cộng thêm phần quy đổi VND (¥1,279,762 = 1,250,000 + 5,000,000/168), không còn dừng ở ¥1,250,000: ${tongNoAfterRate.includes('1,279,762')}`);
+  const debtColumnTextAfterRate = await page.textContent('.money-column.debt');
+  results.push(`  Dòng "Vay chị Hoa" giờ ghi rõ khoản quy đổi đã tính vào Tổng, không còn nhắc "chưa đặt tỷ giá": ${debtColumnTextAfterRate.includes('đã tính vào Tổng') && !debtColumnTextAfterRate.includes('Chưa đặt tỷ giá')}`);
+
   const csvBtn = await page.$('button:has-text("Xuất CSV")');
   if (csvBtn) {
     try {
