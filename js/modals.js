@@ -727,9 +727,12 @@ function installmentProgress(inst) {
   const paid = schedule.filter(s => s.is_paid).length;
   return { paid, total: schedule.length };
 }
+const BONUS_MONTH_LABEL = { 1: 'Tháng 1', 7: 'Tháng 7', 12: 'Tháng 12' };
 function installmentRow(inst) {
   const p = installmentProgress(inst);
-  return `<div class="tx"><div class="tx-main"><strong>${esc(inst.name)}</strong><span>${money(inst.principal_amount, inst.currency)} · ${p.paid}/${p.total} kỳ đã trả · ${money(n(inst.principal_amount) / inst.total_installments, inst.currency)}/kỳ</span></div>
+  const bonusMonths = inst.bonus_months || [];
+  const bonusNote = bonusMonths.length ? ` · Bonus ${bonusMonths.map(m => BONUS_MONTH_LABEL[m] || m).join(', ')} +${money(inst.bonus_amount, inst.currency)}/lần` : '';
+  return `<div class="tx"><div class="tx-main"><strong>${esc(inst.name)}</strong><span>${money(inst.principal_amount, inst.currency)} · ${p.paid}/${p.total} kỳ đã trả · ${money(n(inst.principal_amount) / inst.total_installments, inst.currency)}/kỳ${esc(bonusNote)}</span></div>
     <div class="tx-actions"><button class="btn sm" ${act('openInstallmentSchedule', inst.id, inst.card_account_id)}>Xem lịch</button><button class="btn sm" ${act('openInstallment', inst.card_account_id, inst.id)}>Sửa</button><button class="btn sm" ${act('deleteInstallment', inst.id, inst.card_account_id)}>Xóa</button></div></div>`;
 }
 function openCardLedger(cardId) {
@@ -758,10 +761,18 @@ function openInstallment(cardId = '', id = '') {
     <div class="field"><label>Tổng số kỳ</label><input name="total_installments" type="number" min="2" max="60" value="${esc(inst?.total_installments || 12)}" required></div>
     <div class="field"><label>Ngày bắt đầu</label><input name="purchase_date" type="date" value="${esc(inst?.purchase_date || localToday())}" required></div>
     <div class="field"><label>Số kỳ đã trả</label><input name="paid_installments_before" type="number" min="0" value="${esc(inst?.paid_installments_before ?? 0)}"></div>
+    <div class="field full"><label>Bonus (thưởng Tết/giữa năm — kỳ rơi vào tháng đã chọn sẽ trả thêm)</label>
+      <div class="row wrap">${[1, 7, 12].map(m => `<label class="checkbox-label"><input type="checkbox" id="instBonus${m}" ${(inst?.bonus_months || []).includes(m) ? 'checked' : ''}> ${BONUS_MONTH_LABEL[m]}</label>`).join('')}</div>
+    </div>
+    <div class="field"><label>Số tiền bonus mỗi lần</label><input id="instBonusAmount" type="number" min="0" step="1" value="${esc(inst?.bonus_amount || '')}" placeholder="0 nếu không có"></div>
     <div class="field full"><label>Ghi chú</label><input name="note" value="${esc(inst?.note || '')}" placeholder="Tùy chọn"></div>
   </div>
-  <small class="muted">Số tiền mỗi kỳ = Tổng giá trị ÷ Tổng số kỳ, chia đều. Mỗi tháng chỉ kỳ đến hạn mới tính vào Tổng chi tiêu tháng — không xuất hiện ở Chi biến động.</small>`,
-  fd => api.cardLedger('save_installment', { ...fd, id: id || null, first_payment_month: `${monthKey(fd.purchase_date)}-01` }), inst ? 'Lưu' : 'Lưu khoản trả góp');
+  <small class="muted">Số tiền mỗi kỳ = Tổng giá trị ÷ Tổng số kỳ, chia đều. Chọn bonus thì các kỳ khác giảm xuống tương ứng — tổng vẫn đúng bằng Tổng giá trị, không cộng thêm ra ngoài. Mỗi tháng chỉ kỳ đến hạn mới tính vào Tổng chi tiêu tháng — không xuất hiện ở Chi biến động.</small>`,
+  fd => api.cardLedger('save_installment', {
+    ...fd, id: id || null, first_payment_month: `${monthKey(fd.purchase_date)}-01`,
+    bonus_months: [1, 7, 12].filter(m => $(`#instBonus${m}`).checked),
+    bonus_amount: $('#instBonusAmount').value || 0
+  }), inst ? 'Lưu' : 'Lưu khoản trả góp');
 }
 async function deleteInstallment(id, cardId) {
   if (!confirm('Xóa khoản trả góp này? Toàn bộ lịch trả sẽ bị xóa.')) return;
@@ -773,8 +784,19 @@ async function deleteInstallment(id, cardId) {
   } catch (e) { toast(e.message, true); }
 }
 function scheduleRow(row, cardId) {
-  return `<div class="tx"><div class="tx-main"><strong>${esc(fmtMonthKey(monthKey(row.payment_month)))}</strong><span>Kỳ ${row.installment_no} · ${money(n(row.principal_amount) + n(row.fee_amount))}${row.is_paid ? ' · Đã trả' : ''}</span></div>
-    <div class="tx-actions"><button class="btn sm" ${act('toggleInstallmentPaid', row.id, cardId)}>${row.is_paid ? 'Đánh dấu chưa trả' : 'Đánh dấu đã trả'}</button></div></div>`;
+  const bonusTag = row.payment_kind === 'bonus' ? ' <span class="due-date-tag">Bonus</span>' : '';
+  return `<div class="tx"><div class="tx-main"><strong>${esc(fmtMonthKey(monthKey(row.payment_month)))}${bonusTag}</strong><span>Kỳ ${row.installment_no} · ${money(n(row.principal_amount) + n(row.fee_amount))}${row.is_paid ? ' · Đã trả' : ''}</span></div>
+    <div class="tx-actions"><button class="btn sm" ${act('reopenAfterModal', 'openScheduleRowEdit', row, cardId)}>Sửa</button><button class="btn sm" ${act('toggleInstallmentPaid', row.id, cardId)}>${row.is_paid ? 'Đánh dấu chưa trả' : 'Đánh dấu đã trả'}</button></div></div>`;
+}
+// Thoát hiểm khi cách chia tự động (kỳ đầu gánh phần dư, còn lại chia đều +
+// bonus cộng thêm) không đúng ý — sửa thẳng đúng một kỳ, không tính lại cả
+// lịch, không đụng các kỳ khác.
+function openScheduleRowEdit(row, cardId) {
+  modal(`Sửa kỳ ${row.installment_no} · ${esc(fmtMonthKey(monthKey(row.payment_month)))}`, `<div class="form-grid">
+    <div class="field full"><label>Số tiền gốc kỳ này</label><input name="principal_amount" type="number" min="1" step="1" value="${esc(row.principal_amount)}" required autofocus></div>
+  </div>
+  <small class="muted">Chỉ sửa đúng kỳ này, không tính lại các kỳ khác.</small>`,
+  fd => api.cardLedger('edit_schedule_row', { id: row.id, principal_amount: fd.principal_amount }), 'Lưu');
 }
 function openInstallmentSchedule(installmentId, cardId) {
   const inst = F.installmentsFor(cardId).find(x => x.id === installmentId); if (!inst) return toast('Không tìm thấy khoản trả góp.', true);

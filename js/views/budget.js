@@ -97,8 +97,16 @@ function openCreditColumnManager() {
     <button class="btn primary mt-14" ${act('reopenAfterModal', 'openCreditCard')}>＋ Thẻ tín dụng mới</button>`);
 }
 function renderBudget() {
+  const s = F.statsFor(state.month);
+  const ratio = pctText(s.expense, s.income);
   return `<div class="view-head"><div><h2>Tháng ${fmtMonthKey(state.month)}</h2><p>Mỗi cột độc lập — một giao dịch chỉ nằm trong đúng một cột. Nợ được quản lý riêng ở Tài sản. Nhấn một mục để nhập tiền.</p></div></div>
-  <div class="money-board">${incomeColumn()}${expenseColumn('fixed', 'Chi cố định')}${expenseColumn('variable', 'Chi biến động')}${creditColumn()}</div>`;
+  <div class="grid kpi-grid sm">
+    ${kpiCard('Thu nhập tháng', money(s.income), `Kế hoạch ${money(incomePlanTotal())}`, 'green')}
+    ${kpiCard('Tổng chi tiêu tháng', money(s.expense), `Cố định ${money(s.fixed)} · Biến động ${money(s.variable)} · Thẻ&góp ${money(s.card)}`, '')}
+    ${kpiCard('Còn lại trong tháng', signedMoney(s.remaining), 'Thu nhập − Tổng chi tiêu tháng', s.remaining < 0 ? 'red' : 'green')}
+    ${kpiCard('Tỷ lệ chi tiêu / thu nhập', ratio, s.exceptional > 0 ? `Chưa tính ${money(s.exceptional)} chi bất thường` : 'Tổng chi tiêu so với thu nhập tháng', s.expense > s.income ? 'red' : '')}
+  </div>
+  <div class="money-board mt-16">${incomeColumn()}${expenseColumn('fixed', 'Chi cố định')}${expenseColumn('variable', 'Chi biến động')}${creditColumn()}</div>`;
 }
 
 Object.assign(window, { renderBudget, openCreditColumnManager });

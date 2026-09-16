@@ -236,13 +236,24 @@ const RPC_HANDLERS = {
     if (action === 'delete_expense') { const i = CARD_EXPENSES.findIndex(x => x.id === p.id); if (i >= 0) CARD_EXPENSES.splice(i, 1); return { ok: true }; }
     if (action === 'save_installment') {
       const total = Number(p.total_installments), principal = Number(p.principal_amount);
-      const schedule = Array.from({ length: total }, (_, i) => ({ id: newId('sch'), installment_no: i + 1, payment_month: addMonths(p.first_payment_month?.slice(0, 7) || MONTH, i) + '-01', principal_amount: Math.round(principal / total), fee_amount: 0, is_paid: false, payment_kind: 'regular' }));
+      const bonusMonths = Array.isArray(p.bonus_months) ? p.bonus_months.map(Number) : [];
+      const bonusAmount = Number(p.bonus_amount) || 0;
+      const months = Array.from({ length: total }, (_, i) => addMonths(p.first_payment_month?.slice(0, 7) || MONTH, i) + '-01');
+      const bonusCount = months.filter(m => bonusMonths.includes(Number(m.slice(5, 7)))).length;
+      const baseTotal = principal - bonusCount * bonusAmount;
+      const regular = Math.floor(baseTotal / total);
+      const schedule = months.map((m, i) => {
+        const isBonus = bonusMonths.includes(Number(m.slice(5, 7)));
+        const base = i === 0 ? baseTotal - regular * (total - 1) : regular;
+        return { id: newId('sch'), installment_no: i + 1, payment_month: m, principal_amount: base + (isBonus ? bonusAmount : 0), fee_amount: 0, is_paid: false, payment_kind: isBonus ? 'bonus' : 'regular' };
+      });
       const id = newId('inst');
-      INSTALLMENTS.push({ id, card_account_id: p.card_account_id, card_name: (ACCOUNTS.find(a => a.id === p.card_account_id) || {}).name, name: p.name, purchase_date: p.purchase_date, principal_amount: principal, fee_total: 0, total_installments: total, paid_installments_before: 0, first_payment_month: p.first_payment_month, currency: 'JPY', note: p.note || '', schedule });
+      INSTALLMENTS.push({ id, card_account_id: p.card_account_id, card_name: (ACCOUNTS.find(a => a.id === p.card_account_id) || {}).name, name: p.name, purchase_date: p.purchase_date, principal_amount: principal, fee_total: 0, total_installments: total, paid_installments_before: 0, first_payment_month: p.first_payment_month, currency: 'JPY', note: p.note || '', bonus_months: bonusMonths, bonus_amount: bonusAmount, schedule });
       return { ok: true, id };
     }
     if (action === 'delete_installment') { const i = INSTALLMENTS.findIndex(x => x.id === p.id); if (i >= 0) INSTALLMENTS.splice(i, 1); return { ok: true }; }
     if (action === 'toggle_paid') { for (const inst of INSTALLMENTS) { const row = (inst.schedule || []).find(s => s.id === p.id); if (row) { row.is_paid = !row.is_paid; break; } } return { ok: true }; }
+    if (action === 'edit_schedule_row') { for (const inst of INSTALLMENTS) { const row = (inst.schedule || []).find(s => s.id === p.id); if (row) { row.principal_amount = Number(p.principal_amount); break; } } return { ok: true }; }
     return { ok: true };
   },
   taichinh_gd_investment_api: (action, body) => {
@@ -338,6 +349,10 @@ const RPC_HANDLERS = {
   }
 
   // ---- Tổng quan: month-only, Nợ never appears anywhere ----
+  // App now opens on Chi tiêu by default, so #content isn't Tổng quan yet
+  // at boot — navigate there explicitly before reading its content.
+  await page.click('[data-view="dashboard"]');
+  await page.waitForTimeout(150);
   const dashboardText = await page.textContent('#content');
   const kpiLabels = await page.locator('.kpi-grid .kpi .label').allTextContents();
   results.push(`DASHBOARD kpi-grid = ${JSON.stringify(kpiLabels)}`);
@@ -363,6 +378,56 @@ const RPC_HANDLERS = {
   const budgetColHeights = await rowHeightsEqual('.money-board .money-column');
   results.push(`  All 4 Chi tiêu columns render the same height: ${budgetColHeights.ok} ${JSON.stringify(budgetColHeights.heights)}`);
   await page.screenshot({ path: path.join(SHOT_DIR, 'shot-budget-1440.png'), fullPage: true });
+
+  results.push(`  Mini KPI row (Thu nhập/Tổng chi/Còn lại/Tỷ lệ) shows on Chi tiêu, same labels as Tổng quan: ${await page.locator('.kpi-grid.sm .kpi .label', { hasText: 'Thu nhập tháng' }).count() > 0 && await page.locator('.kpi-grid.sm .kpi .label', { hasText: 'Tổng chi tiêu tháng' }).count() > 0}`);
+  results.push(`APP OPENS ON Chi tiêu BY DEFAULT (nav "Chi tiêu" active, not Tổng quan): ${await page.locator('#nav button[data-view=budget].active').count() > 0}`);
+
+  // ---- Bonus (ボーナス併用払い): pick tháng 7 + 12, kỳ đầu absorbs the
+  // rounding remainder, bonus is netted OUT of principal_amount first so
+  // the whole schedule still sums to exactly principal_amount, and any kỳ
+  // can be hand-corrected afterward via "Sửa".
+  await page.click('.money-column.credit .money-line:has-text("Rakuten")');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 });
+  await page.click('#modalBody button:has-text("＋ Thêm khoản trả góp")');
+  await page.waitForSelector('[name=name]', { timeout: 1500 });
+  await page.fill('[name=name]', 'Máy giặt');
+  await page.fill('[name=principal_amount]', '1200000');
+  await page.fill('[name=total_installments]', '12');
+  await page.fill('[name=purchase_date]', `${MONTH}-01`);
+  await page.check('#instBonus7');
+  await page.check('#instBonus12');
+  await page.fill('#instBonusAmount', '100000');
+  await page.click('#modalForm [type=submit]');
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(() => results.push('SUBMIT installment with bonus (tháng 7+12): saved - OK')).catch(() => results.push('SUBMIT installment with bonus: no toast - FAIL'));
+  await page.waitForTimeout(150);
+
+  await page.click('.money-column.credit .money-line:has-text("Rakuten")');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 });
+  const ledgerText = await page.textContent('#modalBody');
+  results.push(`  Installment row shows bonus note (Tháng 7, Tháng 12, +¥100,000/lần): ${ledgerText.includes('Bonus') && ledgerText.includes('Tháng 7') && ledgerText.includes('Tháng 12')}`);
+  await page.click('#modalBody button:has-text("Xem lịch")');
+  await page.waitForTimeout(100);
+  const scheduleText = await page.textContent('#modalBody');
+  results.push(`  Schedule shows "Bonus" tag on exactly 2 kỳ (tháng 7 và 12): ${(scheduleText.match(/Bonus/g) || []).length === 2}`);
+  results.push(`  Bonus kỳ shows the higher combined amount (¥183,333 = 83,333 đều + 100,000 bonus): ${scheduleText.includes('183,333')}`);
+  results.push(`  Kỳ đầu tiên absorbs the rounding remainder (¥83,337, not ¥83,333): ${scheduleText.includes('83,337')}`);
+
+  // "Sửa" a kỳ by hand — the escape hatch for when the auto-split still
+  // isn't what the household's real contract says.
+  await page.click('#modalBody .tx:has-text("Kỳ 2") button:has-text("Sửa")');
+  await page.waitForSelector('[name=principal_amount]', { timeout: 1500 });
+  await page.fill('[name=principal_amount]', '90000');
+  await page.click('#modalForm [type=submit]');
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(() => results.push('SUBMIT sửa tay kỳ 2 (90,000): saved - OK')).catch(() => results.push('SUBMIT sửa tay kỳ: no toast - FAIL'));
+  await page.waitForTimeout(150);
+  await page.click('.money-column.credit .money-line:has-text("Rakuten")');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 });
+  await page.click('#modalBody button:has-text("Xem lịch")');
+  await page.waitForTimeout(100);
+  const scheduleText2 = await page.textContent('#modalBody');
+  results.push(`  Sửa tay kỳ 2 stuck (¥90,000) without touching other kỳ: ${scheduleText2.includes('90,000') && scheduleText2.includes('183,333')}`);
+  await page.evaluate(() => document.getElementById('modal')?.close());
+  await page.waitForTimeout(50);
 
   // Wifi (fx2, kế hoạch 6,000) has no actual transaction this month, so its
   // row opens quick-entry directly — the amount field should prefill from

@@ -59,7 +59,7 @@ async function boot() {
     $('#monthPicker').value = state.month;
     let savedView = '';
     try { savedView = localStorage.getItem(VIEW_STORE) || ''; } catch {}
-    navigate(VIEW_META[savedView] ? savedView : 'dashboard');
+    navigate(VIEW_META[savedView] ? savedView : 'budget');
   } catch (e) {
     console.error(e);
     localStorage.removeItem(KEY_STORE); state.key = '';
