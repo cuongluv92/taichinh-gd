@@ -499,7 +499,7 @@ function trendSvg(keys = Array.from({ length: 12 }, (_, i) => addMonths(state.mo
   // value lines under it — text-anchor="middle" on each month's own cx
   // keeps every line inside that month's slot, never bleeding into a
   // neighboring month, however many months (12, or a full year) are shown.
-  const W = 720, H = 176, padTop = 20, padBottom = 54, max = Math.max(1, ...data.flatMap(x => [x.inc, x.exp])), group = (W - padTop - padBottom) > 0 ? (W - 52) / keys.length : 0, bw = 12;
+  const W = 720, H = 182, padTop = 20, padBottom = 60, max = Math.max(1, ...data.flatMap(x => [x.inc, x.exp])), group = (W - padTop - padBottom) > 0 ? (W - 52) / keys.length : 0, bw = 12;
   const barH = H - padTop - padBottom;
   const grid = [0, 1, 2, 3].map(i => { const y = padTop + barH * i / 3; return `<line class="v-gridline" x1="26" y1="${y}" x2="${W - 26}" y2="${y}"/>`; }).join('');
   // No "Thu"/"Chi" prefix — the legend right below the chart already says
@@ -509,7 +509,7 @@ function trendSvg(keys = Array.from({ length: 12 }, (_, i) => addMonths(state.mo
   const bars = data.map((x, i) => {
     const cx = 26 + group * i + group / 2, ih = barH * x.inc / max, eh = barH * x.exp / max;
     const base = H - padBottom;
-    return `<g class="bar-group" ${act('showMonthBarAmounts', x.k)}><title>${x.k}: Thu ${money(x.inc)} · Chi ${money(x.exp)}</title><rect class="bar-income" x="${cx - bw - 2}" y="${base - ih}" width="${bw}" height="${ih}" rx="3"/><rect class="bar-expense" x="${cx + 2}" y="${base - eh}" width="${bw}" height="${eh}" rx="3"/><text class="axis-label" x="${cx}" y="${base + 14}" text-anchor="middle">${x.k.slice(5)}</text><text class="bar-value-line income" x="${cx}" y="${base + 28}" text-anchor="middle">${esc(compactMoney(x.inc))}</text><text class="bar-value-line expense" x="${cx}" y="${base + 41}" text-anchor="middle">${esc(compactMoney(x.exp))}</text></g>`;
+    return `<g class="bar-group" ${act('showMonthBarAmounts', x.k)}><title>${x.k}: Thu ${money(x.inc)} · Chi ${money(x.exp)}</title><rect class="bar-income" x="${cx - bw - 2}" y="${base - ih}" width="${bw}" height="${ih}" rx="3"/><rect class="bar-expense" x="${cx + 2}" y="${base - eh}" width="${bw}" height="${eh}" rx="3"/><text class="axis-label" x="${cx}" y="${base + 14}" text-anchor="middle">${x.k.slice(5)}</text><text class="bar-value-line income" x="${cx}" y="${base + 30}" text-anchor="middle">${esc(compactMoney(x.inc))}</text><text class="bar-value-line expense" x="${cx}" y="${base + 45}" text-anchor="middle">${esc(compactMoney(x.exp))}</text></g>`;
   }).join('');
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Thu chi 12 tháng">${grid}${bars}</svg><div class="legend"><span><i class="swatch-positive"></i>Thu nhập</span><span><i class="swatch-negative"></i>Chi tiêu</span></div>`;
 }
