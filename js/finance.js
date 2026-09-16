@@ -420,7 +420,7 @@ function donutSvg(items, size = 168, thickness = 22) {
 // against thu nhập instead, which never added up to 100% across slices.
 function legendHtml(items) {
   const total = items.reduce((s, x) => s + n(x.value), 0);
-  return `<div class="chart-legend">${items.filter(x => n(x.value) > 0).map((x, i) => `<div><span><i class="legend-dot legend-c${i % 10}"></i>${esc(x.label)}</span><strong>${money(x.value)}${total > 0 ? `<small>${pctText(x.value, total)}</small>` : ''}</strong></div>`).join('')}</div>`;
+  return `<div class="chart-legend">${items.filter(x => n(x.value) > 0).map((x, i) => `<div><span class="legend-label"><i class="legend-dot legend-c${i % 10}"></i>${esc(x.label)}</span><strong>${money(x.value)}</strong><small class="legend-pct">${total > 0 ? pctText(x.value, total) : ''}</small></div>`).join('')}</div>`;
 }
 function sparklineSvg(data, w = 108, h = 28, sharedMax = 0) {
   const max = Math.max(1, sharedMax, ...data.map(x => n(x.value)));

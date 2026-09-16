@@ -288,8 +288,10 @@ progress.bad::-webkit-progress-value{background:var(--negative)}
 .donut-center span{color:var(--text-faint);font-size:10.5px;text-transform:uppercase;letter-spacing:.02em}
 .donut-center strong{font-size:15px}
 .chart-legend{display:flex;flex-direction:column;gap:6px;flex:1 1 160px;min-width:150px}
-.chart-legend>div{display:flex;align-items:center;justify-content:space-between;font-size:12px;gap:8px}
-.chart-legend small{color:var(--text-faint);margin-left:4px}
+.chart-legend>div{display:flex;align-items:center;font-size:12px;gap:8px}
+.chart-legend .legend-label{flex:1 1 auto;min-width:0;display:flex;align-items:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chart-legend strong{flex:none;text-align:right;font-variant-numeric:tabular-nums}
+.chart-legend .legend-pct{flex:none;width:40px;text-align:right;color:var(--text-faint);font-variant-numeric:tabular-nums}
 .legend-dot{width:9px;height:9px;border-radius:2px;display:inline-block;margin-right:7px}
 .legend-c0{background:#f5a623}.legend-c1{background:#30d17f}.legend-c2{background:#5aa9e6}
 .legend-c3{background:#c67af0}.legend-c4{background:#f25c66}.legend-c5{background:#3fd2c7}
