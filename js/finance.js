@@ -399,15 +399,13 @@ F.statsFor = (month = state.month) => {
 const CHART_COLORS = ['#f5a623', '#30d17f', '#5aa9e6', '#c67af0', '#f25c66', '#3fd2c7', '#8b93a1', '#e6a5c1', '#e2c94f', '#8fd15e'];
 // Solid pie (not a ring) with CAD-style leader lines pointing out from each
 // lát cắt to its own name, instead of making someone match a color dot in
-// a separate legend back to a slice by eye. Labels for slices on the right
-// half stack top-to-bottom on the right, left-half slices stack on the
-// left — same "external label" convention most pie-chart tools use.
+// a separate legend back to a slice by eye.
 function donutSvg(items) {
   const clean = items.filter(x => n(x.value) > 0);
   const total = clean.reduce((s, x) => s + n(x.value), 0);
   if (!total) return `<div class="empty compact">Chưa có dữ liệu</div>`;
   const trim = label => label.length > 15 ? label.slice(0, 14) + '…' : label;
-  const cx = 170, cy = 95, r = 52;
+  const cx = 190, cy = 95, r = 62;
   const pointAt = (theta, radius) => [cx + radius * Math.sin(theta), cy - radius * Math.cos(theta)];
   let cum = 0;
   const slices = clean.map((x, i) => {
@@ -419,23 +417,41 @@ function donutSvg(items) {
     const path = `M${cx},${cy} L${sx.toFixed(2)},${sy.toFixed(2)} A${r},${r} 0 ${large} 1 ${ex.toFixed(2)},${ey.toFixed(2)} Z`;
     return { path, color: CHART_COLORS[i % CHART_COLORS.length], midA, label: x.label };
   });
-  const right = slices.filter(s => Math.sin(s.midA) >= 0).sort((a, b) => a.midA - b.midA);
-  const left = slices.filter(s => Math.sin(s.midA) < 0).sort((a, b) => a.midA - b.midA);
-  const top = 14, bottom = 176;
-  const slotY = (arr, idx) => arr.length <= 1 ? (top + bottom) / 2 : top + (bottom - top) * idx / (arr.length - 1);
-  const leaders = [];
-  right.forEach((s, idx) => {
-    const [ex, ey] = pointAt(s.midA, r + 3);
-    const ly = slotY(right, idx), lx = 258;
-    leaders.push(`<polyline points="${ex.toFixed(1)},${ey.toFixed(1)} ${(lx - 16).toFixed(1)},${ly.toFixed(1)} ${lx.toFixed(1)},${ly.toFixed(1)}" fill="none" stroke="${s.color}" stroke-width="1.2"/><circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="2" fill="${s.color}"/><text x="${(lx + 4).toFixed(1)}" y="${(ly + 3).toFixed(1)}" font-size="9.5" fill="var(--text-dim)">${esc(trim(s.label))}</text>`);
-  });
-  left.forEach((s, idx) => {
-    const [ex, ey] = pointAt(s.midA, r + 3);
-    const ly = slotY(left, idx), lx = 82;
-    leaders.push(`<polyline points="${ex.toFixed(1)},${ey.toFixed(1)} ${(lx + 16).toFixed(1)},${ly.toFixed(1)} ${lx.toFixed(1)},${ly.toFixed(1)}" fill="none" stroke="${s.color}" stroke-width="1.2"/><circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="2" fill="${s.color}"/><text x="${(lx - 4).toFixed(1)}" y="${(ly + 3).toFixed(1)}" font-size="9.5" text-anchor="end" fill="var(--text-dim)">${esc(trim(s.label))}</text>`);
-  });
-  const wedgePaths = slices.map(s => `<path d="${s.path}" fill="${s.color}" stroke="var(--panel)" stroke-width="1.5"/>`).join('');
-  return `<div class="donut-wrap"><svg viewBox="0 0 340 190" width="340" height="190" role="img" aria-label="Biểu đồ tròn">${wedgePaths}${leaders.join('')}</svg></div>`;
+  // Balance label COUNT left/right by draw order (already angle-ascending,
+  // since slices accumulate clockwise from 12 o'clock) instead of by which
+  // geometric half a slice's angle literally falls in — one big slice can
+  // otherwise push most of the rest past the 6 o'clock line and cram every
+  // other label onto the same side.
+  const half = Math.ceil(slices.length / 2);
+  const right = slices.slice(0, half), left = slices.slice(half);
+  const edgeR = r + 4, elbowGap = 16, top = 12, bottom = 178, minGap = 17;
+  // Each label starts at its own slice's natural height (from its angle)
+  // and only gets nudged the minimum needed to clear a neighbor — it never
+  // jumps to some evenly-spaced slot far from where its slice actually is.
+  const stackY = arr => {
+    const withY = arr.map(s => ({ ...s, y: pointAt(s.midA, edgeR)[1] })).sort((a, b) => a.y - b.y);
+    for (let i = 1; i < withY.length; i++) if (withY[i].y - withY[i - 1].y < minGap) withY[i].y = withY[i - 1].y + minGap;
+    const overflow = withY.length ? withY[withY.length - 1].y - bottom : 0;
+    if (overflow > 0) withY.forEach(s => { s.y -= overflow; });
+    const underflow = withY.length ? top - withY[0].y : 0;
+    if (underflow > 0) withY.forEach(s => { s.y += underflow; });
+    return withY;
+  };
+  // Every leader line bends at a FIXED x already outside the pie's bounding
+  // box (elbowX beyond cx±r), so the vertical leg from there down/up to the
+  // label's row can never cross back over the pie no matter how far that
+  // row ended up from the slice's own natural height.
+  const leader = (s, side) => {
+    const [ex, ey] = pointAt(s.midA, edgeR);
+    const elbowX = side === 'right' ? cx + r + elbowGap : cx - r - elbowGap;
+    const lx = side === 'right' ? elbowX + 17 : elbowX - 17;
+    const tx = side === 'right' ? lx + 4 : lx - 4;
+    const anchor = side === 'right' ? '' : ' text-anchor="end"';
+    return `<polyline points="${ex.toFixed(1)},${ey.toFixed(1)} ${elbowX.toFixed(1)},${ey.toFixed(1)} ${elbowX.toFixed(1)},${s.y.toFixed(1)} ${lx.toFixed(1)},${s.y.toFixed(1)}" fill="none" stroke="${s.color}" stroke-width="1"/><circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="2" fill="${s.color}"/><text x="${tx.toFixed(1)}" y="${(s.y + 3).toFixed(1)}" font-size="9.5" fill="var(--text-dim)"${anchor}>${esc(trim(s.label))}</text>`;
+  };
+  const leaders = [...stackY(right).map(s => leader(s, 'right')), ...stackY(left).map(s => leader(s, 'left'))];
+  const wedgePaths = slices.map(s => `<path d="${s.path}" fill="${s.color}" stroke="var(--panel)" stroke-width="0.75"/>`).join('');
+  return `<div class="donut-wrap"><svg viewBox="0 0 400 190" width="380" height="181" role="img" aria-label="Biểu đồ tròn">${wedgePaths}${leaders.join('')}</svg></div>`;
 }
 // First % is always share-of-the-donut (items sum to 100%), matching what
 // the donut itself visually draws — it used to be computed against thu
