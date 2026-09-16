@@ -470,21 +470,25 @@ function debtAdj(id, debtId, direction, amount, date) { return { id, debt_id: de
 }
 
 // ---------------------------------------------------------------------
-// trendSvg (Thu nhập vs Chi tiêu) writes each bar's own compact amount
-// (e.g. "300k") vertically inside the bar — skipped entirely when the bar
-// is too short to hold it, so a label never spills past its own column.
+// trendSvg (Thu nhập vs Chi tiêu) writes "Thu"/"Chi" + compact amount as
+// two lines under each month's own label (centered on that month's own
+// x, so it can never bleed into a neighboring month) instead of vertical
+// in-bar text, which the user found unreadable.
 // ---------------------------------------------------------------------
 {
-  eq('compactMoney abbreviates thousands as "k"', compactMoney(300000), '300k');
-  eq('compactMoney abbreviates millions as "tr"', compactMoney(1200000), '1.2tr');
-  eq('compactMoney leaves small numbers as-is', compactMoney(500), '500');
+  eq('compactMoney (JPY) uses 万 (÷10,000, 1 decimal)', compactMoney(495000, 'JPY'), '49.5万');
+  eq('compactMoney (VND) abbreviates millions as "tr"', compactMoney(1200000, 'VND'), '1.2tr');
+  eq('compactMoney (VND) abbreviates thousands as "k"', compactMoney(30000, 'VND'), '30k');
   resetState({
+    base: 'JPY',
     accounts: [acc('ufj', 'bank', 'JPY', 0)],
     categories: [{ id: 'inc1', direction: 'income', cost_type: null, name: 'Lương', is_active: true }],
-    fullTransactions: [tx({ category_id: 'inc1', transaction_type: 'income', amount: 440000, transaction_date: '2026-09-05' })]
+    fullTransactions: [tx({ category_id: 'inc1', transaction_type: 'income', amount: 495000, transaction_date: '2026-09-05' })]
   });
   const svg = trendSvg(['2026-09']);
-  eq('trendSvg writes a bar-value label for a tall bar (large thu nhập)', svg.includes('bar-value on-income'), true);
+  eq('trendSvg writes exactly 2 value lines per month (Thu + Chi), not vertical in-bar text', (svg.match(/bar-value-line/g) || []).length, 2);
+  eq('trendSvg\'s Thu line shows the month\'s own 万 amount (49.5万)', svg.includes('Thu 49.5万'), true);
+  eq('trendSvg\'s Chi line shows 0 when there is no expense that month', svg.includes('Chi 0.0万'), true);
 }
 
 // ---------------------------------------------------------------------

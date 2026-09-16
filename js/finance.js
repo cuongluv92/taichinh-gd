@@ -417,7 +417,7 @@ function donutSvg(items) {
   const clean = items.filter(x => n(x.value) > 0);
   const total = clean.reduce((s, x) => s + n(x.value), 0);
   if (!total) return `<div class="empty compact">Chưa có dữ liệu</div>`;
-  const cx = 95, cy = 95, r = 80;
+  const cx = 105, cy = 105, r = 90;
   const pointAt = (theta, radius) => [cx + radius * Math.sin(theta), cy - radius * Math.cos(theta)];
   let cum = 0;
   const slices = clean.map((x, i) => {
@@ -456,7 +456,7 @@ function donutSvg(items) {
     return `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" transform="rotate(${deg.toFixed(1)} ${lx.toFixed(1)} ${ly.toFixed(1)})" text-anchor="middle" dominant-baseline="middle" font-size="${fontSize}" font-weight="600" fill="#fff" stroke="rgba(0,0,0,.45)" stroke-width="1.4" paint-order="stroke" stroke-linejoin="round">${tspans}</text>`;
   });
   const wedgePaths = slices.map(s => `<path d="${s.path}" fill="${s.color}" stroke="var(--panel)" stroke-width="0.75"/>`).join('');
-  return `<div class="donut-wrap"><svg viewBox="0 0 190 190" width="190" height="190" role="img" aria-label="Biểu đồ tròn">${wedgePaths}${labels.join('')}</svg></div>`;
+  return `<div class="donut-wrap"><svg viewBox="0 0 210 210" width="210" height="210" role="img" aria-label="Biểu đồ tròn">${wedgePaths}${labels.join('')}</svg></div>`;
 }
 // First % is always share-of-the-donut (items sum to 100%), matching what
 // the donut itself visually draws — it used to be computed against thu
@@ -483,9 +483,11 @@ function sparklineSvg(data, w = 108, h = 28, sharedMax = 0) {
   }).join('');
   return `<svg class="sparkline" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="Xu hướng">${bars}</svg>`;
 }
-// Short "300k" / "1.2tr" form — a full money() string is way too wide to
-// fit inside a 12px-wide column even written vertically.
-function compactMoney(v) {
+// "49.5万" (÷10,000, 1 decimal) for JPY — the household's primary currency
+// and the only one this chart's month-label lines are sized for. VND falls
+// back to a "tr"/"k" (triệu/nghìn) shorthand instead.
+function compactMoney(v, cur = state.base) {
+  if (cur === 'JPY') return (v / 10000).toFixed(1) + '万';
   const abs = Math.abs(v);
   if (abs >= 1000000) return (v / 1000000).toFixed(abs % 1000000 === 0 ? 0 : 1).replace(/\.0$/, '') + 'tr';
   if (abs >= 1000) return Math.round(v / 1000) + 'k';
@@ -493,20 +495,17 @@ function compactMoney(v) {
 }
 function trendSvg(keys = Array.from({ length: 12 }, (_, i) => addMonths(state.month, i - 11))) {
   const data = keys.map(k => { const s = F.statsFor(k); return { k, inc: s.income, exp: s.expense }; });
-  const W = 720, H = 150, pad = 26, max = Math.max(1, ...data.flatMap(x => [x.inc, x.exp])), group = (W - pad * 2) / keys.length, bw = 12;
-  const grid = [0, 1, 2, 3].map(i => { const y = pad + (H - pad * 2) * i / 3; return `<line class="v-gridline" x1="${pad}" y1="${y}" x2="${W - pad}" y2="${y}"/>`; }).join('');
-  // A value label only fits a column tall enough to hold it (~5.5px per
-  // digit at this font size) — short bars just skip theirs rather than
-  // spilling past the bar's own top edge.
-  const barLabel = (cls, x, top, height, value) => {
-    const label = compactMoney(value);
-    if (height < label.length * 5.5 + 6) return '';
-    return `<text class="bar-value ${cls}" x="${x.toFixed(1)}" y="${(top + 4).toFixed(1)}" text-anchor="start" transform="rotate(90 ${x.toFixed(1)} ${(top + 4).toFixed(1)})">${esc(label)}</text>`;
-  };
+  // padBottom leaves room for the month label plus two small "Thu"/"Chi"
+  // value lines under it — text-anchor="middle" on each month's own cx
+  // keeps every line inside that month's slot, never bleeding into a
+  // neighboring month, however many months (12, or a full year) are shown.
+  const W = 720, H = 176, padTop = 20, padBottom = 54, max = Math.max(1, ...data.flatMap(x => [x.inc, x.exp])), group = (W - padTop - padBottom) > 0 ? (W - 52) / keys.length : 0, bw = 12;
+  const barH = H - padTop - padBottom;
+  const grid = [0, 1, 2, 3].map(i => { const y = padTop + barH * i / 3; return `<line class="v-gridline" x1="26" y1="${y}" x2="${W - 26}" y2="${y}"/>`; }).join('');
   const bars = data.map((x, i) => {
-    const cx = pad + group * i + group / 2, ih = (H - pad * 2) * x.inc / max, eh = (H - pad * 2) * x.exp / max;
-    const incX = cx - bw / 2 - 2, expX = cx + bw / 2 + 2, incTop = H - pad - ih, expTop = H - pad - eh;
-    return `<g><title>${x.k}: Thu ${money(x.inc)} · Chi ${money(x.exp)}</title><rect class="bar-income" x="${cx - bw - 2}" y="${incTop}" width="${bw}" height="${ih}" rx="3"/><rect class="bar-expense" x="${cx + 2}" y="${expTop}" width="${bw}" height="${eh}" rx="3"/>${barLabel('on-income', incX, incTop, ih, x.inc)}${barLabel('on-expense', expX, expTop, eh, x.exp)}<text class="axis-label" x="${cx}" y="${H - 8}" text-anchor="middle">${x.k.slice(5)}</text></g>`;
+    const cx = 26 + group * i + group / 2, ih = barH * x.inc / max, eh = barH * x.exp / max;
+    const base = H - padBottom;
+    return `<g><title>${x.k}: Thu ${money(x.inc)} · Chi ${money(x.exp)}</title><rect class="bar-income" x="${cx - bw - 2}" y="${base - ih}" width="${bw}" height="${ih}" rx="3"/><rect class="bar-expense" x="${cx + 2}" y="${base - eh}" width="${bw}" height="${eh}" rx="3"/><text class="axis-label" x="${cx}" y="${base + 14}" text-anchor="middle">${x.k.slice(5)}</text><text class="bar-value-line income" x="${cx}" y="${base + 26}" text-anchor="middle">Thu ${esc(compactMoney(x.inc))}</text><text class="bar-value-line expense" x="${cx}" y="${base + 37}" text-anchor="middle">Chi ${esc(compactMoney(x.exp))}</text></g>`;
   }).join('');
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Thu chi 12 tháng">${grid}${bars}</svg><div class="legend"><span><i class="swatch-positive"></i>Thu nhập</span><span><i class="swatch-negative"></i>Chi tiêu</span></div>`;
 }
