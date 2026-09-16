@@ -443,13 +443,17 @@ function donutSvg(items) {
     });
     return l2 ? [l1, l2] : [l1];
   };
+  // slices[0] is always the single biggest lát cắt (clean/slices are already
+  // in descending value order — see dashboard.js) — its label reads a touch
+  // bigger than the rest so the eye lands on the dominant category first.
   const labels = slices.filter(s => s.frac > 0.05).map(s => {
     const [lx, ly] = pointAt(s.midA, r * 0.62);
     let deg = ((s.midA * 180 / Math.PI - 90) % 360 + 360) % 360;
     if (deg > 90 && deg < 270) deg -= 180;
-    const lines = wrapLabel(s.label), lineH = 10.5;
+    const fontSize = s === slices[0] ? 11 : 9.5, lineH = fontSize + 1;
+    const lines = wrapLabel(s.label);
     const tspans = lines.map((ln, i) => `<tspan x="${lx.toFixed(1)}" dy="${i === 0 ? -(lines.length - 1) * lineH / 2 : lineH}">${esc(ln)}</tspan>`).join('');
-    return `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" transform="rotate(${deg.toFixed(1)} ${lx.toFixed(1)} ${ly.toFixed(1)})" text-anchor="middle" dominant-baseline="middle" font-size="9.5" font-weight="600" fill="#fff" stroke="rgba(0,0,0,.45)" stroke-width="1.4" paint-order="stroke" stroke-linejoin="round">${tspans}</text>`;
+    return `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" transform="rotate(${deg.toFixed(1)} ${lx.toFixed(1)} ${ly.toFixed(1)})" text-anchor="middle" dominant-baseline="middle" font-size="${fontSize}" font-weight="600" fill="#fff" stroke="rgba(0,0,0,.45)" stroke-width="1.4" paint-order="stroke" stroke-linejoin="round">${tspans}</text>`;
   });
   const wedgePaths = slices.map(s => `<path d="${s.path}" fill="${s.color}" stroke="var(--panel)" stroke-width="0.75"/>`).join('');
   return `<div class="donut-wrap"><svg viewBox="0 0 190 190" width="190" height="190" role="img" aria-label="Biểu đồ tròn">${wedgePaths}${labels.join('')}</svg></div>`;
@@ -479,13 +483,30 @@ function sparklineSvg(data, w = 108, h = 28, sharedMax = 0) {
   }).join('');
   return `<svg class="sparkline" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="Xu hướng">${bars}</svg>`;
 }
+// Short "300k" / "1.2tr" form — a full money() string is way too wide to
+// fit inside a 12px-wide column even written vertically.
+function compactMoney(v) {
+  const abs = Math.abs(v);
+  if (abs >= 1000000) return (v / 1000000).toFixed(abs % 1000000 === 0 ? 0 : 1).replace(/\.0$/, '') + 'tr';
+  if (abs >= 1000) return Math.round(v / 1000) + 'k';
+  return String(Math.round(v));
+}
 function trendSvg(keys = Array.from({ length: 12 }, (_, i) => addMonths(state.month, i - 11))) {
   const data = keys.map(k => { const s = F.statsFor(k); return { k, inc: s.income, exp: s.expense }; });
   const W = 720, H = 150, pad = 26, max = Math.max(1, ...data.flatMap(x => [x.inc, x.exp])), group = (W - pad * 2) / keys.length, bw = 12;
   const grid = [0, 1, 2, 3].map(i => { const y = pad + (H - pad * 2) * i / 3; return `<line class="v-gridline" x1="${pad}" y1="${y}" x2="${W - pad}" y2="${y}"/>`; }).join('');
+  // A value label only fits a column tall enough to hold it (~5.5px per
+  // digit at this font size) — short bars just skip theirs rather than
+  // spilling past the bar's own top edge.
+  const barLabel = (cls, x, top, height, value) => {
+    const label = compactMoney(value);
+    if (height < label.length * 5.5 + 6) return '';
+    return `<text class="bar-value ${cls}" x="${x.toFixed(1)}" y="${(top + 4).toFixed(1)}" text-anchor="start" transform="rotate(90 ${x.toFixed(1)} ${(top + 4).toFixed(1)})">${esc(label)}</text>`;
+  };
   const bars = data.map((x, i) => {
     const cx = pad + group * i + group / 2, ih = (H - pad * 2) * x.inc / max, eh = (H - pad * 2) * x.exp / max;
-    return `<g><title>${x.k}: Thu ${money(x.inc)} · Chi ${money(x.exp)}</title><rect class="bar-income" x="${cx - bw - 2}" y="${H - pad - ih}" width="${bw}" height="${ih}" rx="3"/><rect class="bar-expense" x="${cx + 2}" y="${H - pad - eh}" width="${bw}" height="${eh}" rx="3"/><text class="axis-label" x="${cx}" y="${H - 8}" text-anchor="middle">${x.k.slice(5)}</text></g>`;
+    const incX = cx - bw / 2 - 2, expX = cx + bw / 2 + 2, incTop = H - pad - ih, expTop = H - pad - eh;
+    return `<g><title>${x.k}: Thu ${money(x.inc)} · Chi ${money(x.exp)}</title><rect class="bar-income" x="${cx - bw - 2}" y="${incTop}" width="${bw}" height="${ih}" rx="3"/><rect class="bar-expense" x="${cx + 2}" y="${expTop}" width="${bw}" height="${eh}" rx="3"/>${barLabel('on-income', incX, incTop, ih, x.inc)}${barLabel('on-expense', expX, expTop, eh, x.exp)}<text class="axis-label" x="${cx}" y="${H - 8}" text-anchor="middle">${x.k.slice(5)}</text></g>`;
   }).join('');
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Thu chi 12 tháng">${grid}${bars}</svg><div class="legend"><span><i class="swatch-positive"></i>Thu nhập</span><span><i class="swatch-negative"></i>Chi tiêu</span></div>`;
 }

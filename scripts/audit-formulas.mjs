@@ -51,6 +51,8 @@ vm.runInContext(financeSrc, sandbox, { filename: 'finance.js' });
 const F = sandbox.F;
 const legendHtml = sandbox.legendHtml;
 const donutSvg = sandbox.donutSvg;
+const trendSvg = sandbox.trendSvg;
+const compactMoney = sandbox.compactMoney;
 
 function resetState(patch) { Object.assign(sandbox.state, BASE_STATE, patch); }
 function acc(id, type, currency, opening = 0, extra = {}) { return { id, account_type: type, currency, opening_balance: opening, is_active: true, ...extra }; }
@@ -462,6 +464,27 @@ function debtAdj(id, debtId, direction, amount, date) { return { id, debt_id: de
   eq('donutSvg does NOT label a slice just under 5% (Vặt=4.9%)', svg.includes('Vặt'), false);
   const svgLong = donutSvg([{ label: 'Bảo hiểm sức khỏe', value: 100 }]);
   eq('donutSvg wraps a long label into 2 <tspan> lines instead of one overflowing line', (svgLong.match(/<tspan/g) || []).length >= 2, true);
+  const fontSizes = [...svg.matchAll(/font-size="([\d.]+)"/g)].map(m => Number(m[1]));
+  eq('donutSvg gives the single biggest slice (Nhà ở=40%) a bigger font-size than the rest', Math.max(...fontSizes) > Math.min(...fontSizes), true);
+  eq('donutSvg biggest-slice font-size is exactly 11, others are 9.5', fontSizes.includes(11) && fontSizes.filter(f => f === 9.5).length === fontSizes.length - 1, true);
+}
+
+// ---------------------------------------------------------------------
+// trendSvg (Thu nhập vs Chi tiêu) writes each bar's own compact amount
+// (e.g. "300k") vertically inside the bar — skipped entirely when the bar
+// is too short to hold it, so a label never spills past its own column.
+// ---------------------------------------------------------------------
+{
+  eq('compactMoney abbreviates thousands as "k"', compactMoney(300000), '300k');
+  eq('compactMoney abbreviates millions as "tr"', compactMoney(1200000), '1.2tr');
+  eq('compactMoney leaves small numbers as-is', compactMoney(500), '500');
+  resetState({
+    accounts: [acc('ufj', 'bank', 'JPY', 0)],
+    categories: [{ id: 'inc1', direction: 'income', cost_type: null, name: 'Lương', is_active: true }],
+    fullTransactions: [tx({ category_id: 'inc1', transaction_type: 'income', amount: 440000, transaction_date: '2026-09-05' })]
+  });
+  const svg = trendSvg(['2026-09']);
+  eq('trendSvg writes a bar-value label for a tall bar (large thu nhập)', svg.includes('bar-value on-income'), true);
 }
 
 // ---------------------------------------------------------------------
