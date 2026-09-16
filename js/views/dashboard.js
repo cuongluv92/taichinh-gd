@@ -158,19 +158,19 @@ function renderDashboard() {
         </div>
         ${trendSvg(dashboardChartMonthKeys())}
       </section>
-    </div>
-    <div class="dash-col">
       <section class="card section">
         <div class="section-head"><div><h2>Cơ cấu chi tiêu tháng</h2><p>${fmtMonthKey(state.month)}</p></div></div>
         ${expenseComposition.length ? `<div class="donut-layout">${donutSvg(expenseComposition)}${legendHtml(expenseComposition)}</div>` : '<div class="empty">Chưa có giao dịch thực tế trong tháng này.</div>'}
       </section>
       <section class="card section">
-        <div class="section-head"><div><h2>Năm nay so với năm trước</h2><p>Lũy kế đến tháng ${fmtMonthKey(state.month)}</p></div></div>
-        ${yearOverYearHtml()}
-      </section>
-      <section class="card section">
         <div class="section-head"><div><h2>Danh mục tăng/giảm nhiều nhất</h2><p>So với tháng trước</p></div></div>
         <div class="compare-table">${biggestMoverHtml()}</div>
+      </section>
+    </div>
+    <div class="dash-col">
+      <section class="card section">
+        <div class="section-head"><div><h2>Năm nay so với năm trước</h2><p>Lũy kế đến tháng ${fmtMonthKey(state.month)}</p></div></div>
+        ${yearOverYearHtml()}
       </section>
       <section class="card section">
         <div class="section-head"><div><h2>Xu hướng theo danh mục</h2><p>5 danh mục chi nhiều nhất tháng này · 6 tháng gần nhất</p></div></div>
