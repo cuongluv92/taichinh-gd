@@ -1,15 +1,19 @@
 -- ---------------------------------------------------------------------
 -- Bonus (ボーナス併用払い) cho trả góp + kỳ đầu gánh phần dư + kỳ có thể sửa tay.
 --
--- 1. bonus_months/bonus_amount: hộ gia đình tự chọn (những) tháng nào
---    trong 12 tháng được cộng thêm một khoản bonus cố định (nhập tay) —
---    không cố định 1/7/12, có thể chọn 1, 2 hay nhiều tháng cùng lúc.
---    Theo đúng cách người Nhật
---    tính ボーナス併用払い: khoản bonus (đã nhập tay, không tự suy ra) được
---    TRỪ RA khỏi principal_amount trước, phần còn lại mới chia đều cho MỌI
---    kỳ (kể cả kỳ bonus) — rồi kỳ bonus mới được cộng thêm đúng số bonus đó
---    vào riêng kỳ mình. Nhờ vậy tổng cả lịch luôn khớp đúng principal_amount,
---    không cộng thêm ra ngoài giá mua.
+-- 1. bonus_amounts (jsonb map, ví dụ {"7": 80000, "12": 150000}): hộ gia
+--    đình tự chọn (những) tháng nào trong 12 tháng được cộng thêm bonus —
+--    KHÔNG cố định 1/7/12, và MỖI tháng có SỐ TIỀN RIÊNG (không dùng
+--    chung một mức, vì tiền thưởng Tết khác tiền thưởng giữa năm).
+--    Superseded an earlier bonus_months smallint[] + bonus_amount numeric
+--    design (single shared amount for every bonus month) shipped and
+--    reverted the same day, no production data ever used it.
+--    Theo đúng cách người Nhật tính ボーナス併用払い: mỗi khoản bonus (đã
+--    nhập tay, không tự suy ra) được TRỪ RA khỏi principal_amount trước,
+--    phần còn lại mới chia đều cho MỌI kỳ (kể cả kỳ bonus) — rồi kỳ bonus
+--    mới được cộng thêm đúng số bonus riêng của tháng đó vào kỳ mình. Nhờ
+--    vậy tổng cả lịch luôn khớp đúng principal_amount, không cộng thêm ra
+--    ngoài giá mua.
 -- 2. Kỳ đầu tiên (installment_no=1) gánh phần dư của phép chia phần "thường"
 --    (không chia hết cho total_installments), các kỳ còn lại chia đều bằng
 --    floor() — thay vì round() từng kỳ khiến tổng cộng lệch khỏi giá mua.
@@ -19,8 +23,17 @@
 -- ---------------------------------------------------------------------
 
 alter table taichinh_gd.credit_card_installments
-  add column if not exists bonus_months smallint[] not null default '{}'::smallint[],
-  add column if not exists bonus_amount numeric not null default 0;
+  add column if not exists bonus_amounts jsonb not null default '{}'::jsonb;
+
+update taichinh_gd.credit_card_installments
+set bonus_amounts = (
+  select coalesce(jsonb_object_agg(m::text, bonus_amount), '{}'::jsonb)
+  from unnest(bonus_months) m
+) where cardinality(bonus_months) > 0;
+
+alter table taichinh_gd.credit_card_installments
+  drop column if exists bonus_months,
+  drop column if exists bonus_amount;
 
 create or replace function public.taichinh_gd_card_ledger_api(p_key text, p_action text, p_payload jsonb default '{}'::jsonb)
 returns jsonb
@@ -40,9 +53,8 @@ declare
   v_total_installments int;
   v_paid_before int;
   v_first_month date;
-  v_bonus_months smallint[];
-  v_bonus_amount numeric;
-  v_bonus_count int;
+  v_bonus_amounts jsonb;
+  v_total_bonus numeric;
   v_base_total numeric;
   v_regular numeric;
   v_fee_total numeric;
@@ -94,7 +106,7 @@ begin
     return jsonb_build_object('items', coalesce((select jsonb_agg(to_jsonb(x) order by x.purchase_date desc) from (
       select i.id, i.card_account_id, a.name as card_name, i.name, i.purchase_date, i.principal_amount, i.fee_total,
              i.total_installments, i.paid_installments_before, i.first_payment_month, i.currency, i.note,
-             i.bonus_months, i.bonus_amount,
+             i.bonus_amounts,
              coalesce((select jsonb_agg(to_jsonb(s) order by s.payment_month) from (
                select id, installment_no, payment_month, principal_amount, fee_amount, is_paid, payment_kind
                from taichinh_gd.credit_card_installment_schedule where installment_id=i.id and household_id=h
@@ -121,26 +133,24 @@ begin
     v_first_month := coalesce(nullif(p_payload->>'first_payment_month','')::date, date_trunc('month', v_date)::date);
     v_fee_total := coalesce(nullif(p_payload->>'fee_total','')::numeric,0);
 
-    -- Tháng bonus do hộ gia đình TỰ CHỌN (không cố định 1/7/12, mỗi công ty
-    -- trả thưởng khác tháng nhau) — chọn được nhiều tháng cùng lúc.
-    select coalesce(array_agg(x::smallint), '{}'::smallint[]) into v_bonus_months
-    from jsonb_array_elements_text(coalesce(p_payload->'bonus_months', '[]'::jsonb)) x;
-    if exists (select 1 from unnest(v_bonus_months) m where m < 1 or m > 12) then
+    v_bonus_amounts := coalesce(p_payload->'bonus_amounts', '{}'::jsonb);
+    if jsonb_typeof(v_bonus_amounts) <> 'object' then raise exception 'invalid_bonus_month'; end if;
+    if exists (
+      select 1 from jsonb_each_text(v_bonus_amounts) kv
+      where kv.key !~ '^\d+$' or kv.key::int < 1 or kv.key::int > 12 or nullif(kv.value,'')::numeric is null or nullif(kv.value,'')::numeric <= 0
+    ) then
       raise exception 'invalid_bonus_month';
     end if;
-    v_bonus_amount := coalesce(nullif(p_payload->>'bonus_amount','')::numeric, 0);
-    if v_bonus_amount < 0 then raise exception 'bonus_amount_must_be_nonnegative'; end if;
-    if array_length(v_bonus_months,1) > 0 and v_bonus_amount <= 0 then raise exception 'bonus_amount_required'; end if;
-    if array_length(v_bonus_months,1) is null and v_bonus_amount > 0 then raise exception 'bonus_months_required'; end if;
 
-    select count(*) into v_bonus_count
-    from generate_series(1, v_total_installments) gs
-    where extract(month from (v_first_month + ((gs - v_paid_before - 1) || ' months')::interval))::int = any(v_bonus_months);
+    select coalesce(sum((v_bonus_amounts->>key)::numeric * cnt), 0) into v_total_bonus
+    from jsonb_object_keys(v_bonus_amounts) key,
+    lateral (
+      select count(*) cnt from generate_series(1, v_total_installments) gs
+      where extract(month from (v_first_month + ((gs - v_paid_before - 1) || ' months')::interval))::int = key::int
+    ) c;
 
-    if v_bonus_count > 0 and v_bonus_amount * v_bonus_count >= v_amount then
-      raise exception 'bonus_amount_too_large';
-    end if;
-    v_base_total := v_amount - v_bonus_count * v_bonus_amount;
+    if v_total_bonus >= v_amount then raise exception 'bonus_amount_too_large'; end if;
+    v_base_total := v_amount - v_total_bonus;
     v_regular := floor(v_base_total / v_total_installments);
 
     if v_id is not null then
@@ -149,7 +159,7 @@ begin
           fee_total=v_fee_total, total_installments=v_total_installments,
           first_payment_month=v_first_month, currency=coalesce(nullif(p_payload->>'currency',''), (select currency from taichinh_gd.accounts where id=v_card)),
           note=nullif(btrim(p_payload->>'note'),''), entry_mode=case when v_paid_before>0 then 'existing' else 'purchase' end,
-          paid_installments_before=v_paid_before, bonus_months=v_bonus_months, bonus_amount=v_bonus_amount, updated_at=now()
+          paid_installments_before=v_paid_before, bonus_amounts=v_bonus_amounts, updated_at=now()
       where id=v_id and household_id=h;
       if not found then raise exception 'installment_not_found'; end if;
       delete from taichinh_gd.credit_card_installment_schedule where installment_id=v_id and household_id=h;
@@ -157,22 +167,22 @@ begin
       insert into taichinh_gd.credit_card_installments(
         household_id, card_account_id, name, purchase_date, principal_amount, fee_total,
         total_installments, first_payment_month, currency, note, entry_mode, schedule_mode, paid_installments_before,
-        bonus_months, bonus_amount
+        bonus_amounts
       ) values (
         h, v_card, v_name, v_date, v_amount, v_fee_total,
         v_total_installments, v_first_month, coalesce(nullif(p_payload->>'currency',''), (select currency from taichinh_gd.accounts where id=v_card)),
         nullif(btrim(p_payload->>'note'),''), case when v_paid_before>0 then 'existing' else 'purchase' end, 'equal', v_paid_before,
-        v_bonus_months, v_bonus_amount
+        v_bonus_amounts
       ) returning id into v_id;
     end if;
 
     insert into taichinh_gd.credit_card_installment_schedule(household_id, installment_id, installment_no, payment_month, principal_amount, fee_amount, is_paid, payment_kind)
     select h, v_id, gs, pm,
            (case when gs = 1 then v_base_total - v_regular * (v_total_installments - 1) else v_regular end)
-             + case when extract(month from pm)::int = any(v_bonus_months) then v_bonus_amount else 0 end,
+             + coalesce((v_bonus_amounts->>(extract(month from pm)::int::text))::numeric, 0),
            round(v_fee_total / v_total_installments),
            gs <= v_paid_before,
-           case when extract(month from pm)::int = any(v_bonus_months) then 'bonus' else 'regular' end
+           case when v_bonus_amounts ? (extract(month from pm)::int::text) then 'bonus' else 'regular' end
     from (select gs, (v_first_month + ((gs - v_paid_before - 1) || ' months')::interval)::date as pm from generate_series(1, v_total_installments) gs) s;
 
     return jsonb_build_object('ok',true,'id',v_id);

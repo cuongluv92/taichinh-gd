@@ -415,8 +415,12 @@ function donutSvg(items, size = 168, thickness = 22) {
   }).join('');
   return `<div class="donut-wrap"><svg viewBox="0 0 160 160" width="${size}" height="${size}" role="img" aria-label="Biểu đồ tròn"><circle cx="80" cy="80" r="${r}" fill="none" stroke="var(--panel-3)" stroke-width="${thickness}"/>${circles}</svg></div>`;
 }
-function legendHtml(items, mode = 'value', income = 0) {
-  return `<div class="chart-legend">${items.filter(x => n(x.value) > 0).map((x, i) => `<div><span><i class="legend-dot legend-c${i % 10}"></i>${esc(x.label)}</span><strong>${money(x.value)}${mode === 'income' && income > 0 ? `<small>${pctText(x.value, income)}</small>` : ''}</strong></div>`).join('')}</div>`;
+// Percent of each slice is always share-of-the-donut (items sum to 100%),
+// matching what the donut itself visually draws — it used to be computed
+// against thu nhập instead, which never added up to 100% across slices.
+function legendHtml(items) {
+  const total = items.reduce((s, x) => s + n(x.value), 0);
+  return `<div class="chart-legend">${items.filter(x => n(x.value) > 0).map((x, i) => `<div><span><i class="legend-dot legend-c${i % 10}"></i>${esc(x.label)}</span><strong>${money(x.value)}${total > 0 ? `<small>${pctText(x.value, total)}</small>` : ''}</strong></div>`).join('')}</div>`;
 }
 function sparklineSvg(data, w = 108, h = 28, sharedMax = 0) {
   const max = Math.max(1, sharedMax, ...data.map(x => n(x.value)));

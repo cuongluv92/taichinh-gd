@@ -238,19 +238,20 @@ const RPC_HANDLERS = {
     if (action === 'delete_expense') { const i = CARD_EXPENSES.findIndex(x => x.id === p.id); if (i >= 0) CARD_EXPENSES.splice(i, 1); return { ok: true }; }
     if (action === 'save_installment') {
       const total = Number(p.total_installments), principal = Number(p.principal_amount);
-      const bonusMonths = Array.isArray(p.bonus_months) ? p.bonus_months.map(Number) : [];
-      const bonusAmount = Number(p.bonus_amount) || 0;
+      const bonusAmounts = p.bonus_amounts && typeof p.bonus_amounts === 'object' ? p.bonus_amounts : {};
       const months = Array.from({ length: total }, (_, i) => addMonths(p.first_payment_month?.slice(0, 7) || MONTH, i) + '-01');
-      const bonusCount = months.filter(m => bonusMonths.includes(Number(m.slice(5, 7)))).length;
-      const baseTotal = principal - bonusCount * bonusAmount;
+      const bonusFor = m => bonusAmounts[String(Number(m.slice(5, 7)))];
+      const totalBonus = months.reduce((s, m) => s + (Number(bonusFor(m)) || 0), 0);
+      const baseTotal = principal - totalBonus;
       const regular = Math.floor(baseTotal / total);
       const schedule = months.map((m, i) => {
-        const isBonus = bonusMonths.includes(Number(m.slice(5, 7)));
+        const bonus = Number(bonusFor(m)) || 0;
+        const isBonus = bonus > 0;
         const base = i === 0 ? baseTotal - regular * (total - 1) : regular;
-        return { id: newId('sch'), installment_no: i + 1, payment_month: m, principal_amount: base + (isBonus ? bonusAmount : 0), fee_amount: 0, is_paid: false, payment_kind: isBonus ? 'bonus' : 'regular' };
+        return { id: newId('sch'), installment_no: i + 1, payment_month: m, principal_amount: base + bonus, fee_amount: 0, is_paid: false, payment_kind: isBonus ? 'bonus' : 'regular' };
       });
       const id = newId('inst');
-      INSTALLMENTS.push({ id, card_account_id: p.card_account_id, card_name: (ACCOUNTS.find(a => a.id === p.card_account_id) || {}).name, name: p.name, purchase_date: p.purchase_date, principal_amount: principal, fee_total: 0, total_installments: total, paid_installments_before: 0, first_payment_month: p.first_payment_month, currency: 'JPY', note: p.note || '', bonus_months: bonusMonths, bonus_amount: bonusAmount, schedule });
+      INSTALLMENTS.push({ id, card_account_id: p.card_account_id, card_name: (ACCOUNTS.find(a => a.id === p.card_account_id) || {}).name, name: p.name, purchase_date: p.purchase_date, principal_amount: principal, fee_total: 0, total_installments: total, paid_installments_before: 0, first_payment_month: p.first_payment_month, currency: 'JPY', note: p.note || '', bonus_amounts: bonusAmounts, schedule });
       return { ok: true, id };
     }
     if (action === 'delete_installment') { const i = INSTALLMENTS.findIndex(x => x.id === p.id); if (i >= 0) INSTALLMENTS.splice(i, 1); return { ok: true }; }
@@ -384,10 +385,11 @@ const RPC_HANDLERS = {
   results.push(`  Mini KPI row (Thu nhập/Tổng chi/Còn lại/Tỷ lệ) shows on Chi tiêu, same labels as Tổng quan: ${await page.locator('.kpi-grid.sm .kpi .label', { hasText: 'Thu nhập tháng' }).count() > 0 && await page.locator('.kpi-grid.sm .kpi .label', { hasText: 'Tổng chi tiêu tháng' }).count() > 0}`);
   results.push(`APP OPENS ON Chi tiêu BY DEFAULT (nav "Chi tiêu" active, not Tổng quan): ${await page.locator('#nav button[data-view=budget].active').count() > 0}`);
 
-  // ---- Bonus (ボーナス併用払い): pick tháng 7 + 12, kỳ đầu absorbs the
-  // rounding remainder, bonus is netted OUT of principal_amount first so
-  // the whole schedule still sums to exactly principal_amount, and any kỳ
-  // can be hand-corrected afterward via "Sửa".
+  // ---- Bonus (ボーナス併用払い): pick tháng 7 (80,000) + tháng 12 (150,000)
+  // — EACH month gets its OWN amount, not one shared number. Kỳ đầu absorbs
+  // the rounding remainder, bonus is netted OUT of principal_amount first
+  // so the whole schedule still sums to exactly principal_amount, and any
+  // kỳ can be hand-corrected afterward via "Sửa".
   await page.click('.money-column.credit .money-line:has-text("Rakuten")');
   await page.waitForSelector('#modal[open]', { timeout: 1500 });
   await page.click('#modalBody button:has-text("＋ Thêm khoản trả góp")');
@@ -399,23 +401,27 @@ const RPC_HANDLERS = {
   results.push(`  Bonus month picker stays collapsed until the toggle is checked: ${!(await page.isVisible('#instBonusFields'))}`);
   await page.check('#instBonusToggle');
   results.push(`  Checking the bonus toggle reveals the month picker: ${await page.isVisible('#instBonusFields')}`);
-  await page.check('#instBonus7');
-  await page.check('#instBonus12');
-  await page.fill('#instBonusAmount', '100000');
+  results.push(`  Tháng 7's own amount input stays hidden until Tháng 7 itself is checked: ${!(await page.isVisible('#instBonusAmt7'))}`);
+  await page.check('#instBonusM7');
+  results.push(`  Checking Tháng 7 reveals ONLY its own amount input, not Tháng 12's: ${await page.isVisible('#instBonusAmt7') && !(await page.isVisible('#instBonusAmt12'))}`);
+  await page.fill('#instBonusAmt7', '80000');
+  await page.check('#instBonusM12');
+  await page.fill('#instBonusAmt12', '150000');
   await page.click('#modalForm [type=submit]');
-  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(() => results.push('SUBMIT installment with bonus (tháng 7+12): saved - OK')).catch(() => results.push('SUBMIT installment with bonus: no toast - FAIL'));
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(() => results.push('SUBMIT installment with per-month bonus (tháng 7=80,000, tháng 12=150,000): saved - OK')).catch(() => results.push('SUBMIT installment with bonus: no toast - FAIL'));
   await page.waitForTimeout(150);
 
   await page.click('.money-column.credit .money-line:has-text("Rakuten")');
   await page.waitForSelector('#modal[open]', { timeout: 1500 });
   const ledgerText = await page.textContent('#modalBody');
-  results.push(`  Installment row shows bonus note (Tháng 7, Tháng 12, +¥100,000/lần): ${ledgerText.includes('Bonus') && ledgerText.includes('Tháng 7') && ledgerText.includes('Tháng 12')}`);
+  results.push(`  Installment row shows each month's OWN bonus amount (Tháng 7 +¥80,000, Tháng 12 +¥150,000, not the same number twice): ${ledgerText.includes('Tháng 7') && ledgerText.includes('80,000') && ledgerText.includes('Tháng 12') && ledgerText.includes('150,000')}`);
   await page.click('#modalBody button:has-text("Xem lịch")');
   await page.waitForTimeout(100);
   const scheduleText = await page.textContent('#modalBody');
   results.push(`  Schedule shows "Bonus" tag on exactly 2 kỳ (tháng 7 và 12): ${(scheduleText.match(/Bonus/g) || []).length === 2}`);
-  results.push(`  Bonus kỳ shows the higher combined amount (¥183,333 = 83,333 đều + 100,000 bonus): ${scheduleText.includes('183,333')}`);
-  results.push(`  Kỳ đầu tiên absorbs the rounding remainder (¥83,337, not ¥83,333): ${scheduleText.includes('83,337')}`);
+  results.push(`  Tháng 12 kỳ shows its own combined amount (¥230,833 = 80,833 đều + 150,000 bonus): ${scheduleText.includes('230,833')}`);
+  results.push(`  Tháng 7 kỳ shows ITS OWN combined amount (¥160,833 = 80,833 đều + 80,000 bonus, different from tháng 12's): ${scheduleText.includes('160,833')}`);
+  results.push(`  Kỳ đầu tiên absorbs the rounding remainder (¥80,837, not ¥80,833): ${scheduleText.includes('80,837')}`);
 
   // "Sửa" a kỳ by hand — the escape hatch for when the auto-split still
   // isn't what the household's real contract says.
@@ -430,7 +436,7 @@ const RPC_HANDLERS = {
   await page.click('#modalBody button:has-text("Xem lịch")');
   await page.waitForTimeout(100);
   const scheduleText2 = await page.textContent('#modalBody');
-  results.push(`  Sửa tay kỳ 2 stuck (¥90,000) without touching other kỳ: ${scheduleText2.includes('90,000') && scheduleText2.includes('183,333')}`);
+  results.push(`  Sửa tay kỳ 2 stuck (¥90,000) without touching other kỳ (tháng 12 vẫn ¥230,833): ${scheduleText2.includes('90,000') && scheduleText2.includes('230,833')}`);
   await page.evaluate(() => document.getElementById('modal')?.close());
   await page.waitForTimeout(50);
 

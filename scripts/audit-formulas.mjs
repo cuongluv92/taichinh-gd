@@ -49,6 +49,7 @@ sandbox.window = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(financeSrc, sandbox, { filename: 'finance.js' });
 const F = sandbox.F;
+const legendHtml = sandbox.legendHtml;
 
 function resetState(patch) { Object.assign(sandbox.state, BASE_STATE, patch); }
 function acc(id, type, currency, opening = 0, extra = {}) { return { id, account_type: type, currency, opening_balance: opening, is_active: true, ...extra }; }
@@ -360,6 +361,18 @@ function debtAdj(id, debtId, direction, amount, date) { return { id, debt_id: de
     reporting: { show_vnd_conversion: true, jpy_vnd_rate: 168 }
   });
   eq('A base-currency payable and a converted foreign one sum together in Tổng nợ', F.totalPayablesAt('9999-12-31'), 100000 + 5000000 / 168);
+}
+
+// ---------------------------------------------------------------------
+// Cơ cấu chi tiêu's legend % must be each slice's share of the composition
+// itself (so all slices sum to 100%) — it used to be computed against thu
+// nhập instead, which never summed to 100% and made small categories look
+// smaller than their real share of spending.
+// ---------------------------------------------------------------------
+{
+  const html = legendHtml([{ label: 'Nhà ở', value: 30 }, { label: 'Ăn uống', value: 70 }]);
+  eq('legendHtml % is share of the composition total (30/100=30.0%), not of an outside thu nhập figure', /30\.0%/.test(html), true);
+  eq('legendHtml % for the other slice is 70.0% — both slices together sum to exactly 100%', /70\.0%/.test(html), true);
 }
 
 // ---------------------------------------------------------------------

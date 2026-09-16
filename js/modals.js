@@ -729,8 +729,8 @@ function installmentProgress(inst) {
 }
 function installmentRow(inst) {
   const p = installmentProgress(inst);
-  const bonusMonths = (inst.bonus_months || []).slice().sort((a, b) => a - b);
-  const bonusNote = bonusMonths.length ? ` · Bonus ${bonusMonths.map(m => `Tháng ${m}`).join(', ')} +${money(inst.bonus_amount, inst.currency)}/lần` : '';
+  const bonusEntries = Object.entries(inst.bonus_amounts || {}).map(([m, amt]) => [Number(m), amt]).sort((a, b) => a[0] - b[0]);
+  const bonusNote = bonusEntries.length ? ` · Bonus ${bonusEntries.map(([m, amt]) => `Tháng ${m} +${money(amt, inst.currency)}`).join(', ')}` : '';
   return `<div class="tx"><div class="tx-main"><strong>${esc(inst.name)}</strong><span>${money(inst.principal_amount, inst.currency)} · ${p.paid}/${p.total} kỳ đã trả · ${money(n(inst.principal_amount) / inst.total_installments, inst.currency)}/kỳ${esc(bonusNote)}</span></div>
     <div class="tx-actions"><button class="btn sm" ${act('openInstallmentSchedule', inst.id, inst.card_account_id)}>Xem lịch</button><button class="btn sm" ${act('openInstallment', inst.card_account_id, inst.id)}>Sửa</button><button class="btn sm" ${act('deleteInstallment', inst.id, inst.card_account_id)}>Xóa</button></div></div>`;
 }
@@ -753,7 +753,9 @@ function openInstallment(cardId = '', id = '') {
   const cards = F.cardAccounts();
   if (!cards.length) { toast('Chưa có thẻ nào — hãy thêm một thẻ trước.', true); return reopenAfterModal('openCreditCard'); }
   const inst = id ? F.installmentsFor(cardId).find(x => x.id === id) : null;
-  const hasBonus = !!(inst?.bonus_months || []).length;
+  const bonusAmounts = inst?.bonus_amounts || {};
+  const hasBonus = Object.keys(bonusAmounts).length > 0;
+  const months = Array.from({ length: 12 }, (_, i) => i + 1);
   modal(inst ? 'Sửa khoản trả góp' : 'Thêm khoản trả góp', `<div class="form-grid">
     <div class="field full"><label>Tên khoản mua</label><input name="name" value="${esc(inst?.name || '')}" placeholder="VD: iPhone / Máy giặt" required autofocus></div>
     <div class="field"><label>Thẻ</label><select name="card_account_id">${options(cards, inst?.card_account_id || cardId || cards[0].id, a => `${a.name} · ${a.currency}`)}</select></div>
@@ -763,22 +765,27 @@ function openInstallment(cardId = '', id = '') {
     <div class="field"><label>Số kỳ đã trả</label><input name="paid_installments_before" type="number" min="0" value="${esc(inst?.paid_installments_before ?? 0)}"></div>
     <div class="field full"><label class="checkbox-label"><input type="checkbox" id="instBonusToggle" ${hasBonus ? 'checked' : ''}> 🎁 Có trả thêm bonus (Tết/giữa năm)?</label></div>
     <div class="field full${hasBonus ? '' : ' hidden'}" id="instBonusFields">
-      <label>Chọn (những) tháng kỳ rơi vào sẽ trả thêm</label>
-      <div class="row wrap">${Array.from({ length: 12 }, (_, i) => i + 1).map(m => `<label class="checkbox-label"><input type="checkbox" id="instBonus${m}" ${(inst?.bonus_months || []).includes(m) ? 'checked' : ''}> Tháng ${m}</label>`).join('')}</div>
+      <label>Tick tháng nào thì hiện ô nhập tiền cho đúng tháng đó — mỗi tháng một số tiền riêng</label>
+      <div class="bonus-month-grid">${months.map(m => {
+        const amt = bonusAmounts[m];
+        const checked = amt != null;
+        return `<div class="bonus-month-row"><label class="checkbox-label"><input type="checkbox" class="bonusMonthCheck" id="instBonusM${m}" data-m="${m}" ${checked ? 'checked' : ''}> Tháng ${m}</label><input type="number" min="1" step="1" id="instBonusAmt${m}" class="bonus-amount-input${checked ? '' : ' hidden'}" placeholder="Số tiền" value="${esc(amt ?? '')}"></div>`;
+      }).join('')}</div>
     </div>
-    <div class="field${hasBonus ? '' : ' hidden'}" id="instBonusAmountField"><label>Số tiền bonus mỗi lần</label><input id="instBonusAmount" type="number" min="0" step="1" value="${esc(inst?.bonus_amount || '')}" placeholder="VD: 100000"></div>
     <div class="field full"><label>Ghi chú</label><input name="note" value="${esc(inst?.note || '')}" placeholder="Tùy chọn"></div>
   </div>
   <small class="muted">Số tiền mỗi kỳ = Tổng giá trị ÷ Tổng số kỳ, chia đều. Chọn bonus thì các kỳ khác giảm xuống tương ứng — tổng vẫn đúng bằng Tổng giá trị, không cộng thêm ra ngoài. Mỗi tháng chỉ kỳ đến hạn mới tính vào Tổng chi tiêu tháng — không xuất hiện ở Chi biến động.</small>`,
   fd => api.cardLedger('save_installment', {
     ...fd, id: id || null, first_payment_month: `${monthKey(fd.purchase_date)}-01`,
-    bonus_months: $('#instBonusToggle').checked ? Array.from({ length: 12 }, (_, i) => i + 1).filter(m => $(`#instBonus${m}`).checked) : [],
-    bonus_amount: $('#instBonusToggle').checked ? ($('#instBonusAmount').value || 0) : 0
+    bonus_amounts: $('#instBonusToggle').checked
+      ? Object.fromEntries(months.filter(m => $(`#instBonusM${m}`).checked).map(m => [m, $(`#instBonusAmt${m}`).value || 0]))
+      : {}
   }), inst ? 'Lưu' : 'Lưu khoản trả góp');
   const bonusToggle = $('#instBonusToggle');
-  bonusToggle.addEventListener('change', () => {
-    $('#instBonusFields').classList.toggle('hidden', !bonusToggle.checked);
-    $('#instBonusAmountField').classList.toggle('hidden', !bonusToggle.checked);
+  bonusToggle.addEventListener('change', () => $('#instBonusFields').classList.toggle('hidden', !bonusToggle.checked));
+  months.forEach(m => {
+    const cb = $(`#instBonusM${m}`), amtInput = $(`#instBonusAmt${m}`);
+    cb.addEventListener('change', () => amtInput.classList.toggle('hidden', !cb.checked));
   });
 }
 async function deleteInstallment(id, cardId) {

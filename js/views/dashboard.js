@@ -111,7 +111,15 @@ function renderDashboard() {
   const fixedPlan = F.orderedCategories('expense').filter(c => c.cost_type === 'fixed').reduce((a, c) => a + n(c.planned_amount), 0);
   const variablePlan = F.orderedCategories('expense').filter(c => c.cost_type !== 'fixed').reduce((a, c) => a + n(c.planned_amount), 0);
   const recent = [...state.transactions].sort((a, b) => String(b.transaction_date).localeCompare(String(a.transaction_date))).slice(0, 8);
+  // F.expenseByCategory only sums category-based Chi cố định/Chi biến động
+  // transactions — Thẻ & trả góp is its own independent ledger, never a
+  // category transaction, so it needs to be folded in explicitly as its
+  // own slice for this donut to actually represent 100% of Tổng chi tiêu
+  // tháng (s.expense), matching what the KPI above already breaks down as
+  // "Cố định + Biến động + Thẻ&góp".
   const expenseComposition = F.expenseByCategory(F.periodTransactions(state.month));
+  if (s.card > 0) expenseComposition.push({ label: 'Thẻ & trả góp', value: s.card });
+  expenseComposition.sort((a, b) => b.value - a.value);
   const prevStats = F.statsFor(addMonths(state.month, -1));
   const prevYearStats = F.statsFor(addMonths(state.month, -12));
   const yoy = (cur, prev) => { const t = yoyText(cur, prev); return t ? `<small class="muted">${t.replace(/^ · /, '')}</small>` : ''; };
@@ -148,7 +156,7 @@ function renderDashboard() {
     <div class="dash-col">
       <section class="card section">
         <div class="section-head"><div><h2>Cơ cấu chi tiêu tháng</h2><p>${fmtMonthKey(state.month)}</p></div></div>
-        ${expenseComposition.length ? `<div class="donut-layout">${donutSvg(expenseComposition)}${legendHtml(expenseComposition, 'income', s.income)}</div>` : '<div class="empty">Chưa có giao dịch thực tế trong tháng này.</div>'}
+        ${expenseComposition.length ? `<div class="donut-layout">${donutSvg(expenseComposition)}${legendHtml(expenseComposition)}</div>` : '<div class="empty">Chưa có giao dịch thực tế trong tháng này.</div>'}
       </section>
       <section class="card section">
         <div class="section-head"><div><h2>Năm nay so với năm trước</h2><p>Lũy kế đến tháng ${fmtMonthKey(state.month)}</p></div></div>
