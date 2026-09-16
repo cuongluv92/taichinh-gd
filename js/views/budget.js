@@ -74,10 +74,7 @@ function creditColumn() {
     if ((card.currency || state.base) === state.base) total += due;
     const instCount = F.installmentsFor(card.id).length;
     const note = instCount ? `${instCount} khoản trả góp đang theo dõi` : 'Chưa có khoản trả góp';
-    return `<div class="money-line-wrap">
-      <button class="money-line" ${act('openCardLedger', card.id)}><span class="line-label">${esc(card.name)}<small>${esc(note)}</small></span><span class="line-amount"><strong class="${due > 0 ? '' : 'muted'}">${money(due, card.currency)}</strong>${(card.currency || state.base) === state.base ? `<span class="pct">${pctText(due, basis)}</span>` : '<span class="pct">ngoại tệ</span>'}</span></button>
-      <button class="btn sm" type="button" aria-label="Xem danh sách ${esc(card.name)}" ${act('openCardLedger', card.id)}>Xem danh sách</button>
-    </div>`;
+    return `<button class="money-line" ${act('openCardLedger', card.id)} aria-label="Xem danh sách ${esc(card.name)}"><span class="line-label">${esc(card.name)}<small>${esc(note)}</small></span><span class="line-amount"><strong class="${due > 0 ? '' : 'muted'}">${money(due, card.currency)}</strong>${(card.currency || state.base) === state.base ? `<span class="pct">${pctText(due, basis)}</span>` : '<span class="pct">ngoại tệ</span>'}</span><span class="line-icon" aria-hidden="true">☰</span></button>`;
   });
   return moneyColumn({ title: 'Thẻ & trả góp', tone: 'credit', items, total: `${money(total)} <span class="pct">${pctText(total, basis)}</span>`, settingsAction: act('openCreditColumnManager'), emptyText: 'Chưa có thẻ tín dụng' });
 }
