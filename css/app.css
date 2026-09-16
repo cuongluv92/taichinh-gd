@@ -134,7 +134,7 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 .grid{display:grid;gap:16px}
 .section-grid{grid-template-columns:1fr 1fr}
 .two-cols{grid-template-columns:1fr 1fr}
-.chart-row{grid-template-columns:3fr 2fr;align-items:stretch}
+.chart-row{grid-template-columns:1fr 1fr;align-items:stretch}
 .dash-col{display:flex;flex-direction:column;gap:16px}
 .empty{
   color:var(--text-faint);font-size:13px;padding:22px 10px;text-align:center;border:1px dashed var(--border);
