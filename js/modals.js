@@ -797,25 +797,34 @@ async function deleteInstallment(id, cardId) {
     openCardLedger(cardId);
   } catch (e) { toast(e.message, true); }
 }
-function scheduleRow(row, cardId) {
+function scheduleRow(row, cardId, installmentId) {
   const bonusTag = row.payment_kind === 'bonus' ? ' <span class="due-date-tag">Bonus</span>' : '';
   return `<div class="tx"><div class="tx-main"><strong>${esc(fmtMonthKey(monthKey(row.payment_month)))}${bonusTag}</strong><span>Kỳ ${row.installment_no} · ${money(n(row.principal_amount) + n(row.fee_amount))}${row.is_paid ? ' · Đã trả' : ''}</span></div>
-    <div class="tx-actions"><button class="btn sm" ${act('reopenAfterModal', 'openScheduleRowEdit', row, cardId)}>Sửa</button><button class="btn sm" ${act('toggleInstallmentPaid', row.id, cardId)}>${row.is_paid ? 'Đánh dấu chưa trả' : 'Đánh dấu đã trả'}</button></div></div>`;
+    <div class="tx-actions"><button class="btn sm" ${act('reopenAfterModal', 'openScheduleRowEdit', row, cardId, installmentId)}>Sửa</button><button class="btn sm" ${act('toggleInstallmentPaid', row.id, cardId)}>${row.is_paid ? 'Đánh dấu chưa trả' : 'Đánh dấu đã trả'}</button></div></div>`;
 }
 // Thoát hiểm khi cách chia tự động (kỳ đầu gánh phần dư, còn lại chia đều +
 // bonus cộng thêm) không đúng ý — sửa thẳng đúng một kỳ, không tính lại cả
-// lịch, không đụng các kỳ khác.
-function openScheduleRowEdit(row, cardId) {
+// lịch, không đụng các kỳ khác. Cho kỳ 1 riêng: một số ngân hàng/nơi bán
+// chia kỳ 1 khác hẳn kiểu "gánh phần dư" của app (VD sao kê thật: kỳ 1 =
+// 6,400, các kỳ thường còn lại = 5,800 đều tăm tắp) — tick thêm ô bên dưới
+// để sau khi lưu kỳ 1, MỌI kỳ thường còn lại (không đụng kỳ Bonus) được
+// chia lại đều từ phần còn dư, khớp đúng sao kê thật thay vì đấu tay từng kỳ.
+function openScheduleRowEdit(row, cardId, installmentId) {
+  const isFirst = row.installment_no === 1;
   modal(`Sửa kỳ ${row.installment_no} · ${esc(fmtMonthKey(monthKey(row.payment_month)))}`, `<div class="form-grid">
     <div class="field full"><label>Số tiền gốc kỳ này</label><input name="principal_amount" type="number" min="1" step="1" value="${esc(row.principal_amount)}" required autofocus></div>
+    ${isFirst ? `<div class="field full"><label class="checkbox-label"><input type="checkbox" id="resplitRest"> Chia lại các kỳ thường còn lại theo số tiền này</label></div>` : ''}
   </div>
-  <small class="muted">Chỉ sửa đúng kỳ này, không tính lại các kỳ khác.</small>`,
-  fd => api.cardLedger('edit_schedule_row', { id: row.id, principal_amount: fd.principal_amount }), 'Lưu');
+  <small class="muted">${isFirst ? 'Bỏ chọn ô trên thì chỉ sửa đúng kỳ 1 như trước — chọn thì các kỳ thường (không phải Bonus) phía sau được chia đều lại từ phần còn dư, kỳ cuối cùng gánh phần lẻ.' : 'Chỉ sửa đúng kỳ này, không tính lại các kỳ khác.'}</small>`,
+  fd => (isFirst && $('#resplitRest').checked)
+    ? api.cardLedger('resplit_installment_from_first', { installment_id: installmentId, first_amount: fd.principal_amount })
+    : api.cardLedger('edit_schedule_row', { id: row.id, principal_amount: fd.principal_amount }),
+  'Lưu');
 }
 function openInstallmentSchedule(installmentId, cardId) {
   const inst = F.installmentsFor(cardId).find(x => x.id === installmentId); if (!inst) return toast('Không tìm thấy khoản trả góp.', true);
   const rows = (inst.schedule || []).slice().sort((a, b) => String(a.payment_month).localeCompare(String(b.payment_month)));
-  infoModal(`Lịch trả · ${esc(inst.name)}`, `<div class="list">${rows.map(r => scheduleRow(r, cardId)).join('') || '<div class="empty compact">Chưa có lịch.</div>'}</div>`);
+  infoModal(`Lịch trả · ${esc(inst.name)}`, `<div class="list">${rows.map(r => scheduleRow(r, cardId, installmentId)).join('') || '<div class="empty compact">Chưa có lịch.</div>'}</div>`);
 }
 async function toggleInstallmentPaid(scheduleRowId, cardId) {
   try {

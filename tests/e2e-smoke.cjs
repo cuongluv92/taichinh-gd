@@ -277,6 +277,25 @@ const RPC_HANDLERS = {
     if (action === 'delete_installment') { const i = INSTALLMENTS.findIndex(x => x.id === p.id); if (i >= 0) INSTALLMENTS.splice(i, 1); return { ok: true }; }
     if (action === 'toggle_paid') { for (const inst of INSTALLMENTS) { const row = (inst.schedule || []).find(s => s.id === p.id); if (row) { row.is_paid = !row.is_paid; break; } } return { ok: true }; }
     if (action === 'edit_schedule_row') { for (const inst of INSTALLMENTS) { const row = (inst.schedule || []).find(s => s.id === p.id); if (row) { row.principal_amount = Number(p.principal_amount); break; } } return { ok: true }; }
+    if (action === 'resplit_installment_from_first') {
+      // Mirrors migrations/20260917_installment_resplit_from_first.sql exactly:
+      // kỳ 1 gets the given amount, every OTHER non-bonus kỳ re-splits evenly
+      // from what's left (last such kỳ absorbs the remainder), bonus kỳ untouched.
+      const inst = INSTALLMENTS.find(x => x.id === p.installment_id);
+      if (!inst) return { error: true, __status: 400, message: 'installment_not_found' };
+      const firstAmount = Number(p.first_amount);
+      const schedule = inst.schedule || [];
+      const bonusTotal = schedule.filter(s => s.payment_kind === 'bonus').reduce((s, r) => s + Number(r.principal_amount), 0);
+      const rest = schedule.filter(s => s.payment_kind !== 'bonus' && s.installment_no !== 1).sort((a, b) => a.installment_no - b.installment_no);
+      if (!rest.length) return { error: true, __status: 400, message: 'no_other_installments_to_resplit' };
+      const baseTotal = inst.principal_amount - bonusTotal - firstAmount;
+      if (baseTotal < 0) return { error: true, __status: 400, message: 'first_amount_too_large' };
+      const regular = Math.floor(baseTotal / rest.length);
+      const first = schedule.find(s => s.installment_no === 1);
+      if (first) first.principal_amount = firstAmount;
+      rest.forEach((row, i) => { row.principal_amount = i === rest.length - 1 ? baseTotal - regular * (rest.length - 1) : regular; });
+      return { ok: true };
+    }
     return { ok: true };
   },
   taichinh_gd_investment_api: (action, body) => {
@@ -468,6 +487,31 @@ const RPC_HANDLERS = {
   await page.waitForTimeout(100);
   const scheduleText2 = await page.textContent('#modalBody');
   results.push(`  Sửa tay kỳ 2 stuck (¥90,000) without touching other kỳ (tháng 12 vẫn ¥230,833): ${scheduleText2.includes('90,000') && scheduleText2.includes('230,833')}`);
+
+  // Real bank statements sometimes split kỳ 1 differently from the app's
+  // own "kỳ 1 absorbs the remainder of an equal split across ALL kỳ"
+  // convention — "Sửa" kỳ 1 with "Chia lại các kỳ thường còn lại" ticked
+  // should re-split every OTHER non-bonus kỳ (undoing the kỳ-2 hand-edit
+  // above) while leaving both bonus kỳ (tháng 7, tháng 12) untouched.
+  await page.click('#modalBody .tx:has-text("Kỳ 1") button:has-text("Sửa")');
+  await page.waitForSelector('[name=principal_amount]', { timeout: 1500 });
+  results.push(`  "Chia lại các kỳ thường còn lại" checkbox only shows up when editing kỳ 1: ${await page.isVisible('#resplitRest')}`);
+  await page.fill('[name=principal_amount]', '100000');
+  await page.check('#resplitRest');
+  await page.click('#modalForm [type=submit]');
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(() => results.push('SUBMIT "Sửa kỳ 1" + "Chia lại các kỳ thường còn lại": saved - OK')).catch(() => results.push('SUBMIT resplit from kỳ 1: no toast - FAIL'));
+  await page.waitForTimeout(150);
+  await page.click('.money-column.credit .money-line:has-text("Rakuten")');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 });
+  await page.click('#modalBody button:has-text("Xem lịch")');
+  await page.waitForTimeout(100);
+  const scheduleText3 = await page.textContent('#modalBody');
+  results.push(`  Kỳ 1 now shows the hand-entered ¥100,000: ${scheduleText3.includes('100,000')}`);
+  results.push(`  Kỳ 2's earlier hand-edit (¥90,000) got overwritten by the resplit, not left stuck: ${!scheduleText3.includes('90,000')}`);
+  results.push(`  Bonus kỳ (tháng 7 = ¥160,833, tháng 12 = ¥230,833) stayed untouched by the resplit: ${scheduleText3.includes('160,833') && scheduleText3.includes('230,833')}`);
+  const editSchedule2 = (await page.evaluate(() => window.state?.installments?.find(i => i.name === 'Máy giặt')?.schedule)) || [];
+  const scheduleSum = editSchedule2.reduce((s, r) => s + Number(r.principal_amount), 0);
+  results.push(`  Whole schedule still sums to exactly the purchase price (¥1,200,000), no money added/lost by the resplit: ${scheduleSum === 1200000}`);
   await page.evaluate(() => document.getElementById('modal')?.close());
   await page.waitForTimeout(50);
 

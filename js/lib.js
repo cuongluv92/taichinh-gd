@@ -339,7 +339,9 @@ const ERROR_MAP = [
   [/account_not_found/i, 'Không tìm thấy tài khoản.'],
   [/invalid_session_token/i, 'Không đăng ký được thiết bị này.'],
   [/invalid_device_id/i, 'Thiếu thiết bị cần thao tác.'],
-  [/device_not_found/i, 'Không tìm thấy thiết bị này.']
+  [/device_not_found/i, 'Không tìm thấy thiết bị này.'],
+  [/no_other_installments_to_resplit/i, 'Không còn kỳ thường nào khác để chia lại (chỉ có mỗi kỳ này hoặc toàn Bonus).'],
+  [/first_amount_too_large/i, 'Số tiền kỳ 1 lớn hơn cả phần còn lại sau khi trừ Bonus — hãy kiểm tra lại.']
 ];
 function translateApiError(raw) {
   for (const [re, msg] of ERROR_MAP) if (re.test(raw)) return msg;
