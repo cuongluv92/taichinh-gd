@@ -153,6 +153,17 @@ $('#unlockForm').addEventListener('submit', e => {
   localStorage.setItem(KEY_STORE, k);
   location.reload();
 });
+
+// Opening a private #k=... link while this page is already open is a
+// same-document navigation: the browser only changes the hash and does not
+// rerun boot(). Accept the new key and reload explicitly in that case.
+window.addEventListener('hashchange', () => {
+  const hash = new URLSearchParams(location.hash.replace(/^#/, ''));
+  const k = (hash.get('k') || hash.get('key') || '').trim();
+  if (k.length < 9) return;
+  localStorage.setItem(KEY_STORE, k);
+  location.reload();
+});
 $('#nav').addEventListener('click', e => { const b = e.target.closest('button[data-view]'); if (b) navigate(b.dataset.view); });
 $('#mobileNav').addEventListener('click', e => { const b = e.target.closest('button[data-view]'); if (b) navigate(b.dataset.view); });
 $('#quickAdd').addEventListener('click', () => openQuickEntry());
