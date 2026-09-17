@@ -15,7 +15,12 @@ function needKey() { if (!state.key) throw new Error('Thiếu khóa gia đình')
 const api = {
   core: (action, payload = {}) => { needKey(); return callRpc('taichinh_gd_api', { p_key: state.key, p_action: action, p_payload: payload }); },
   investment: (action, payload = {}) => { needKey(); return callRpc('taichinh_gd_investment_api', { p_key: state.key, p_action: action, p_payload: payload }); },
-  extension: (action, payload = {}) => { needKey(); return callRpc('taichinh_gd_extension_api', { p_key: state.key, p_action: action, p_payload: payload }); },
+  // Every extension.* action shares one session check server-side (see the
+  // device_sessions migration) — session_token rides along on every call so
+  // a revoked device is blocked no matter which action it happens to hit
+  // next, not just "get". An explicit payload.session_token (none today)
+  // would still win via the spread order below.
+  extension: (action, payload = {}) => { needKey(); return callRpc('taichinh_gd_extension_api', { p_key: state.key, p_action: action, p_payload: { session_token: state.deviceToken, ...payload } }); },
   accountAdjustment: (action, payload = {}) => { needKey(); return callRpc('taichinh_gd_account_adjustment_api', { p_key: state.key, p_action: action, p_payload: payload }); },
   cardLedger: (action, payload = {}) => { needKey(); return callRpc('taichinh_gd_card_ledger_api', { p_key: state.key, p_action: action, p_payload: payload }); },
   debtLedger: (action, payload = {}) => { needKey(); return callRpc('taichinh_gd_debt_ledger_api', { p_key: state.key, p_action: action, p_payload: payload }); },

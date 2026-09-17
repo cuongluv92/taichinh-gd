@@ -82,6 +82,7 @@ const CARD_EXPENSES = [
 ];
 const INSTALLMENTS = [];
 const REPORTING = { show_vnd_conversion: false, jpy_vnd_rate: null };
+const DEVICE_SESSIONS = [];
 const DEBTS = [
   { id: 'd1', name: 'Vay mua xe', counterparty: 'Ngân hàng ABC', direction: 'payable', currency: 'JPY', opening_amount: 1250000, start_date: `${MONTH}-15`, due_date: '2026-12-01', interest_rate: 0, is_active: true },
   { id: 'd2', name: 'Vay chị Hoa', counterparty: 'Chị Hoa', direction: 'payable', currency: 'VND', opening_amount: 5000000, start_date: `${MONTH}-01`, due_date: null, interest_rate: 0, is_active: true }
@@ -145,8 +146,27 @@ const RPC_HANDLERS = {
   },
   taichinh_gd_extension_api: (action, body) => {
     const p = body?.p_payload || {};
+    // Mirrors the real device_sessions migration's shared preamble: a
+    // revoked token is rejected on EVERY action, not just 'get'.
+    const revoked = DEVICE_SESSIONS.find(d => p.session_token && d.token === p.session_token && d.revoked_at);
+    if (revoked) return { error: true, __status: 400, message: 'device_revoked' };
     if (action === 'save_reporting') { Object.assign(REPORTING, { show_vnd_conversion: !!p.show_vnd_conversion, jpy_vnd_rate: p.jpy_vnd_rate ? Number(p.jpy_vnd_rate) : null }); return { ok: true }; }
-    return { reporting: REPORTING, loan_terms: [] };
+    if (action === 'register_device') {
+      if (p.session_token && !DEVICE_SESSIONS.some(d => d.token === p.session_token)) {
+        DEVICE_SESSIONS.push({ id: newId('dev'), token: p.session_token, device_label: p.device_label || 'Thiết bị', created_at: `${MONTH}-01T00:00:00Z`, last_seen_at: `${MONTH}-01T00:00:00Z`, revoked_at: null });
+      }
+      return { ok: true };
+    }
+    if (action === 'revoke_device') {
+      const row = DEVICE_SESSIONS.find(d => d.id === p.device_id);
+      if (!row) return { error: true, __status: 400, message: 'device_not_found' };
+      row.revoked_at = row.revoked_at || `${MONTH}-20T00:00:00Z`;
+      return { ok: true };
+    }
+    return {
+      reporting: REPORTING, loan_terms: [],
+      device_sessions: DEVICE_SESSIONS.map(d => ({ id: d.id, device_label: d.device_label, created_at: d.created_at, last_seen_at: d.last_seen_at, revoked_at: d.revoked_at, is_current: d.token === p.session_token }))
+    };
   },
   taichinh_gd_exceptional_api: (action) => action === 'set' ? { ok: true } : { ids: [] },
   taichinh_gd_backup_api: () => ({ ok: true }),
@@ -798,6 +818,36 @@ const RPC_HANDLERS = {
   await resetToast();
   await page.click('#householdForm button[type=submit]');
   await page.waitForSelector('#toast.show', { timeout: 1500 }).then(async () => results.push(`SUBMIT "Gia đình" form: saved (toast: "${await page.textContent('#toast')}") - OK`)).catch(() => results.push('SUBMIT "Gia đình" form: no toast - FAIL'));
+
+  // ---- Thiết bị đăng nhập (device sessions) ----
+  // This browser auto-registers itself on boot (ensureDeviceToken) — by now
+  // Settings should already list exactly this one device, flagged current.
+  await page.waitForTimeout(150);
+  let deviceListText = await page.locator('.list').filter({ hasText: 'Thiết bị này' }).first().textContent();
+  results.push(`Thiết bị hiện tại tự đăng ký khi mở app và hiện "Thiết bị này" trong Cài đặt: ${deviceListText.includes('Thiết bị này')}`);
+  results.push(`  Chỉ có đúng 1 thiết bị (chưa có thiết bị nào khác) trước khi seed: ${DEVICE_SESSIONS.length === 1}`);
+  // Seed a second, unrelated device directly into the fixture (simulating
+  // another family member's phone) to test revoking a device that ISN'T
+  // the one running this test — revoking your own current device reloads
+  // the page (by design, see forceDeviceLogout), which would derail the
+  // rest of this suite, so that path is exercised by code review instead.
+  DEVICE_SESSIONS.push({ id: 'dev-other-phone', token: 'other-device-token-xyz', device_label: 'Chrome trên Android', created_at: `${MONTH}-05T00:00:00Z`, last_seen_at: `${MONTH}-10T00:00:00Z`, revoked_at: null });
+  await page.evaluate(() => window.refresh());
+  await page.waitForTimeout(150);
+  deviceListText = await page.locator('.list').filter({ hasText: 'Android' }).first().textContent();
+  results.push(`Sau khi có thêm 1 thiết bị khác (Chrome trên Android), Cài đặt liệt kê đủ cả 2: ${deviceListText.includes('Android') && deviceListText.includes('Thiết bị này')}`);
+  const otherDeviceRow = page.locator('.tx').filter({ hasText: 'Chrome trên Android' });
+  await page.evaluate(() => { window.confirm = () => true; });
+  await resetToast();
+  await otherDeviceRow.locator('button:has-text("Đăng xuất thiết bị này")').click();
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(() => results.push('CLICK "Đăng xuất thiết bị này" (thiết bị khác): saved - OK')).catch(() => results.push('CLICK "Đăng xuất thiết bị này": no toast - FAIL'));
+  await page.evaluate(() => { window.confirm = () => false; });
+  await page.waitForTimeout(150);
+  const revokedRowText = await page.locator('.tx').filter({ hasText: 'Chrome trên Android' }).textContent();
+  results.push(`  Thiết bị vừa đăng xuất hiện "Đã đăng xuất", không còn nút đăng xuất nữa: ${revokedRowText.includes('Đã đăng xuất') && !revokedRowText.includes('Đăng xuất thiết bị này')}`);
+  const currentRowStillOk = await page.locator('.list').filter({ hasText: 'Thiết bị này' }).first().textContent();
+  results.push(`  Thiết bị hiện tại (không bị đăng xuất) vẫn hoạt động bình thường: ${currentRowStillOk.includes('Thiết bị này')}`);
+  results.push(`  App vẫn đang mở bình thường sau khi đăng xuất MỘT thiết bị khác (không tự khóa máy đang dùng): ${await page.locator('#app:not(.hidden)').count() > 0}`);
 
   // Setting a JPY↔VND rate must fold the VND payable ("Vay chị Hoa") INTO
   // Tổng nợ (converted), not just show a cosmetic "≈" that never counts.

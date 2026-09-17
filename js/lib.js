@@ -9,6 +9,8 @@ const SUPABASE_KEY = 'sb_publishable_TCG4KliEaKshVW9BKQJiCQ_1UrLbjdC';
 const KEY_STORE = 'taichinh_gd_key_v1';
 const QUICK_PREF_KEY = 'taichinh_gd_quick_entry_v1';
 const VIEW_STORE = 'taichinh_gd_last_view_v1';
+const DEVICE_TOKEN_STORE = 'taichinh_gd_device_token_v1';
+const DEVICE_NOTICE_STORE = 'taichinh_gd_device_notice_v1';
 
 const localToday = () => {
   const d = new Date();
@@ -18,6 +20,8 @@ const localMonth = () => localToday().slice(0, 7);
 
 const state = {
   key: '',
+  deviceToken: '',
+  deviceSessions: [],
   view: 'dashboard',
   base: 'JPY',
   month: localMonth(),
@@ -212,9 +216,67 @@ async function callRpc(fnName, body) {
   let data; try { data = text ? JSON.parse(text) : null; } catch { data = text; }
   if (!res.ok) {
     const raw = data?.message || data?.hint || String(data || `HTTP ${res.status}`);
+    // Cài đặt → "Thiết bị đăng nhập" → Đăng xuất thiết bị này sets this on
+    // the server; the very next call any action in taichinh_gd_extension_api
+    // makes (get/save_reporting/save_loan_terms/bank_payment/register_device/
+    // revoke_device — every one of them shares the same session check) comes
+    // back with this error, forcing this device out immediately.
+    if (/device_revoked/i.test(raw)) {
+      forceDeviceLogout('Thiết bị này đã bị đăng xuất từ một thiết bị khác.');
+      throw new Error('Thiết bị này đã bị đăng xuất từ một thiết bị khác.');
+    }
     throw new Error(translateApiError(raw));
   }
   return data;
+}
+
+// ---------- Device sessions (Cài đặt → "Thiết bị đăng nhập") ----------
+// The household key is one shared secret with no per-device identity of its
+// own, so "which devices are logged in" doesn't exist as data until a
+// device registers itself. Each device gets its own random token (kept
+// alongside the key in localStorage, never derived from the key) the first
+// time it successfully unlocks; the server only ever sees/stores its hash.
+function detectDeviceLabel() {
+  const ua = navigator.userAgent || '';
+  let os = 'thiết bị không rõ';
+  if (/iPhone|iPad|iPod/.test(ua)) os = 'iOS';
+  else if (/Android/.test(ua)) os = 'Android';
+  else if (/Mac OS X/.test(ua)) os = 'macOS';
+  else if (/Windows/.test(ua)) os = 'Windows';
+  else if (/Linux/.test(ua)) os = 'Linux';
+  let browser = 'Trình duyệt';
+  if (/Edg\//.test(ua)) browser = 'Edge';
+  else if (/CriOS|Chrome\//.test(ua)) browser = 'Chrome';
+  else if (/Firefox\//.test(ua)) browser = 'Firefox';
+  else if (/Safari\//.test(ua)) browser = 'Safari';
+  return `${browser} trên ${os}`;
+}
+function newDeviceToken() {
+  if (crypto?.randomUUID) return crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+}
+// Registers this browser as a named device the first time it has no local
+// token yet — a no-op (and safe to retry) on every later boot. Failure here
+// is non-fatal: the device just stays unlisted/unrevokable until a later
+// boot succeeds, it never blocks using the app.
+async function ensureDeviceToken() {
+  let token = ''; try { token = localStorage.getItem(DEVICE_TOKEN_STORE) || ''; } catch {}
+  if (token) { state.deviceToken = token; return; }
+  token = newDeviceToken();
+  state.deviceToken = token;
+  try { localStorage.setItem(DEVICE_TOKEN_STORE, token); } catch {}
+  try { await api.extension('register_device', { device_label: detectDeviceLabel() }); } catch {}
+}
+// A device that gets revoked (from Cài đặt, on any device) is locked out
+// entirely client-side too — full reload so every in-memory bit of state
+// (open modals, loaded month, cached lists) is gone, not just the key.
+function forceDeviceLogout(message) {
+  try {
+    localStorage.removeItem(KEY_STORE);
+    localStorage.removeItem(DEVICE_TOKEN_STORE);
+    sessionStorage.setItem(DEVICE_NOTICE_STORE, message || 'Thiết bị này đã bị đăng xuất.');
+  } catch {}
+  location.reload();
 }
 
 const ERROR_MAP = [
@@ -274,7 +336,10 @@ const ERROR_MAP = [
   [/planned_amount_negative/i, 'Số tiền không được âm.'],
   [/account_has_history/i, 'Không xóa được — tài khoản này đã có lịch sử +/− tiền.'],
   [/debt_has_history/i, 'Không xóa được — khoản này đã có lịch sử điều chỉnh.'],
-  [/account_not_found/i, 'Không tìm thấy tài khoản.']
+  [/account_not_found/i, 'Không tìm thấy tài khoản.'],
+  [/invalid_session_token/i, 'Không đăng ký được thiết bị này.'],
+  [/invalid_device_id/i, 'Thiếu thiết bị cần thao tác.'],
+  [/device_not_found/i, 'Không tìm thấy thiết bị này.']
 ];
 function translateApiError(raw) {
   for (const [re, msg] of ERROR_MAP) if (re.test(raw)) return msg;
@@ -295,6 +360,7 @@ function extractKey() {
 function forgetDevice() {
   if (!confirm('Xóa khóa khỏi thiết bị này? Bạn cần link riêng để mở lại.')) return;
   localStorage.removeItem(KEY_STORE);
+  localStorage.removeItem(DEVICE_TOKEN_STORE);
   location.reload();
 }
 async function copyPrivateLink() {
@@ -308,7 +374,8 @@ Object.assign(window, {
   monthDate, monthKey, yearKey, fmtMonth, fmtMonthKey, shiftMonth, addMonths, endOfMonthDate,
   daysUntil, dateStatus, toast, setLoading, options, modal, infoModal, closeModal, reopenAfterModal, callRpc, act,
   extractKey, forgetDevice, copyPrivateLink, localToday, localMonth, QUICK_PREF_KEY,
-  ICONS, icon, initIcons, toggleTheme
+  ICONS, icon, initIcons, toggleTheme,
+  DEVICE_TOKEN_STORE, DEVICE_NOTICE_STORE, detectDeviceLabel, ensureDeviceToken, forceDeviceLogout
 });
 initIcons();
 

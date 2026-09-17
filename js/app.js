@@ -25,6 +25,11 @@ async function loadExtras(month = state.month) {
     api.recurringAccount('list', { month: monthDate(month) })
   ]);
   state.reporting = { show_vnd_conversion: false, jpy_vnd_rate: null, ...(ext?.reporting || {}) };
+  // Cài đặt → "Thiết bị đăng nhập" reads straight off this — extension.get
+  // already runs on every boot/refresh/month-change, so the list (and this
+  // device's own revocation check, handled in callRpc) stays current
+  // without a dedicated action.
+  state.deviceSessions = ext?.device_sessions || [];
   state.exceptionalIds = exceptional?.ids || [];
   state.accountAdjustments = adjustments?.items || [];
   state.cardExpenses = cardExpenses?.items || [];
@@ -47,6 +52,13 @@ async function loadExtras(month = state.month) {
 }
 
 async function boot() {
+  // A device forced out mid-session (forceDeviceLogout) reloads the page —
+  // the toast itself can't survive that, so it's stashed here and replayed
+  // once, on the very next boot.
+  try {
+    const notice = sessionStorage.getItem(DEVICE_NOTICE_STORE);
+    if (notice) { sessionStorage.removeItem(DEVICE_NOTICE_STORE); setTimeout(() => toast(notice, true), 30); }
+  } catch {}
   state.key = extractKey();
   if (!state.key) { setLoading(false); $('#unlock').classList.remove('hidden'); return; }
   try {
@@ -54,6 +66,7 @@ async function boot() {
     const [d, all] = await Promise.all([api.core('bootstrap'), api.core('export')]);
     applyBootstrap(d);
     state.fullTransactions = all.transactions || d.transactions || [];
+    await ensureDeviceToken();
     await loadExtras(state.month);
     $('#app').classList.remove('hidden'); $('#unlock').classList.add('hidden');
     $('#monthPicker').value = state.month;
@@ -62,7 +75,7 @@ async function boot() {
     navigate(VIEW_META[savedView] ? savedView : 'budget');
   } catch (e) {
     console.error(e);
-    localStorage.removeItem(KEY_STORE); state.key = '';
+    localStorage.removeItem(KEY_STORE); localStorage.removeItem(DEVICE_TOKEN_STORE); state.key = '';
     setLoading(false); $('#unlock').classList.remove('hidden'); toast(e.message, true);
     return;
   }
@@ -144,6 +157,13 @@ $('#nav').addEventListener('click', e => { const b = e.target.closest('button[da
 $('#mobileNav').addEventListener('click', e => { const b = e.target.closest('button[data-view]'); if (b) navigate(b.dataset.view); });
 $('#quickAdd').addEventListener('click', () => openQuickEntry());
 $('#monthPicker').addEventListener('change', e => loadMonth(e.target.value));
+// A device revoked from Cài đặt is caught the next time it hits any
+// extension.* action — nearly every user action already does (save →
+// refresh(), month change → loadMonth()), but an idle-and-just-sitting-there
+// tab wouldn't call anything on its own, so this heartbeat is what makes
+// "khóa máy ngay lập tức" true even then. Response is unused — the
+// revocation check + forced logout both happen inside callRpc.
+setInterval(() => { if (state.key && state.deviceToken) api.extension('get').catch(() => {}); }, 30000);
 
 async function exportData() {
   try {

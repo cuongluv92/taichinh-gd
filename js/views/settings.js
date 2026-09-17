@@ -21,6 +21,21 @@ async function saveReporting(e) {
   } catch (err) { toast(err.message, true); }
 }
 
+function deviceSessionRow(d) {
+  const revoked = !!d.revoked_at;
+  const lastSeen = esc(String(d.last_seen_at || d.created_at).slice(0, 16).replace('T', ' '));
+  return `<div class="tx"><div class="tx-main">
+      <strong>${esc(d.device_label)}${d.is_current ? ' <span class="status-chip good">Thiết bị này</span>' : ''}${revoked ? ' <span class="status-chip bad">Đã đăng xuất</span>' : ''}</strong>
+      <span>${revoked ? `Đã đăng xuất lúc ${esc(String(d.revoked_at).slice(0, 16).replace('T', ' '))}` : `Hoạt động lần cuối ${lastSeen}`}</span>
+    </div>
+    <div class="tx-actions">${revoked ? '' : `<button class="btn sm danger" ${act('revokeDevice', d.id)}>Đăng xuất thiết bị này</button>`}</div>
+  </div>`;
+}
+async function revokeDevice(id) {
+  if (!confirm('Đăng xuất thiết bị này? Thiết bị đó sẽ bị khóa ngay ở lượt truy cập tiếp theo.')) return;
+  try { await api.extension('revoke_device', { device_id: id }); await window.refresh(); toast('Đã đăng xuất thiết bị'); }
+  catch (e) { toast(e.message, true); }
+}
 function renderSettings() {
   const r = state.reporting || {};
   return `<div class="grid two-cols">
@@ -51,6 +66,9 @@ function renderSettings() {
         <button class="btn danger" ${act('forgetDevice')}>Xóa khóa khỏi thiết bị này</button>
         <small class="muted">Xóa khóa chỉ làm thiết bị hiện tại mất quyền mở app; dữ liệu trong Supabase không bị xóa.</small>
       </div>
+      <h4 class="mt-16">Thiết bị đăng nhập</h4>
+      <p class="note">Mọi thiết bị dùng chung một khóa gia đình — danh sách dưới đây là những thiết bị đã từng mở app. Đăng xuất một thiết bị không đổi khóa chung, chỉ khóa riêng thiết bị đó ngay ở lượt truy cập tiếp theo.</p>
+      <div class="list">${(state.deviceSessions || []).map(deviceSessionRow).join('') || '<div class="empty compact">Chưa ghi nhận thiết bị nào.</div>'}</div>
     </section>
     <section class="card">
       <h2>Sao lưu dữ liệu</h2>
@@ -65,4 +83,4 @@ function wireSettingsView() {
   $('#reportingForm')?.addEventListener('submit', saveReporting);
 }
 
-Object.assign(window, { renderSettings, saveHousehold, saveReporting });
+Object.assign(window, { renderSettings, saveHousehold, saveReporting, revokeDevice });
