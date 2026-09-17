@@ -257,20 +257,29 @@ const RPC_HANDLERS = {
     }
     if (action === 'delete_expense') { const i = CARD_EXPENSES.findIndex(x => x.id === p.id); if (i >= 0) CARD_EXPENSES.splice(i, 1); return { ok: true }; }
     if (action === 'save_installment') {
+      // Mirrors migrations/20260917_installment_bonus_total_not_addon.sql
+      // exactly: each bonus_amounts[month] is the EXACT total for that bonus
+      // kỳ (not an add-on over the regular split) — regular kỳ split the
+      // remaining principal across only the non-bonus kỳ count.
       const total = Number(p.total_installments), principal = Number(p.principal_amount);
       const feeTotal = Number(p.fee_total || 0);
       const feePerKy = Math.round(feeTotal / total);
       const bonusAmounts = p.bonus_amounts && typeof p.bonus_amounts === 'object' ? p.bonus_amounts : {};
       const months = Array.from({ length: total }, (_, i) => addMonths(p.first_payment_month?.slice(0, 7) || MONTH, i) + '-01');
       const bonusFor = m => bonusAmounts[String(Number(m.slice(5, 7)))];
-      const totalBonus = months.reduce((s, m) => s + (Number(bonusFor(m)) || 0), 0);
+      const isBonusMonth = m => bonusFor(m) != null;
+      const totalBonus = months.reduce((s, m) => s + (isBonusMonth(m) ? Number(bonusFor(m)) : 0), 0);
+      const nonBonusCount = months.filter(m => !isBonusMonth(m)).length;
       const baseTotal = principal - totalBonus;
-      const regular = Math.floor(baseTotal / total);
+      const regular = Math.floor(baseTotal / nonBonusCount);
+      let firstNonBonusSeen = false;
       const schedule = months.map((m, i) => {
-        const bonus = Number(bonusFor(m)) || 0;
-        const isBonus = bonus > 0;
-        const base = i === 0 ? baseTotal - regular * (total - 1) : regular;
-        return { id: newId('sch'), installment_no: i + 1, payment_month: m, principal_amount: base + bonus, fee_amount: feePerKy, is_paid: false, payment_kind: isBonus ? 'bonus' : 'regular' };
+        const isBonus = isBonusMonth(m);
+        let amount;
+        if (isBonus) amount = Number(bonusFor(m));
+        else if (!firstNonBonusSeen) { amount = baseTotal - regular * (nonBonusCount - 1); firstNonBonusSeen = true; }
+        else amount = regular;
+        return { id: newId('sch'), installment_no: i + 1, payment_month: m, principal_amount: amount, fee_amount: feePerKy, is_paid: false, payment_kind: isBonus ? 'bonus' : 'regular' };
       });
       const id = newId('inst');
       INSTALLMENTS.push({ id, card_account_id: p.card_account_id, card_name: (ACCOUNTS.find(a => a.id === p.card_account_id) || {}).name, name: p.name, purchase_date: p.purchase_date, principal_amount: principal, fee_total: feeTotal, total_installments: total, paid_installments_before: 0, first_payment_month: p.first_payment_month, currency: 'JPY', note: p.note || '', bonus_amounts: bonusAmounts, schedule });
@@ -438,10 +447,11 @@ const RPC_HANDLERS = {
   results.push(`APP OPENS ON Chi tiêu BY DEFAULT (nav "Chi tiêu" active, not Tổng quan): ${await page.locator('#nav button[data-view=budget].active').count() > 0}`);
 
   // ---- Bonus (ボーナス併用払い): pick tháng 7 (80,000) + tháng 12 (150,000)
-  // — EACH month gets its OWN amount, not one shared number. Kỳ đầu absorbs
-  // the rounding remainder, bonus is netted OUT of principal_amount first
-  // so the whole schedule still sums to exactly principal_amount, and any
-  // kỳ can be hand-corrected afterward via "Sửa".
+  // — each number entered IS the exact total for that bonus kỳ (read
+  // straight off a real statement), NOT an add-on over the regular split.
+  // Regular kỳ split the remaining principal across only the non-bonus kỳ,
+  // the whole schedule still sums to exactly principal_amount, and any kỳ
+  // can be hand-corrected afterward via "Sửa".
   await page.click('.money-column.credit .money-line:has-text("Rakuten")');
   await page.waitForSelector('#modal[open]', { timeout: 1500 });
   await page.click('#modalBody button:has-text("＋ Thêm khoản trả góp")');
@@ -466,14 +476,14 @@ const RPC_HANDLERS = {
   await page.click('.money-column.credit .money-line:has-text("Rakuten")');
   await page.waitForSelector('#modal[open]', { timeout: 1500 });
   const ledgerText = await page.textContent('#modalBody');
-  results.push(`  Installment row shows each month's OWN bonus amount (Tháng 7 +¥80,000, Tháng 12 +¥150,000, not the same number twice): ${ledgerText.includes('Tháng 7') && ledgerText.includes('80,000') && ledgerText.includes('Tháng 12') && ledgerText.includes('150,000')}`);
+  results.push(`  Installment row shows each month's OWN bonus amount, as the EXACT total (Tháng 7: 80,000, Tháng 12: 150,000, no "+" add-on wording): ${/Tháng 7:\D*80,000/.test(ledgerText) && /Tháng 12:\D*150,000/.test(ledgerText) && !/\+\D*80,000|\+\D*150,000/.test(ledgerText)}`);
   await page.click('#modalBody button:has-text("Xem lịch")');
   await page.waitForTimeout(100);
   const scheduleText = await page.textContent('#modalBody');
   results.push(`  Schedule shows "Bonus" tag on exactly 2 kỳ (tháng 7 và 12): ${(scheduleText.match(/Bonus/g) || []).length === 2}`);
-  results.push(`  Tháng 12 kỳ shows its own combined amount (¥230,833 = 80,833 đều + 150,000 bonus): ${scheduleText.includes('230,833')}`);
-  results.push(`  Tháng 7 kỳ shows ITS OWN combined amount (¥160,833 = 80,833 đều + 80,000 bonus, different from tháng 12's): ${scheduleText.includes('160,833')}`);
-  results.push(`  Kỳ đầu tiên absorbs the rounding remainder (¥80,837, not ¥80,833): ${scheduleText.includes('80,837')}`);
+  results.push(`  Tháng 12 kỳ shows EXACTLY the entered ¥150,000 (not regular+bonus): ${scheduleText.includes('150,000')}`);
+  results.push(`  Tháng 7 kỳ shows EXACTLY the entered ¥80,000 (not regular+bonus): ${scheduleText.includes('80,000')}`);
+  results.push(`  Regular kỳ (10 non-bonus kỳ splitting 1,200,000−230,000=970,000) = ¥97,000 each, divides evenly so kỳ đầu needs no remainder: ${scheduleText.includes('97,000')}`);
 
   // "Sửa" a kỳ by hand — the escape hatch for when the auto-split still
   // isn't what the household's real contract says.
@@ -488,13 +498,13 @@ const RPC_HANDLERS = {
   await page.click('#modalBody button:has-text("Xem lịch")');
   await page.waitForTimeout(100);
   const scheduleText2 = await page.textContent('#modalBody');
-  results.push(`  Sửa tay kỳ 2 stuck (¥90,000) without touching other kỳ (tháng 12 vẫn ¥230,833): ${scheduleText2.includes('90,000') && scheduleText2.includes('230,833')}`);
+  results.push(`  Sửa tay kỳ 2 stuck (¥90,000) without touching other kỳ (tháng 12 vẫn đúng ¥150,000): ${scheduleText2.includes('90,000') && scheduleText2.includes('150,000')}`);
 
   // Real bank statements sometimes split kỳ 1 differently from the app's
-  // own "kỳ 1 absorbs the remainder of an equal split across ALL kỳ"
-  // convention — "Sửa" kỳ 1 with "Chia lại các kỳ thường còn lại" ticked
-  // should re-split every OTHER non-bonus kỳ (undoing the kỳ-2 hand-edit
-  // above) while leaving both bonus kỳ (tháng 7, tháng 12) untouched.
+  // own equal-split convention — "Sửa" kỳ 1 with "Chia lại các kỳ thường
+  // còn lại" ticked should re-split every OTHER non-bonus kỳ (undoing the
+  // kỳ-2 hand-edit above, and this time producing an actual remainder since
+  // 870,000 ÷ 9 doesn't divide evenly) while leaving both bonus kỳ untouched.
   await page.click('#modalBody .tx:has-text("Kỳ 1") button:has-text("Sửa")');
   await page.waitForSelector('[name=principal_amount]', { timeout: 1500 });
   results.push(`  "Chia lại các kỳ thường còn lại" checkbox only shows up when editing kỳ 1: ${await page.isVisible('#resplitRest')}`);
@@ -510,7 +520,7 @@ const RPC_HANDLERS = {
   const scheduleText3 = await page.textContent('#modalBody');
   results.push(`  Kỳ 1 now shows the hand-entered ¥100,000: ${scheduleText3.includes('100,000')}`);
   results.push(`  Kỳ 2's earlier hand-edit (¥90,000) got overwritten by the resplit, not left stuck: ${!scheduleText3.includes('90,000')}`);
-  results.push(`  Bonus kỳ (tháng 7 = ¥160,833, tháng 12 = ¥230,833) stayed untouched by the resplit: ${scheduleText3.includes('160,833') && scheduleText3.includes('230,833')}`);
+  results.push(`  Bonus kỳ (tháng 7 = ¥80,000, tháng 12 = ¥150,000) stayed untouched by the resplit — resplit only ever touches non-bonus kỳ: ${scheduleText3.includes('80,000') && scheduleText3.includes('150,000')}`);
   const editSchedule2 = (await page.evaluate(() => window.state?.installments?.find(i => i.name === 'Máy giặt')?.schedule)) || [];
   const scheduleSum = editSchedule2.reduce((s, r) => s + Number(r.principal_amount), 0);
   results.push(`  Whole schedule still sums to exactly the purchase price (¥1,200,000), no money added/lost by the resplit: ${scheduleSum === 1200000}`);

@@ -730,7 +730,7 @@ function installmentProgress(inst) {
 function installmentRow(inst) {
   const p = installmentProgress(inst);
   const bonusEntries = Object.entries(inst.bonus_amounts || {}).map(([m, amt]) => [Number(m), amt]).sort((a, b) => a[0] - b[0]);
-  const bonusNote = bonusEntries.length ? ` · Bonus ${bonusEntries.map(([m, amt]) => `Tháng ${m} +${money(amt, inst.currency)}`).join(', ')}` : '';
+  const bonusNote = bonusEntries.length ? ` · Bonus ${bonusEntries.map(([m, amt]) => `Tháng ${m}: ${money(amt, inst.currency)}`).join(', ')}` : '';
   const feeNote = n(inst.fee_total) > 0 ? ` · Phí ${money(inst.fee_total, inst.currency)} (chia đều mỗi kỳ)` : '';
   return `<div class="tx"><div class="tx-main"><strong>${esc(inst.name)}</strong><span>${money(inst.principal_amount, inst.currency)} · ${p.paid}/${p.total} kỳ đã trả · ${money(n(inst.principal_amount) / inst.total_installments, inst.currency)}/kỳ${esc(bonusNote)}${esc(feeNote)}</span></div>
     <div class="tx-actions"><button class="btn sm" ${act('openInstallmentSchedule', inst.id, inst.card_account_id)}>Xem lịch</button><button class="btn sm" ${act('openInstallment', inst.card_account_id, inst.id)}>Sửa</button><button class="btn sm" ${act('deleteInstallment', inst.id, inst.card_account_id)}>Xóa</button></div></div>`;
@@ -764,19 +764,24 @@ function openInstallment(cardId = '', id = '') {
     <div class="field"><label>Tổng số kỳ</label><input name="total_installments" type="number" min="2" max="60" value="${esc(inst?.total_installments || 12)}" required></div>
     <div class="field"><label>Ngày bắt đầu</label><input name="purchase_date" type="date" value="${esc(inst?.purchase_date || localToday())}" required></div>
     <div class="field"><label>Số kỳ đã trả</label><input name="paid_installments_before" type="number" min="0" value="${esc(inst?.paid_installments_before ?? 0)}"></div>
-    <div class="field"><label>Phí trả góp (tổng, nếu có)</label><input name="fee_total" type="number" min="0" step="1" value="${esc(inst?.fee_total ?? 0)}" placeholder="0"></div>
+    <div class="field full">
+      <label>Cách nhập phí trả góp</label>
+      <div class="type-tabs" id="feeModeTabs"><button type="button" class="active" data-fm="amount">Số tiền tổng</button><button type="button" data-fm="percent">Tỷ lệ % (năm)</button></div>
+    </div>
+    <div class="field hidden" id="feeRateField"><label>Tỷ lệ phí (手数料率, %/năm)</label><input id="feeRateInput" type="number" min="0" step="0.01" placeholder="VD: 15"></div>
+    <div class="field"><label id="feeAmountLabel">Phí trả góp (tổng, nếu có)</label><input name="fee_total" id="feeAmountInput" type="number" min="0" step="1" value="${esc(inst?.fee_total ?? 0)}" placeholder="0"></div>
     <div class="field full"><label class="checkbox-label"><input type="checkbox" id="instBonusToggle" ${hasBonus ? 'checked' : ''}> 🎁 Có trả thêm bonus (Tết/giữa năm)?</label></div>
     <div class="field full${hasBonus ? '' : ' hidden'}" id="instBonusFields">
-      <label>Tick tháng nào thì hiện ô nhập tiền cho đúng tháng đó — mỗi tháng một số tiền riêng</label>
+      <label>Tick tháng nào thì hiện ô nhập tiền cho đúng tháng đó — gõ ĐÚNG số tiền phải trả tháng bonus đó (đọc thẳng từ sao kê), không phải phần cộng thêm</label>
       <div class="bonus-month-grid">${months.map(m => {
         const amt = bonusAmounts[m];
         const checked = amt != null;
-        return `<div class="bonus-month-row"><label class="checkbox-label"><input type="checkbox" class="bonusMonthCheck" id="instBonusM${m}" data-m="${m}" ${checked ? 'checked' : ''}> Tháng ${m}</label><input type="number" min="1" step="1" id="instBonusAmt${m}" class="bonus-amount-input${checked ? '' : ' hidden'}" placeholder="Số tiền" value="${esc(amt ?? '')}"></div>`;
+        return `<div class="bonus-month-row"><label class="checkbox-label"><input type="checkbox" class="bonusMonthCheck" id="instBonusM${m}" data-m="${m}" ${checked ? 'checked' : ''}> Tháng ${m}</label><input type="number" min="1" step="1" id="instBonusAmt${m}" class="bonus-amount-input${checked ? '' : ' hidden'}" placeholder="Số tiền phải trả tháng đó" value="${esc(amt ?? '')}"></div>`;
       }).join('')}</div>
     </div>
     <div class="field full"><label>Ghi chú</label><input name="note" value="${esc(inst?.note || '')}" placeholder="Tùy chọn"></div>
   </div>
-  <small class="muted">Số tiền mỗi kỳ = Tổng giá trị ÷ Tổng số kỳ, chia đều. Phí trả góp (nếu ngân hàng/nơi bán có tính, VD 分割払手数料) cũng được chia đều thêm vào mỗi kỳ — để 0 nếu trả góp không lãi/không phí. Chọn bonus thì các kỳ khác giảm xuống tương ứng — tổng vẫn đúng bằng Tổng giá trị, không cộng thêm ra ngoài. Mỗi tháng chỉ kỳ đến hạn mới tính vào Tổng chi tiêu tháng — không xuất hiện ở Chi biến động.</small>`,
+  <small class="muted">Số tiền mỗi kỳ thường = (Tổng giá trị − tổng các kỳ bonus) ÷ số kỳ thường, chia đều. Kỳ bonus (Tết/giữa năm) trả ĐÚNG số bạn gõ ở trên, không chia thêm gì — nếu công ty năm nào cũng có bonus tháng đó, mọi lần tháng đó lặp lại trong thời hạn trả góp đều dùng số này. Phí trả góp (nếu ngân hàng/nơi bán có tính, VD 分割払手数料) chia đều thêm vào mỗi kỳ (kể cả kỳ bonus) — để 0 nếu trả góp không lãi/không phí. "Tỷ lệ % (năm)" chỉ là công cụ ước tính theo công thức add-on phổ biến (Tổng giá trị × tỷ lệ ÷ 100 × (Tổng số kỳ + 1) ÷ 24) — mỗi công ty tính hơi khác nhau, nếu số ra không khớp sao kê thật thì chuyển qua "Số tiền tổng" và gõ đúng số trên sao kê. Mỗi tháng chỉ kỳ đến hạn mới tính vào Tổng chi tiêu tháng — không xuất hiện ở Chi biến động.</small>`,
   fd => api.cardLedger('save_installment', {
     ...fd, id: id || null, first_payment_month: `${monthKey(fd.purchase_date)}-01`,
     bonus_amounts: $('#instBonusToggle').checked
@@ -789,6 +794,27 @@ function openInstallment(cardId = '', id = '') {
     const cb = $(`#instBonusM${m}`), amtInput = $(`#instBonusAmt${m}`);
     cb.addEventListener('change', () => amtInput.classList.toggle('hidden', !cb.checked));
   });
+  // Phí theo % chỉ là một cách gõ khác cho CÙNG một ô fee_total — công thức
+  // add-on (ước tính phổ biến ở Nhật cho trả góp mua sắm) tự tính ra số
+  // tiền và điền vào ô "Số tiền tổng" thật; đổi lại "Số tiền tổng" thì gõ
+  // tay như trước, không có gì tự động nữa.
+  const feeModeTabs = $('#feeModeTabs'), feeRateField = $('#feeRateField'), feeAmountInput = $('#feeAmountInput'), feeRateInput = $('#feeRateInput'), feeAmountLabel = $('#feeAmountLabel');
+  function computeFeeFromRate() {
+    const principal = n($('[name=principal_amount]').value);
+    const totalKy = n($('[name=total_installments]').value);
+    const rate = n(feeRateInput.value);
+    feeAmountInput.value = Math.round(principal * (rate / 100) * (totalKy + 1) / 24);
+  }
+  feeModeTabs.addEventListener('click', e => {
+    const b = e.target.closest('[data-fm]'); if (!b) return;
+    const percentMode = b.dataset.fm === 'percent';
+    $$('#feeModeTabs button').forEach(x => x.classList.toggle('active', x === b));
+    feeRateField.classList.toggle('hidden', !percentMode);
+    feeAmountInput.readOnly = percentMode;
+    feeAmountLabel.textContent = percentMode ? 'Phí trả góp (tự tính từ tỷ lệ)' : 'Phí trả góp (tổng, nếu có)';
+    if (percentMode) computeFeeFromRate();
+  });
+  feeRateInput.addEventListener('input', computeFeeFromRate);
 }
 async function deleteInstallment(id, cardId) {
   if (!confirm('Xóa khoản trả góp này? Toàn bộ lịch trả sẽ bị xóa.')) return;
