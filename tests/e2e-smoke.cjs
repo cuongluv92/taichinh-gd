@@ -258,6 +258,8 @@ const RPC_HANDLERS = {
     if (action === 'delete_expense') { const i = CARD_EXPENSES.findIndex(x => x.id === p.id); if (i >= 0) CARD_EXPENSES.splice(i, 1); return { ok: true }; }
     if (action === 'save_installment') {
       const total = Number(p.total_installments), principal = Number(p.principal_amount);
+      const feeTotal = Number(p.fee_total || 0);
+      const feePerKy = Math.round(feeTotal / total);
       const bonusAmounts = p.bonus_amounts && typeof p.bonus_amounts === 'object' ? p.bonus_amounts : {};
       const months = Array.from({ length: total }, (_, i) => addMonths(p.first_payment_month?.slice(0, 7) || MONTH, i) + '-01');
       const bonusFor = m => bonusAmounts[String(Number(m.slice(5, 7)))];
@@ -268,10 +270,10 @@ const RPC_HANDLERS = {
         const bonus = Number(bonusFor(m)) || 0;
         const isBonus = bonus > 0;
         const base = i === 0 ? baseTotal - regular * (total - 1) : regular;
-        return { id: newId('sch'), installment_no: i + 1, payment_month: m, principal_amount: base + bonus, fee_amount: 0, is_paid: false, payment_kind: isBonus ? 'bonus' : 'regular' };
+        return { id: newId('sch'), installment_no: i + 1, payment_month: m, principal_amount: base + bonus, fee_amount: feePerKy, is_paid: false, payment_kind: isBonus ? 'bonus' : 'regular' };
       });
       const id = newId('inst');
-      INSTALLMENTS.push({ id, card_account_id: p.card_account_id, card_name: (ACCOUNTS.find(a => a.id === p.card_account_id) || {}).name, name: p.name, purchase_date: p.purchase_date, principal_amount: principal, fee_total: 0, total_installments: total, paid_installments_before: 0, first_payment_month: p.first_payment_month, currency: 'JPY', note: p.note || '', bonus_amounts: bonusAmounts, schedule });
+      INSTALLMENTS.push({ id, card_account_id: p.card_account_id, card_name: (ACCOUNTS.find(a => a.id === p.card_account_id) || {}).name, name: p.name, purchase_date: p.purchase_date, principal_amount: principal, fee_total: feeTotal, total_installments: total, paid_installments_before: 0, first_payment_month: p.first_payment_month, currency: 'JPY', note: p.note || '', bonus_amounts: bonusAmounts, schedule });
       return { ok: true, id };
     }
     if (action === 'delete_installment') { const i = INSTALLMENTS.findIndex(x => x.id === p.id); if (i >= 0) INSTALLMENTS.splice(i, 1); return { ok: true }; }
@@ -512,6 +514,34 @@ const RPC_HANDLERS = {
   const editSchedule2 = (await page.evaluate(() => window.state?.installments?.find(i => i.name === 'Máy giặt')?.schedule)) || [];
   const scheduleSum = editSchedule2.reduce((s, r) => s + Number(r.principal_amount), 0);
   results.push(`  Whole schedule still sums to exactly the purchase price (¥1,200,000), no money added/lost by the resplit: ${scheduleSum === 1200000}`);
+  await page.evaluate(() => document.getElementById('modal')?.close());
+  await page.waitForTimeout(50);
+
+  // "Phí trả góp" (fee_total, e.g. 分割払手数料 on a real Japanese statement) —
+  // was already computed server-side (save_installment/schedule generation)
+  // but had no input field anywhere, so it was silently always 0. New field,
+  // labeled in Vietnamese, split evenly per kỳ same as principal.
+  await page.click('.money-column.credit .money-line:has-text("Rakuten")');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 });
+  await page.click('#modalBody button:has-text("＋ Thêm khoản trả góp")');
+  await page.waitForSelector('[name=name]', { timeout: 1500 });
+  results.push(`  "Phí trả góp" field exists, labeled in Vietnamese: ${await page.locator('label:has-text("Phí trả góp")').count() > 0}`);
+  await page.fill('[name=name]', 'Tủ lạnh');
+  await page.fill('[name=principal_amount]', '100000');
+  await page.fill('[name=total_installments]', '10');
+  await page.fill('[name=purchase_date]', `${MONTH}-01`);
+  await page.fill('[name=fee_total]', '5000');
+  await page.click('#modalForm [type=submit]');
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(() => results.push('SUBMIT installment with Phí trả góp (¥5,000 total): saved - OK')).catch(() => results.push('SUBMIT installment with fee: no toast - FAIL'));
+  await page.waitForTimeout(150);
+  await page.click('.money-column.credit .money-line:has-text("Rakuten")');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 });
+  const feeLedgerText = await page.textContent('#modalBody');
+  results.push(`  Installment list shows the fee note ("Phí ¥5,000 (chia đều mỗi kỳ)"): ${feeLedgerText.includes('Phí') && feeLedgerText.includes('5,000')}`);
+  await page.click('#modalBody .tx:has-text("Tủ lạnh") button:has-text("Xem lịch")');
+  await page.waitForTimeout(100);
+  const feeScheduleText = await page.textContent('#modalBody');
+  results.push(`  Each kỳ's shown amount includes principal + its share of the fee (¥10,000 + ¥500 = ¥10,500): ${feeScheduleText.includes('10,500')}`);
   await page.evaluate(() => document.getElementById('modal')?.close());
   await page.waitForTimeout(50);
 
