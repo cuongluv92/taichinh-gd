@@ -14,7 +14,8 @@ const ACCOUNT_TYPE_LABEL = { cash: 'Tiền mặt', bank: 'Ngân hàng', savings:
 // records/shows, the detail view is where you manage it).
 function assetAccountRow(a) {
   const bal = F.accountBalance(a);
-  return `<button class="money-line" ${act('openAccountAdjustmentHistory', a.id)}><span class="line-label">${esc(a.name)}<small>${esc(ACCOUNT_TYPE_LABEL[a.account_type] || a.account_type)}</small></span><strong class="${bal < 0 ? 'red' : ''}">${money(bal, a.currency)}</strong></button>`;
+  const locked = a.account_type === 'savings' && a.is_liquid === false;
+  return `<button class="money-line" ${act('openAccountAdjustmentHistory', a.id)}><span class="line-label">${esc(a.name)}<small>${esc(ACCOUNT_TYPE_LABEL[a.account_type] || a.account_type)}${locked ? ' · Không tính vào Tiền thanh khoản' : ''}</small></span><strong class="${bal < 0 ? 'red' : ''}">${money(bal, a.currency)}</strong></button>`;
 }
 function investmentRow(inv) {
   const val = F.investmentCurrentValue(inv);
@@ -96,7 +97,7 @@ function renderAccounts() {
   }).join('');
   const investByKind = kind => F.investmentsByKind(kind).filter(inv => (inv.currency || state.base) === state.base).reduce((s, inv) => s + F.investmentCurrentValue(inv), 0);
   const composition = [
-    { label: 'Tiền mặt & NH', value: pos.liquid },
+    { label: 'Tiền mặt & NH', value: pos.cashTotal },
     { label: 'NISA', value: investByKind('nisa') },
     { label: 'Chứng khoán', value: investByKind('securities') },
     { label: 'Tiết kiệm sinh lời', value: investByKind('savings_interest') },
@@ -113,9 +114,10 @@ function renderAccounts() {
     { key: 'investedValue', label: 'Giá trị đầu tư hiện tại', color: '#f5a623' }
   ];
 
+  const lockedSavings = pos.cashTotal - pos.liquid;
   return `<div class="view-head"><div><h2>Tài sản gia đình</h2><p>Số dư/dư nợ thay đổi CHỈ qua các nút thủ công trong từng cột. Không dữ liệu nào từ Chi tiêu tự động thay đổi trang này.</p></div></div>
   <div class="grid kpi-grid">
-    ${kpiCard('Tiền thanh khoản', money(pos.liquid), 'Tiền mặt + tài khoản ngân hàng')}
+    ${kpiCard('Tiền thanh khoản', money(pos.liquid), lockedSavings > 0 ? `Tiền mặt + ngân hàng + tiết kiệm có thể rút ngay (chưa gồm ${money(lockedSavings)} tiết kiệm dài hạn)` : 'Tiền mặt + tài khoản ngân hàng')}
     ${kpiCard('Tổng đầu tư', money(pos.invested), 'NISA + Chứng khoán + Tiết kiệm sinh lời + khác')}
     ${kpiCard('Tổng nợ', money(pos.payables), 'Nợ phải trả', pos.payables > 0 ? 'red' : '')}
     ${kpiCard('Tài sản ròng', money(pos.netWorth), vnd ? `≈ ${money(vnd.netWorth, 'VND')}` : 'Thanh khoản + Đầu tư + Phải thu − Tổng nợ', pos.netWorth >= 0 ? 'green' : 'red')}

@@ -58,6 +58,13 @@ F.accountBalanceAt = (a, endDate = '9999-12-31') => {
 };
 F.accountBalance = a => F.accountBalanceAt(a);
 F.assetAccounts = () => F.baseAccounts().filter(a => ['cash', 'bank', 'savings'].includes(a.account_type));
+// A savings account can be marked is_liquid=false ("tiết kiệm dài hạn/kỳ
+// hạn", locked) — it must still count in totalAssets/netWorth like any
+// other account, but drop out of "Tiền thanh khoản" specifically, per the
+// account form's own text ("vẫn tính vào Tài sản ròng, không tính vào Tiền
+// thanh khoản"). Every other account type has no such flag and is_liquid
+// defaults true, so this only ever narrows savings.
+F.liquidAssetAccounts = () => F.assetAccounts().filter(a => a.is_liquid !== false);
 
 // ---------------- Debt ledger (Tài sản — Nợ phải trả / Khoản phải thu) ----------------
 // Balance = opening_amount + manual increases − manual decreases, exactly
@@ -242,20 +249,26 @@ F.investmentPlanStatus = (inv, events, month = state.month) => {
 };
 
 // ---------------- Net worth / financial position (Tài sản) ----------------
-// Tiền thanh khoản = tiền mặt + tài khoản ngân hàng (no deduction of nợ).
-// Tổng đầu tư = tổng giá trị hiện tại của mọi khoản đầu tư (NISA + Chứng
-// khoán + Tiết kiệm sinh lời + khác). Tài sản ròng = Tiền thanh khoản +
-// Tổng đầu tư + Khoản phải thu + Tài sản khác − Tổng nợ. "Thanh khoản ròng"
-// no longer exists. "Tài sản khác" has no data source yet — always 0,
-// kept in the formula for forward compatibility.
+// Tiền thanh khoản = tiền mặt + tài khoản ngân hàng + tiết kiệm CÓ THỂ RÚT
+// NGAY (excludes any savings account marked is_liquid=false — "tiết kiệm
+// dài hạn/kỳ hạn" — no deduction of nợ either way). cashTotal is the same
+// tiền mặt/ngân hàng/tiết kiệm group WITHOUT that exclusion — it's what
+// still belongs in Tổng tài sản/Tài sản ròng and the asset-composition
+// chart, since a locked savings account never stops being an asset, it
+// just isn't spendable today. Tổng đầu tư = tổng giá trị hiện tại của mọi
+// khoản đầu tư (NISA + Chứng khoán + Tiết kiệm sinh lời + khác). Tài sản
+// ròng = cashTotal + Tổng đầu tư + Khoản phải thu + Tài sản khác − Tổng nợ.
+// "Thanh khoản ròng" no longer exists. "Tài sản khác" has no data source
+// yet — always 0, kept in the formula for forward compatibility.
 F.financialPosition = (endDate = '9999-12-31') => {
-  const liquid = F.assetAccounts().reduce((s, a) => s + F.accountBalanceAt(a, endDate), 0);
+  const cashTotal = F.assetAccounts().reduce((s, a) => s + F.accountBalanceAt(a, endDate), 0);
+  const liquid = F.liquidAssetAccounts().reduce((s, a) => s + F.accountBalanceAt(a, endDate), 0);
   const invested = endDate === '9999-12-31' ? F.investmentTotalValue() : F.investmentTotalValueAt(endDate);
   const receivables = F.totalReceivablesAt(endDate);
   const payables = F.totalPayablesAt(endDate);
   const otherAssets = 0;
-  const netWorth = liquid + invested + receivables + otherAssets - payables;
-  return { liquid, invested, receivables, payables, otherAssets, netWorth };
+  const netWorth = cashTotal + invested + receivables + otherAssets - payables;
+  return { liquid, cashTotal, invested, receivables, payables, otherAssets, netWorth };
 };
 F.dataStartMonth = () => {
   const dates = [
@@ -283,7 +296,7 @@ F.assetHistorySeries = monthKeys => {
     // raw events).
     const investedCapital = F.investments().filter(inv => (inv.currency || state.base) === state.base && !inv.parent_investment_id)
       .reduce((s, inv) => s + F.investmentCapitalAt(inv, endOfMonthDate(key)), 0);
-    return { month: key, totalAssets: pos.liquid + pos.invested + pos.receivables, totalDebt: pos.payables, netWorth: pos.netWorth, investedCapital, investedValue: pos.invested };
+    return { month: key, totalAssets: pos.cashTotal + pos.invested + pos.receivables, totalDebt: pos.payables, netWorth: pos.netWorth, investedCapital, investedValue: pos.invested };
   });
 };
 

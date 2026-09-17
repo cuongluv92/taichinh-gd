@@ -176,6 +176,36 @@ function debtAdj(id, debtId, direction, amount, date) { return { id, debt_id: de
 }
 
 // ---------------------------------------------------------------------
+// BUGFIX (accounts.is_liquid, added in a migration but never read by the
+// frontend): a savings account can be marked "tiết kiệm dài hạn/kỳ hạn"
+// (is_liquid=false) via the account form's own checkbox, whose label
+// explicitly promises "vẫn tính vào Tài sản ròng, không tính vào Tiền
+// thanh khoản". F.assetAccounts() fed BOTH numbers identically, so a
+// locked savings account inflated "Tiền thanh khoản" exactly like a
+// checking account — the checkbox had zero effect on any displayed
+// number. Fixed by adding F.liquidAssetAccounts() (excludes is_liquid ===
+// false) for "Tiền thanh khoản" only; totalAssets/netWorth/composition
+// chart keep using the full cashTotal so a locked account never
+// disappears from Tài sản ròng.
+// ---------------------------------------------------------------------
+{
+  resetState({
+    accounts: [
+      acc('cash', 'cash', 'JPY', 50000), acc('bank', 'bank', 'JPY', 200000),
+      acc('lockedSav', 'savings', 'JPY', 100000, { is_liquid: false })
+    ],
+    debts: [debt('d1', 'payable', 30000)]
+  });
+  const pos = F.financialPosition();
+  eq('BUGFIX is_liquid. Tiết kiệm dài hạn (is_liquid=false) bị loại khỏi Tiền thanh khoản (chỉ còn 50,000+200,000)', pos.liquid, 250000);
+  eq('BUGFIX is_liquid. ...nhưng cashTotal vẫn cộng đủ cả khoản tiết kiệm dài hạn (50,000+200,000+100,000)', pos.cashTotal, 350000);
+  eq('BUGFIX is_liquid. ...và Tài sản ròng vẫn tính đủ (350,000 − 30,000 nợ), không bị mất khoản tiết kiệm dài hạn', pos.netWorth, 350000 - 30000);
+
+  resetState({ accounts: [acc('cash', 'cash', 'JPY', 50000), acc('sav', 'savings', 'JPY', 100000)] });
+  eq('BUGFIX is_liquid. Không đặt is_liquid (mặc định) vẫn tính đủ vào Tiền thanh khoản như trước (không phá hành vi cũ)', F.financialPosition().liquid, 150000);
+}
+
+// ---------------------------------------------------------------------
 // NISA: kế hoạch góp hàng tháng phải tách biệt "kế hoạch" khỏi "đã góp
 // thực tế", và growth simulation không được lẫn vào giá trị/lãi-lỗ thực tế.
 // ---------------------------------------------------------------------
