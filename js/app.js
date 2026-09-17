@@ -149,7 +149,7 @@ function render() {
 $('#unlockForm').addEventListener('submit', e => {
   e.preventDefault();
   const k = $('#unlockKey').value.trim();
-  if (k.length < 32) { toast('Khóa không hợp lệ', true); return; }
+  if (k.length < 9) { toast('Khóa không hợp lệ', true); return; }
   localStorage.setItem(KEY_STORE, k);
   location.reload();
 });
