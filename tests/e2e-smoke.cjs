@@ -257,54 +257,77 @@ const RPC_HANDLERS = {
     }
     if (action === 'delete_expense') { const i = CARD_EXPENSES.findIndex(x => x.id === p.id); if (i >= 0) CARD_EXPENSES.splice(i, 1); return { ok: true }; }
     if (action === 'save_installment') {
-      // Mirrors migrations/20260917_installment_bonus_total_not_addon.sql
-      // exactly: each bonus_amounts[month] is the EXACT total for that bonus
-      // kỳ (not an add-on over the regular split) — regular kỳ split the
-      // remaining principal across only the non-bonus kỳ count.
+      // Mirrors migrations/20260917_installment_calc_rebuild.sql exactly:
+      // bonus_amounts[month] is an ADD-ON over the regular split (not the
+      // month's total). Regular kỳ = floor((R/N)/roundingUnit)*roundingUnit
+      // for every kỳ, except the remainder kỳ (first or last per
+      // remainder_period) which absorbs R - regular*(N-1). Bonus kỳ get
+      // their own bonus_amount column added on top of the regular share.
       const total = Number(p.total_installments), principal = Number(p.principal_amount);
       const feeTotal = Number(p.fee_total || 0);
       const feePerKy = Math.round(feeTotal / total);
+      const roundingUnit = Number(p.rounding_unit || 100);
+      const remainderPeriod = p.remainder_period || 'first';
       const bonusAmounts = p.bonus_amounts && typeof p.bonus_amounts === 'object' ? p.bonus_amounts : {};
       const months = Array.from({ length: total }, (_, i) => addMonths(p.first_payment_month?.slice(0, 7) || MONTH, i) + '-01');
       const bonusFor = m => bonusAmounts[String(Number(m.slice(5, 7)))];
       const isBonusMonth = m => bonusFor(m) != null;
       const totalBonus = months.reduce((s, m) => s + (isBonusMonth(m) ? Number(bonusFor(m)) : 0), 0);
-      const nonBonusCount = months.filter(m => !isBonusMonth(m)).length;
       const baseTotal = principal - totalBonus;
-      const regular = Math.floor(baseTotal / nonBonusCount);
-      let firstNonBonusSeen = false;
+      const regular = Math.floor(Math.floor(baseTotal / total) / roundingUnit) * roundingUnit;
       const schedule = months.map((m, i) => {
         const isBonus = isBonusMonth(m);
-        let amount;
-        if (isBonus) amount = Number(bonusFor(m));
-        else if (!firstNonBonusSeen) { amount = baseTotal - regular * (nonBonusCount - 1); firstNonBonusSeen = true; }
-        else amount = regular;
-        return { id: newId('sch'), installment_no: i + 1, payment_month: m, principal_amount: amount, fee_amount: feePerKy, is_paid: false, payment_kind: isBonus ? 'bonus' : 'regular' };
+        const isRemainderKy = (remainderPeriod === 'first' && i === 0) || (remainderPeriod === 'last' && i === total - 1);
+        const base = isRemainderKy ? baseTotal - regular * (total - 1) : regular;
+        return { id: newId('sch'), installment_no: i + 1, payment_month: m, principal_amount: base, bonus_amount: isBonus ? Number(bonusFor(m)) : 0, fee_amount: feePerKy, is_paid: false, payment_kind: isBonus ? 'bonus' : 'regular' };
       });
       const id = newId('inst');
-      INSTALLMENTS.push({ id, card_account_id: p.card_account_id, card_name: (ACCOUNTS.find(a => a.id === p.card_account_id) || {}).name, name: p.name, purchase_date: p.purchase_date, principal_amount: principal, fee_total: feeTotal, total_installments: total, paid_installments_before: 0, first_payment_month: p.first_payment_month, currency: 'JPY', note: p.note || '', bonus_amounts: bonusAmounts, schedule });
+      INSTALLMENTS.push({ id, card_account_id: p.card_account_id, card_name: (ACCOUNTS.find(a => a.id === p.card_account_id) || {}).name, name: p.name, purchase_date: p.purchase_date, principal_amount: principal, fee_total: feeTotal, total_installments: total, paid_installments_before: 0, first_payment_month: p.first_payment_month, currency: 'JPY', note: p.note || '', bonus_amounts: bonusAmounts, rounding_unit: roundingUnit, remainder_period: remainderPeriod, schedule });
       return { ok: true, id };
     }
     if (action === 'delete_installment') { const i = INSTALLMENTS.findIndex(x => x.id === p.id); if (i >= 0) INSTALLMENTS.splice(i, 1); return { ok: true }; }
     if (action === 'toggle_paid') { for (const inst of INSTALLMENTS) { const row = (inst.schedule || []).find(s => s.id === p.id); if (row) { row.is_paid = !row.is_paid; break; } } return { ok: true }; }
-    if (action === 'edit_schedule_row') { for (const inst of INSTALLMENTS) { const row = (inst.schedule || []).find(s => s.id === p.id); if (row) { row.principal_amount = Number(p.principal_amount); break; } } return { ok: true }; }
-    if (action === 'resplit_installment_from_first') {
-      // Mirrors migrations/20260917_installment_resplit_from_first.sql exactly:
-      // kỳ 1 gets the given amount, every OTHER non-bonus kỳ re-splits evenly
-      // from what's left (last such kỳ absorbs the remainder), bonus kỳ untouched.
+    if (action === 'edit_schedule_row') {
+      for (const inst of INSTALLMENTS) {
+        const row = (inst.schedule || []).find(s => s.id === p.id);
+        if (row) {
+          const newTotal = Number(p.new_total_amount);
+          if (newTotal < Number(row.bonus_amount || 0)) return { error: true, __status: 400, message: 'amount_below_bonus' };
+          row.principal_amount = newTotal - Number(row.bonus_amount || 0);
+          break;
+        }
+      }
+      return { ok: true };
+    }
+    if (action === 'resplit_installment') {
+      // Mirrors migrations/20260917_installment_calc_rebuild.sql's
+      // resplit_installment exactly: edited kỳ + all paid kỳ stay fixed
+      // (bonus untouched), every other unpaid non-bonus kỳ re-splits evenly
+      // (rounded); the remainder goes to the LAST of that group normally,
+      // or the FIRST when the edited kỳ is itself the schedule's last kỳ.
       const inst = INSTALLMENTS.find(x => x.id === p.installment_id);
       if (!inst) return { error: true, __status: 400, message: 'installment_not_found' };
-      const firstAmount = Number(p.first_amount);
       const schedule = inst.schedule || [];
-      const bonusTotal = schedule.filter(s => s.payment_kind === 'bonus').reduce((s, r) => s + Number(r.principal_amount), 0);
-      const rest = schedule.filter(s => s.payment_kind !== 'bonus' && s.installment_no !== 1).sort((a, b) => a.installment_no - b.installment_no);
-      if (!rest.length) return { error: true, __status: 400, message: 'no_other_installments_to_resplit' };
-      const baseTotal = inst.principal_amount - bonusTotal - firstAmount;
-      if (baseTotal < 0) return { error: true, __status: 400, message: 'first_amount_too_large' };
-      const regular = Math.floor(baseTotal / rest.length);
-      const first = schedule.find(s => s.installment_no === 1);
-      if (first) first.principal_amount = firstAmount;
-      rest.forEach((row, i) => { row.principal_amount = i === rest.length - 1 ? baseTotal - regular * (rest.length - 1) : regular; });
+      const editedRow = schedule.find(s => s.id === p.schedule_row_id);
+      if (!editedRow) return { error: true, __status: 400, message: 'schedule_row_not_found' };
+      const newTotal = Number(p.new_total_amount);
+      const editedBonus = Number(editedRow.bonus_amount || 0);
+      if (newTotal < editedBonus) return { error: true, __status: 400, message: 'amount_below_bonus' };
+      const editedRegular = newTotal - editedBonus;
+      const totalBonus = schedule.reduce((s, r) => s + Number(r.bonus_amount || 0), 0);
+      // fixedRegular = regular portion of everything OUTSIDE the pool: paid
+      // kỳ AND bonus kỳ (their regular share is untouched by resplit too).
+      const fixedRegular = schedule.filter(s => (s.is_paid || s.payment_kind === 'bonus') && s.id !== editedRow.id).reduce((s, r) => s + Number(r.principal_amount), 0) + editedRegular;
+      const lastNo = Math.max(...schedule.map(s => s.installment_no));
+      const pool = schedule.filter(s => s.payment_kind !== 'bonus' && !s.is_paid && s.id !== editedRow.id).sort((a, b) => a.installment_no - b.installment_no);
+      if (!pool.length) return { error: true, __status: 400, message: 'no_other_installments_to_resplit' };
+      const baseTotal = inst.principal_amount - totalBonus - fixedRegular;
+      if (baseTotal < 0) return { error: true, __status: 400, message: 'edited_amount_too_large' };
+      const roundingUnit = Number(inst.rounding_unit || 100);
+      const regular = Math.floor(Math.floor(baseTotal / pool.length) / roundingUnit) * roundingUnit;
+      const remainderRecipient = editedRow.installment_no === lastNo ? pool[0] : pool[pool.length - 1];
+      editedRow.principal_amount = editedRegular;
+      pool.forEach(row => { row.principal_amount = row === remainderRecipient ? baseTotal - regular * (pool.length - 1) : regular; });
       return { ok: true };
     }
     return { ok: true };
@@ -447,11 +470,12 @@ const RPC_HANDLERS = {
   results.push(`APP OPENS ON Chi tiêu BY DEFAULT (nav "Chi tiêu" active, not Tổng quan): ${await page.locator('#nav button[data-view=budget].active').count() > 0}`);
 
   // ---- Bonus (ボーナス併用払い): pick tháng 7 (80,000) + tháng 12 (150,000)
-  // — each number entered IS the exact total for that bonus kỳ (read
-  // straight off a real statement), NOT an add-on over the regular split.
-  // Regular kỳ split the remaining principal across only the non-bonus kỳ,
-  // the whole schedule still sums to exactly principal_amount, and any kỳ
-  // can be hand-corrected afterward via "Sửa".
+  // — each number entered is an ADD-ON over the regular kỳ split (the real
+  // statement's own printed number, e.g. "+20,000"), NOT the bonus kỳ's
+  // total. Regular kỳ = floor((R/N)/100)*100 (rounded DOWN to the nearest
+  // 100 JPY, matching real bank statements), kỳ đầu absorbs the rounding
+  // remainder, bonus kỳ = regular + the add-on. Any kỳ can be hand-corrected
+  // afterward via "Sửa", and "chia lại" now works from ANY kỳ, not just kỳ 1.
   await page.click('.money-column.credit .money-line:has-text("Rakuten")');
   await page.waitForSelector('#modal[open]', { timeout: 1500 });
   await page.click('#modalBody button:has-text("＋ Thêm khoản trả góp")');
@@ -470,26 +494,28 @@ const RPC_HANDLERS = {
   await page.check('#instBonusM12');
   await page.fill('#instBonusAmt12', '150000');
   await page.click('#modalForm [type=submit]');
-  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(() => results.push('SUBMIT installment with per-month bonus (tháng 7=80,000, tháng 12=150,000): saved - OK')).catch(() => results.push('SUBMIT installment with bonus: no toast - FAIL'));
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(() => results.push('SUBMIT installment with per-month bonus add-on (tháng 7=+80,000, tháng 12=+150,000): saved - OK')).catch(() => results.push('SUBMIT installment with bonus: no toast - FAIL'));
   await page.waitForTimeout(150);
 
   await page.click('.money-column.credit .money-line:has-text("Rakuten")');
   await page.waitForSelector('#modal[open]', { timeout: 1500 });
   const ledgerText = await page.textContent('#modalBody');
-  results.push(`  Installment row shows each month's OWN bonus amount, as the EXACT total (Tháng 7: 80,000, Tháng 12: 150,000, no "+" add-on wording): ${/Tháng 7:\D*80,000/.test(ledgerText) && /Tháng 12:\D*150,000/.test(ledgerText) && !/\+\D*80,000|\+\D*150,000/.test(ledgerText)}`);
+  results.push(`  Installment row shows each month's OWN bonus add-on (Tháng 7 +80,000, Tháng 12 +150,000, not the same number twice): ${ledgerText.includes('Tháng 7') && ledgerText.includes('80,000') && ledgerText.includes('Tháng 12') && ledgerText.includes('150,000')}`);
   await page.click('#modalBody button:has-text("Xem lịch")');
   await page.waitForTimeout(100);
   const scheduleText = await page.textContent('#modalBody');
   results.push(`  Schedule shows "Bonus" tag on exactly 2 kỳ (tháng 7 và 12): ${(scheduleText.match(/Bonus/g) || []).length === 2}`);
-  results.push(`  Tháng 12 kỳ shows EXACTLY the entered ¥150,000 (not regular+bonus): ${scheduleText.includes('150,000')}`);
-  results.push(`  Tháng 7 kỳ shows EXACTLY the entered ¥80,000 (not regular+bonus): ${scheduleText.includes('80,000')}`);
-  results.push(`  Regular kỳ (10 non-bonus kỳ splitting 1,200,000−230,000=970,000) = ¥97,000 each, divides evenly so kỳ đầu needs no remainder: ${scheduleText.includes('97,000')}`);
+  // R=1,200,000-230,000=970,000, regular=floor(floor(970,000/12)/100)*100=80,800
+  results.push(`  Tháng 12 kỳ shows regular+bonus = ¥230,800 (¥80,800 + ¥150,000 bonus): ${scheduleText.includes('230,800')}`);
+  results.push(`  Tháng 7 kỳ shows ITS OWN combined amount ¥160,800 (¥80,800 + ¥80,000 bonus, different from tháng 12's): ${scheduleText.includes('160,800')}`);
+  results.push(`  Kỳ đầu tiên absorbs the rounding remainder (¥81,200, not ¥80,800): ${scheduleText.includes('81,200')}`);
 
   // "Sửa" a kỳ by hand — the escape hatch for when the auto-split still
-  // isn't what the household's real contract says.
+  // isn't what the household's real contract says. The edit field now asks
+  // for the kỳ's TOTAL (not just the regular portion).
   await page.click('#modalBody .tx:has-text("Kỳ 2") button:has-text("Sửa")');
-  await page.waitForSelector('[name=principal_amount]', { timeout: 1500 });
-  await page.fill('[name=principal_amount]', '90000');
+  await page.waitForSelector('[name=new_total_amount]', { timeout: 1500 });
+  await page.fill('[name=new_total_amount]', '90000');
   await page.click('#modalForm [type=submit]');
   await page.waitForSelector('#toast.show', { timeout: 1500 }).then(() => results.push('SUBMIT sửa tay kỳ 2 (90,000): saved - OK')).catch(() => results.push('SUBMIT sửa tay kỳ: no toast - FAIL'));
   await page.waitForTimeout(150);
@@ -498,17 +524,18 @@ const RPC_HANDLERS = {
   await page.click('#modalBody button:has-text("Xem lịch")');
   await page.waitForTimeout(100);
   const scheduleText2 = await page.textContent('#modalBody');
-  results.push(`  Sửa tay kỳ 2 stuck (¥90,000) without touching other kỳ (tháng 12 vẫn đúng ¥150,000): ${scheduleText2.includes('90,000') && scheduleText2.includes('150,000')}`);
+  results.push(`  Sửa tay kỳ 2 stuck (¥90,000) without touching other kỳ (tháng 12 vẫn ¥230,800): ${scheduleText2.includes('90,000') && scheduleText2.includes('230,800')}`);
 
   // Real bank statements sometimes split kỳ 1 differently from the app's
   // own equal-split convention — "Sửa" kỳ 1 with "Chia lại các kỳ thường
-  // còn lại" ticked should re-split every OTHER non-bonus kỳ (undoing the
-  // kỳ-2 hand-edit above, and this time producing an actual remainder since
-  // 870,000 ÷ 9 doesn't divide evenly) while leaving both bonus kỳ untouched.
+  // còn lại" ticked (now available on ANY kỳ, not just kỳ 1) should
+  // re-split every OTHER non-bonus, unpaid kỳ (undoing the kỳ-2 hand-edit
+  // above) while leaving both bonus kỳ completely untouched — their regular
+  // share is held fixed too, same as a paid kỳ would be.
   await page.click('#modalBody .tx:has-text("Kỳ 1") button:has-text("Sửa")');
-  await page.waitForSelector('[name=principal_amount]', { timeout: 1500 });
-  results.push(`  "Chia lại các kỳ thường còn lại" checkbox only shows up when editing kỳ 1: ${await page.isVisible('#resplitRest')}`);
-  await page.fill('[name=principal_amount]', '100000');
+  await page.waitForSelector('[name=new_total_amount]', { timeout: 1500 });
+  results.push(`  "Chia lại các kỳ thường còn lại" checkbox shows up on kỳ 1 (now works on any kỳ, not just kỳ 1): ${await page.isVisible('#resplitRest')}`);
+  await page.fill('[name=new_total_amount]', '100000');
   await page.check('#resplitRest');
   await page.click('#modalForm [type=submit]');
   await page.waitForSelector('#toast.show', { timeout: 1500 }).then(() => results.push('SUBMIT "Sửa kỳ 1" + "Chia lại các kỳ thường còn lại": saved - OK')).catch(() => results.push('SUBMIT resplit from kỳ 1: no toast - FAIL'));
@@ -520,12 +547,33 @@ const RPC_HANDLERS = {
   const scheduleText3 = await page.textContent('#modalBody');
   results.push(`  Kỳ 1 now shows the hand-entered ¥100,000: ${scheduleText3.includes('100,000')}`);
   results.push(`  Kỳ 2's earlier hand-edit (¥90,000) got overwritten by the resplit, not left stuck: ${!scheduleText3.includes('90,000')}`);
-  results.push(`  Bonus kỳ (tháng 7 = ¥80,000, tháng 12 = ¥150,000) stayed untouched by the resplit — resplit only ever touches non-bonus kỳ: ${scheduleText3.includes('80,000') && scheduleText3.includes('150,000')}`);
+  results.push(`  Bonus kỳ (tháng 7 = ¥160,800, tháng 12 = ¥230,800) stayed COMPLETELY untouched by the resplit — their regular share is held fixed, not folded into the pool: ${scheduleText3.includes('160,800') && scheduleText3.includes('230,800')}`);
   const editSchedule2 = (await page.evaluate(() => window.state?.installments?.find(i => i.name === 'Máy giặt')?.schedule)) || [];
-  const scheduleSum = editSchedule2.reduce((s, r) => s + Number(r.principal_amount), 0);
+  const scheduleSum = editSchedule2.reduce((s, r) => s + Number(r.principal_amount) + Number(r.bonus_amount || 0), 0);
   results.push(`  Whole schedule still sums to exactly the purchase price (¥1,200,000), no money added/lost by the resplit: ${scheduleSum === 1200000}`);
+  // pool = kỳ 3,5,6,7,8,9,10,12 (kỳ2 now resplit too — wait kỳ2 IS in the pool since it's non-bonus & unpaid & not the edited row); base=1,200,000-230,000(bonus)-161,600(bonus regular, unchanged)-100,000(edited kỳ1)=708,400 over 9 kỳ -> floor(78,711/100)*100=78,700, remainder(last=kỳ12)=708,400-78,700*8=78,800
+  results.push(`  Regular non-bonus kỳ resplit to ¥78,700 each, kỳ 12 (farthest from kỳ 1) absorbs the remainder ¥78,800: ${scheduleSum === 1200000 && editSchedule2.find(r => r.installment_no === 3)?.principal_amount == 78700 && editSchedule2.find(r => r.installment_no === 12)?.principal_amount == 78800}`);
   await page.evaluate(() => document.getElementById('modal')?.close());
   await page.waitForTimeout(50);
+
+  // Section 6 of the spec explicitly calls out "sửa kỳ cuối" as its own
+  // case: the remainder recipient flips to the FIRST remaining kỳ instead
+  // of the last, since editing the schedule's own last kỳ leaves nothing
+  // "after" it to absorb the leftover.
+  await page.click('.money-column.credit .money-line:has-text("Rakuten")');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 });
+  await page.click('#modalBody button:has-text("Xem lịch")');
+  await page.waitForTimeout(100);
+  await page.click('#modalBody .tx:has-text("Kỳ 12") button:has-text("Sửa")');
+  await page.waitForSelector('[name=new_total_amount]', { timeout: 1500 });
+  await page.fill('[name=new_total_amount]', '50000');
+  await page.check('#resplitRest');
+  await page.click('#modalForm [type=submit]');
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(() => results.push('SUBMIT "Sửa kỳ 12 (cuối)" + "Chia lại": saved - OK')).catch(() => results.push('SUBMIT resplit from kỳ cuối: no toast - FAIL'));
+  await page.waitForTimeout(150);
+  const editSchedule3 = (await page.evaluate(() => window.state?.installments?.find(i => i.name === 'Máy giặt')?.schedule)) || [];
+  const scheduleSum3 = editSchedule3.reduce((s, r) => s + Number(r.principal_amount) + Number(r.bonus_amount || 0), 0);
+  results.push(`  Editing kỳ CUỐI (kỳ 12) + chia lại: kỳ 12 = ¥50,000 (hand-entered), remainder flips to kỳ 1 (¥84,800, the FIRST remaining kỳ) instead of the last, other resplit kỳ = ¥84,200, total still ¥1,200,000: ${scheduleSum3 === 1200000 && editSchedule3.find(r => r.installment_no === 12)?.principal_amount == 50000 && editSchedule3.find(r => r.installment_no === 1)?.principal_amount == 84800 && editSchedule3.find(r => r.installment_no === 2)?.principal_amount == 84200}`);
 
   // "Phí trả góp" (fee_total, e.g. 分割払手数料 on a real Japanese statement) —
   // was already computed server-side (save_installment/schedule generation)

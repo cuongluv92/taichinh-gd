@@ -730,7 +730,7 @@ function installmentProgress(inst) {
 function installmentRow(inst) {
   const p = installmentProgress(inst);
   const bonusEntries = Object.entries(inst.bonus_amounts || {}).map(([m, amt]) => [Number(m), amt]).sort((a, b) => a[0] - b[0]);
-  const bonusNote = bonusEntries.length ? ` · Bonus ${bonusEntries.map(([m, amt]) => `Tháng ${m}: ${money(amt, inst.currency)}`).join(', ')}` : '';
+  const bonusNote = bonusEntries.length ? ` · Bonus ${bonusEntries.map(([m, amt]) => `Tháng ${m} +${money(amt, inst.currency)}`).join(', ')}` : '';
   const feeNote = n(inst.fee_total) > 0 ? ` · Phí ${money(inst.fee_total, inst.currency)} (chia đều mỗi kỳ)` : '';
   return `<div class="tx"><div class="tx-main"><strong>${esc(inst.name)}</strong><span>${money(inst.principal_amount, inst.currency)} · ${p.paid}/${p.total} kỳ đã trả · ${money(n(inst.principal_amount) / inst.total_installments, inst.currency)}/kỳ${esc(bonusNote)}${esc(feeNote)}</span></div>
     <div class="tx-actions"><button class="btn sm" ${act('openInstallmentSchedule', inst.id, inst.card_account_id)}>Xem lịch</button><button class="btn sm" ${act('openInstallment', inst.card_account_id, inst.id)}>Sửa</button><button class="btn sm" ${act('deleteInstallment', inst.id, inst.card_account_id)}>Xóa</button></div></div>`;
@@ -764,6 +764,11 @@ function openInstallment(cardId = '', id = '') {
     <div class="field"><label>Tổng số kỳ</label><input name="total_installments" type="number" min="2" max="60" value="${esc(inst?.total_installments || 12)}" required></div>
     <div class="field"><label>Ngày bắt đầu</label><input name="purchase_date" type="date" value="${esc(inst?.purchase_date || localToday())}" required></div>
     <div class="field"><label>Số kỳ đã trả</label><input name="paid_installments_before" type="number" min="0" value="${esc(inst?.paid_installments_before ?? 0)}"></div>
+    <div class="field"><label>Đơn vị làm tròn mỗi kỳ</label><select name="rounding_unit">${[1, 10, 100, 1000].map(v => `<option value="${v}" ${String(inst?.rounding_unit ?? 100) === String(v) ? 'selected' : ''}>${v === 1 ? '1 JPY (không làm tròn)' : `${v.toLocaleString('vi-VN')} JPY`}</option>`).join('')}</select></div>
+    <div class="field"><label>Kỳ nhận phần chênh lệch</label><select name="remainder_period">
+      <option value="first" ${(inst?.remainder_period ?? 'first') === 'first' ? 'selected' : ''}>Kỳ đầu</option>
+      <option value="last" ${inst?.remainder_period === 'last' ? 'selected' : ''}>Kỳ cuối</option>
+    </select></div>
     <div class="field full">
       <label>Cách nhập phí trả góp</label>
       <div class="type-tabs" id="feeModeTabs"><button type="button" class="active" data-fm="amount">Số tiền tổng</button><button type="button" data-fm="percent">Tỷ lệ % (năm)</button></div>
@@ -772,16 +777,16 @@ function openInstallment(cardId = '', id = '') {
     <div class="field"><label id="feeAmountLabel">Phí trả góp (tổng, nếu có)</label><input name="fee_total" id="feeAmountInput" type="number" min="0" step="1" value="${esc(inst?.fee_total ?? 0)}" placeholder="0"></div>
     <div class="field full"><label class="checkbox-label"><input type="checkbox" id="instBonusToggle" ${hasBonus ? 'checked' : ''}> 🎁 Có trả thêm bonus (Tết/giữa năm)?</label></div>
     <div class="field full${hasBonus ? '' : ' hidden'}" id="instBonusFields">
-      <label>Tick tháng nào thì hiện ô nhập tiền cho đúng tháng đó — gõ ĐÚNG số tiền phải trả tháng bonus đó (đọc thẳng từ sao kê), không phải phần cộng thêm</label>
+      <label>Tick tháng nào thì hiện ô nhập tiền cho đúng tháng đó — gõ số tiền CỘNG THÊM ngoài tiền trả thường của tháng bonus đó (không phải tổng tiền tháng đó)</label>
       <div class="bonus-month-grid">${months.map(m => {
         const amt = bonusAmounts[m];
         const checked = amt != null;
-        return `<div class="bonus-month-row"><label class="checkbox-label"><input type="checkbox" class="bonusMonthCheck" id="instBonusM${m}" data-m="${m}" ${checked ? 'checked' : ''}> Tháng ${m}</label><input type="number" min="1" step="1" id="instBonusAmt${m}" class="bonus-amount-input${checked ? '' : ' hidden'}" placeholder="Số tiền phải trả tháng đó" value="${esc(amt ?? '')}"></div>`;
+        return `<div class="bonus-month-row"><label class="checkbox-label"><input type="checkbox" class="bonusMonthCheck" id="instBonusM${m}" data-m="${m}" ${checked ? 'checked' : ''}> Tháng ${m}</label><input type="number" min="1" step="1" id="instBonusAmt${m}" class="bonus-amount-input${checked ? '' : ' hidden'}" placeholder="Số tiền cộng thêm" value="${esc(amt ?? '')}"></div>`;
       }).join('')}</div>
     </div>
     <div class="field full"><label>Ghi chú</label><input name="note" value="${esc(inst?.note || '')}" placeholder="Tùy chọn"></div>
   </div>
-  <small class="muted">Số tiền mỗi kỳ thường = (Tổng giá trị − tổng các kỳ bonus) ÷ số kỳ thường, chia đều. Kỳ bonus (Tết/giữa năm) trả ĐÚNG số bạn gõ ở trên, không chia thêm gì — nếu công ty năm nào cũng có bonus tháng đó, mọi lần tháng đó lặp lại trong thời hạn trả góp đều dùng số này. Phí trả góp (nếu ngân hàng/nơi bán có tính, VD 分割払手数料) chia đều thêm vào mỗi kỳ (kể cả kỳ bonus) — để 0 nếu trả góp không lãi/không phí. "Tỷ lệ % (năm)" chỉ là công cụ ước tính theo công thức add-on phổ biến (Tổng giá trị × tỷ lệ ÷ 100 × (Tổng số kỳ + 1) ÷ 24) — mỗi công ty tính hơi khác nhau, nếu số ra không khớp sao kê thật thì chuyển qua "Số tiền tổng" và gõ đúng số trên sao kê. Mỗi tháng chỉ kỳ đến hạn mới tính vào Tổng chi tiêu tháng — không xuất hiện ở Chi biến động.</small>`,
+  <small class="muted">Tiền trả thường mỗi kỳ = (Tổng giá trị − tổng tất cả các lần cộng thêm bonus) ÷ Tổng số kỳ, làm TRÒN XUỐNG theo đơn vị chọn ở trên (mặc định 100 JPY — khớp với cách hầu hết ngân hàng/thẻ Nhật tính). Phần dư ra do làm tròn dồn hết vào kỳ đầu (hoặc kỳ cuối nếu chọn vậy) — đây chính là lý do kỳ đầu thường lệch so với các kỳ khác trên sao kê thật. Kỳ bonus = tiền trả thường + số cộng thêm bạn gõ ở trên. VD sao kê 219.800 JPY/24 kỳ, bonus tháng 1&7 cộng thêm 20.000/lần: kỳ đầu ra 6.400, các kỳ thường khác 5.800, kỳ bonus 25.800 — khớp 100% sao kê thật. Phí trả góp (nếu có, VD 分割払手数料) chia đều thêm vào mỗi kỳ, kể cả kỳ bonus — để 0 nếu không lãi/không phí. "Tỷ lệ % (năm)" chỉ là công cụ ước tính, nếu không khớp sao kê thật thì chuyển qua "Số tiền tổng". Mỗi tháng chỉ kỳ đến hạn mới tính vào Tổng chi tiêu tháng — không xuất hiện ở Chi biến động.</small>`,
   fd => api.cardLedger('save_installment', {
     ...fd, id: id || null, first_payment_month: `${monthKey(fd.purchase_date)}-01`,
     bonus_amounts: $('#instBonusToggle').checked
@@ -827,26 +832,27 @@ async function deleteInstallment(id, cardId) {
 }
 function scheduleRow(row, cardId, installmentId) {
   const bonusTag = row.payment_kind === 'bonus' ? ' <span class="due-date-tag">Bonus</span>' : '';
-  return `<div class="tx"><div class="tx-main"><strong>${esc(fmtMonthKey(monthKey(row.payment_month)))}${bonusTag}</strong><span>Kỳ ${row.installment_no} · ${money(n(row.principal_amount) + n(row.fee_amount))}${row.is_paid ? ' · Đã trả' : ''}</span></div>
+  const total = n(row.principal_amount) + n(row.bonus_amount) + n(row.fee_amount);
+  const breakdown = n(row.bonus_amount) > 0 ? ` (${money(row.principal_amount)} + ${money(row.bonus_amount)} bonus)` : '';
+  return `<div class="tx"><div class="tx-main"><strong>${esc(fmtMonthKey(monthKey(row.payment_month)))}${bonusTag}</strong><span>Kỳ ${row.installment_no} · ${money(total)}${esc(breakdown)}${row.is_paid ? ' · Đã trả' : ''}</span></div>
     <div class="tx-actions"><button class="btn sm" ${act('reopenAfterModal', 'openScheduleRowEdit', row, cardId, installmentId)}>Sửa</button><button class="btn sm" ${act('toggleInstallmentPaid', row.id, cardId)}>${row.is_paid ? 'Đánh dấu chưa trả' : 'Đánh dấu đã trả'}</button></div></div>`;
 }
-// Thoát hiểm khi cách chia tự động (kỳ đầu gánh phần dư, còn lại chia đều +
-// bonus cộng thêm) không đúng ý — sửa thẳng đúng một kỳ, không tính lại cả
-// lịch, không đụng các kỳ khác. Cho kỳ 1 riêng: một số ngân hàng/nơi bán
-// chia kỳ 1 khác hẳn kiểu "gánh phần dư" của app (VD sao kê thật: kỳ 1 =
-// 6,400, các kỳ thường còn lại = 5,800 đều tăm tắp) — tick thêm ô bên dưới
-// để sau khi lưu kỳ 1, MỌI kỳ thường còn lại (không đụng kỳ Bonus) được
-// chia lại đều từ phần còn dư, khớp đúng sao kê thật thay vì đấu tay từng kỳ.
+// Thoát hiểm khi cách chia tự động không đúng ý — sửa thẳng đúng một kỳ,
+// không tính lại cả lịch. Cho phép tick "chia lại" ở BẤT KỲ kỳ nào (đầu,
+// giữa, cuối, không chỉ kỳ 1): các kỳ đã trả và kỳ vừa sửa giữ nguyên, mọi
+// kỳ thường (không phải Bonus) còn lại chưa trả được chia đều lại từ phần
+// còn dư — phần lẻ dồn vào kỳ xa kỳ vừa sửa nhất (sửa kỳ đầu/giữa thì kỳ
+// cuối gánh lẻ; sửa đúng kỳ cuối thì kỳ gần nhất chưa trả gánh lẻ).
 function openScheduleRowEdit(row, cardId, installmentId) {
-  const isFirst = row.installment_no === 1;
+  const total = n(row.principal_amount) + n(row.bonus_amount);
   modal(`Sửa kỳ ${row.installment_no} · ${esc(fmtMonthKey(monthKey(row.payment_month)))}`, `<div class="form-grid">
-    <div class="field full"><label>Số tiền gốc kỳ này</label><input name="principal_amount" type="number" min="1" step="1" value="${esc(row.principal_amount)}" required autofocus></div>
-    ${isFirst ? `<div class="field full"><label class="checkbox-label"><input type="checkbox" id="resplitRest"> Chia lại các kỳ thường còn lại theo số tiền này</label></div>` : ''}
+    <div class="field full"><label>${n(row.bonus_amount) > 0 ? 'Tổng tiền phải trả kỳ này (gồm cả bonus)' : 'Số tiền phải trả kỳ này'}</label><input name="new_total_amount" type="number" min="${n(row.bonus_amount)}" step="1" value="${esc(total)}" required autofocus></div>
+    <div class="field full"><label class="checkbox-label"><input type="checkbox" id="resplitRest"> Chia lại các kỳ thường còn lại (chưa trả) theo số tiền này</label></div>
   </div>
-  <small class="muted">${isFirst ? 'Bỏ chọn ô trên thì chỉ sửa đúng kỳ 1 như trước — chọn thì các kỳ thường (không phải Bonus) phía sau được chia đều lại từ phần còn dư, kỳ cuối cùng gánh phần lẻ.' : 'Chỉ sửa đúng kỳ này, không tính lại các kỳ khác.'}</small>`,
-  fd => (isFirst && $('#resplitRest').checked)
-    ? api.cardLedger('resplit_installment_from_first', { installment_id: installmentId, first_amount: fd.principal_amount })
-    : api.cardLedger('edit_schedule_row', { id: row.id, principal_amount: fd.principal_amount }),
+  <small class="muted">Bỏ chọn ô trên thì chỉ sửa đúng kỳ này, không đụng kỳ khác — chọn thì mọi kỳ thường (không phải Bonus, chưa trả, khác kỳ này) được chia đều lại từ phần còn dư. Bonus của kỳ này (nếu có) không đổi.</small>`,
+  fd => $('#resplitRest').checked
+    ? api.cardLedger('resplit_installment', { installment_id: installmentId, schedule_row_id: row.id, new_total_amount: fd.new_total_amount })
+    : api.cardLedger('edit_schedule_row', { id: row.id, new_total_amount: fd.new_total_amount }),
   'Lưu');
 }
 function openInstallmentSchedule(installmentId, cardId) {

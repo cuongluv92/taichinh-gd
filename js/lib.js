@@ -341,7 +341,11 @@ const ERROR_MAP = [
   [/invalid_device_id/i, 'Thiếu thiết bị cần thao tác.'],
   [/device_not_found/i, 'Không tìm thấy thiết bị này.'],
   [/no_other_installments_to_resplit/i, 'Không còn kỳ thường nào khác để chia lại (chỉ có mỗi kỳ này hoặc toàn Bonus).'],
-  [/first_amount_too_large/i, 'Số tiền kỳ 1 lớn hơn cả phần còn lại sau khi trừ Bonus — hãy kiểm tra lại.']
+  [/edited_amount_too_large/i, 'Số tiền kỳ này lớn hơn cả phần còn lại sau khi trừ các kỳ đã trả và Bonus — hãy kiểm tra lại.'],
+  [/amount_below_bonus/i, 'Số tiền kỳ này phải lớn hơn hoặc bằng phần Bonus cộng thêm của chính kỳ đó.'],
+  [/invalid_rounding_unit/i, 'Đơn vị làm tròn không hợp lệ.'],
+  [/invalid_remainder_period/i, 'Kỳ nhận phần chênh lệch không hợp lệ.'],
+  [/schedule_row_not_found/i, 'Không tìm thấy kỳ trả góp này.']
 ];
 function translateApiError(raw) {
   for (const [re, msg] of ERROR_MAP) if (re.test(raw)) return msg;
