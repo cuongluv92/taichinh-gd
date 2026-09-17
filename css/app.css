@@ -551,8 +551,13 @@ input[type=color]{padding:3px;height:36px}
   /* iOS Safari zooms the whole page in on focusing any input/select/
      textarea smaller than 16px and doesn't reliably zoom back out — that's
      the "app opens zoomed in, have to pinch it back out" bug. 16px on
-     touch-sized screens avoids triggering it at all. */
-  input,select,textarea{font-size:16px}
+     touch-sized screens avoids triggering it at all. This has to win over
+     every more-specific class/attribute selector that sets its own smaller
+     font-size (a bare `input` type-selector alone loses that fight even
+     inside this same media query) — .bonus-amount-input and the topbar's
+     month picker are the two that actually did, but repeat the same fix
+     wherever a future one shows up. */
+  input,select,textarea,.bonus-amount-input,.month-nav input[type=month]{font-size:16px}
 }
 @media (max-width:430px){
   .content{padding:14px 12px 90px}
