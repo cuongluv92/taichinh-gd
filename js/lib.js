@@ -350,7 +350,7 @@ function translateApiError(raw) {
 function extractKey() {
   const hash = new URLSearchParams(location.hash.replace(/^#/, ''));
   const fromHash = hash.get('k') || hash.get('key');
-  if (fromHash && fromHash.length >= 32) {
+  if (fromHash && fromHash.length >= 9) {
     localStorage.setItem(KEY_STORE, fromHash);
     history.replaceState(null, '', location.pathname + location.search);
     return fromHash;
