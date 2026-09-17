@@ -109,6 +109,44 @@ function options(items, value, label = x => x.name) {
   return items.map(x => `<option value="${esc(x.id)}" ${x.id === value ? 'selected' : ''}>${esc(label(x))}</option>`).join('');
 }
 
+// ---------- Icons (inline SVG — CSP here is script-src/img-src 'self', so
+// no icon font/CDN; a small hand-drawn set styled like the stroke icons
+// used elsewhere keeps the nav/topbar glyphs from being ⌘ ▤ ◆ ◫ literal
+// Unicode characters that don't actually mean anything). ----------
+const ICONS = {
+  overview: '<rect x="3" y="3" width="7.5" height="7.5" rx="1.6"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.6"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.6"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.6"/>',
+  wallet: '<path d="M3.5 7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1h1.5a1.5 1.5 0 0 1 1.5 1.5v7a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z"/><circle cx="16.2" cy="13.5" r="1.1" fill="currentColor" stroke="none"/>',
+  invest: '<path d="M3 17.5l5.5-5.5 4 4L21 7"/><path d="M15.5 7H21v5.5"/>',
+  assets: '<path d="M3 10 12 4l9 6"/><path d="M5 10v9M9.5 10v9M14.5 10v9M19 10v9"/><path d="M3 21h18"/>',
+  settings: '<line x1="4" y1="6.5" x2="20" y2="6.5"/><circle cx="9" cy="6.5" r="1.8" fill="var(--panel)"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="16" cy="12" r="1.8" fill="var(--panel)"/><line x1="4" y1="17.5" x2="20" y2="17.5"/><circle cx="11" cy="17.5" r="1.8" fill="var(--panel)"/>',
+  plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+  chevronLeft: '<path d="M15 5.5 8.5 12l6.5 6.5"/>',
+  chevronRight: '<path d="M9 5.5 15.5 12 9 18.5"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.4M12 19.1v2.4M4.6 4.6l1.7 1.7M17.7 17.7l1.7 1.7M2.5 12h2.4M19.1 12h2.4M4.6 19.4l1.7-1.7M17.7 6.3l1.7-1.7"/>',
+  moon: '<path d="M20 14.2A8.3 8.3 0 1 1 9.8 4a6.8 6.8 0 0 0 10.2 10.2Z"/>'
+};
+function icon(name, cls = '') {
+  return `<svg class="icon ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
+}
+// Hydrates every static [data-icon] placeholder in the app shell (nav,
+// topbar) once at boot — the icon set lives in one place (ICONS above)
+// instead of being duplicated as raw SVG in index.html for each button.
+function initIcons(root = document) {
+  $$('[data-icon]', root).forEach(el => { if (!el.dataset.iconDone) { el.innerHTML = icon(el.dataset.icon); el.dataset.iconDone = '1'; } });
+}
+// ---------- Light/dark theme ----------
+// Default (no data-theme attribute) stays exactly the existing dark look —
+// this only ever adds an opt-in light mode, it never changes what an
+// existing user without a stored on file sees.
+function toggleTheme() {
+  const html = document.documentElement;
+  const next = html.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+  html.setAttribute('data-theme', next);
+  try { localStorage.setItem('taichinh_gd_theme_v1', next); } catch {}
+  const meta = $('meta[name="theme-color"]');
+  if (meta) meta.content = next === 'light' ? '#f4f5f7' : '#0a0b0d';
+}
+
 // ---------- CSP-safe action dispatch ----------
 // The production CSP is `script-src 'self'` (no 'unsafe-inline'), so plain
 // onclick="..." HTML attributes are silently dropped by the browser. Every
@@ -269,8 +307,10 @@ Object.assign(window, {
   SUPABASE_URL, SUPABASE_KEY, state, $, $$, esc, n, clamp0, money, signedMoney, pctText, pctOf,
   monthDate, monthKey, yearKey, fmtMonth, fmtMonthKey, shiftMonth, addMonths, endOfMonthDate,
   daysUntil, dateStatus, toast, setLoading, options, modal, infoModal, closeModal, reopenAfterModal, callRpc, act,
-  extractKey, forgetDevice, copyPrivateLink, localToday, localMonth, QUICK_PREF_KEY
+  extractKey, forgetDevice, copyPrivateLink, localToday, localMonth, QUICK_PREF_KEY,
+  ICONS, icon, initIcons, toggleTheme
 });
+initIcons();
 
 // One delegated handler for every data-action element in the document,
 // including inside the <dialog id="modal">. This is the CSP-safe

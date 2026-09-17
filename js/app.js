@@ -122,7 +122,14 @@ function render() {
   if (!state.household) return;
   const views = { dashboard: window.renderDashboard, budget: window.renderBudget, investments: window.renderInvestments, accounts: window.renderAccounts, settings: window.renderSettings };
   const fn = views[state.view] || views.dashboard;
-  $('#content').innerHTML = fn();
+  const content = $('#content');
+  content.innerHTML = fn();
+  // Retrigger the fade-in on every render (not just once) by removing then
+  // re-adding the class after a forced reflow — purely a CSS animation
+  // hook, no effect on what's actually rendered.
+  content.classList.remove('view-fade');
+  void content.offsetWidth;
+  content.classList.add('view-fade');
   if (state.view === 'settings') window.wireSettingsView?.();
 }
 
