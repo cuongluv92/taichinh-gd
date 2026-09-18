@@ -357,7 +357,7 @@ F.installmentsFor = cardId => (state.installments || []).filter(x => x.card_acco
 F.cardExpenseMonthTotal = (cardId, month = state.month) => F.cardExpensesFor(cardId)
   .filter(x => monthKey(x.expense_date) === month).reduce((s, x) => s + n(x.amount), 0);
 F.installmentMonthDue = (cardId, month = state.month) => F.installmentsFor(cardId)
-  .reduce((s, inst) => s + (inst.schedule || []).filter(row => monthKey(row.payment_month) === month).reduce((s2, row) => s2 + n(row.principal_amount) + n(row.fee_amount), 0), 0);
+  .reduce((s, inst) => s + (inst.schedule || []).filter(row => monthKey(row.payment_month) === month).reduce((s2, row) => s2 + n(row.principal_amount) + n(row.bonus_amount) + n(row.fee_amount), 0), 0);
 // Per-card combined total (used by the per-card ledger drill-down modal,
 // which still shows one card's Chi tiêu thẻ + Trả góp together).
 F.cardColumnMonthTotal = (cardId, month = state.month) => F.cardExpenseMonthTotal(cardId, month) + F.installmentMonthDue(cardId, month);

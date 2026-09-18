@@ -119,6 +119,25 @@ function debtAdj(id, debtId, direction, amount, date) { return { id, debt_id: de
 }
 
 // ---------------------------------------------------------------------
+// D. A bonus kỳ's monthly due total must include bonus_amount on top of
+//    principal_amount (bonus lives in its own schedule column since the
+//    2026-09-17 installment-calc rebuild) — regression for a bug where
+//    installmentMonthDue summed only principal_amount + fee_amount and
+//    silently dropped every bonus kỳ's add-on from the monthly total.
+// ---------------------------------------------------------------------
+{
+  resetState({
+    accounts: [acc('rakuten', 'credit', 'JPY', 0)],
+    installments: [{
+      id: 'inst1', card_account_id: 'rakuten', name: 'iPhone', principal_amount: 219800, total_installments: 24,
+      schedule: [{ id: 'sch1', installment_no: 4, payment_month: '2026-09-01', principal_amount: 5800, bonus_amount: 20000, fee_amount: 0, is_paid: false }]
+    }]
+  });
+  const s = F.statsFor('2026-09');
+  eq('D. Trả góp on a bonus kỳ includes bonus_amount (5,800 + 20,000 = 25,800), not just principal_amount', s.installment, 25800);
+}
+
+// ---------------------------------------------------------------------
 // NỢ #1: the debt ledger is entirely manual and entirely separate from Chi
 // tiêu — moving debt out of Chi tiêu per the newest spec.
 // ---------------------------------------------------------------------
