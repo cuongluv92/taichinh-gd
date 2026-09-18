@@ -73,6 +73,7 @@ for (let i = 23; i >= 0; i--) {
   FULL_TX.push(tx({ category_id: 'vr2', transaction_type: 'expense', amount: 10000 + (i % 4) * 1000, transaction_date: `${m}-20` }));
 }
 const MONTH_TX = FULL_TX.filter(t => t.transaction_date.startsWith(MONTH));
+const DELETED_TX = [tx({ category_id: 'vr1', transaction_type: 'expense', amount: 7000, transaction_date: `${MONTH}-12`, note: 'Nhầm', deleted_at: `${MONTH}-16T10:00:00Z` })];
 
 const ADJUSTMENTS = [
   { id: 'adj1', account_id: 'bank', account_name: 'UFJ', direction: 'increase', amount: 100000, currency: 'JPY', adjustment_date: `${MONTH}-03`, note: 'Lương tháng trước còn lại' }
@@ -140,6 +141,15 @@ const RPC_HANDLERS = {
     if (action === 'delete_account') {
       if (ADJUSTMENTS.some(a => a.account_id === p.id)) return { error: true, __status: 400, message: 'account_has_history' };
       const i = ACCOUNTS.findIndex(x => x.id === p.id); if (i >= 0) ACCOUNTS.splice(i, 1);
+      return { ok: true };
+    }
+    if (action === 'deleted_transactions') return { items: DELETED_TX };
+    if (action === 'restore_transaction') {
+      const i = DELETED_TX.findIndex(x => x.id === p.id);
+      if (i < 0) return { ok: false };
+      const [row] = DELETED_TX.splice(i, 1);
+      delete row.deleted_at;
+      MONTH_TX.push(row);
       return { ok: true };
     }
     return { ok: true, id: 'x' };
@@ -980,6 +990,21 @@ const RPC_HANDLERS = {
   const currentRowStillOk = await page.locator('.list').filter({ hasText: 'Thiết bị này' }).first().textContent();
   results.push(`  Thiết bị hiện tại (không bị đăng xuất) vẫn hoạt động bình thường: ${currentRowStillOk.includes('Thiết bị này')}`);
   results.push(`  App vẫn đang mở bình thường sau khi đăng xuất MỘT thiết bị khác (không tự khóa máy đang dùng): ${await page.locator('#app:not(.hidden)').count() > 0}`);
+
+  // ---- Thùng rác (deleted_transactions/restore_transaction — backend RPC
+  // actions already existed but were never wired into the UI until now).
+  await page.click('button:has-text("🗑 Xem thùng rác")');
+  await page.waitForSelector('#modal[open]', { timeout: 1500 });
+  const trashText = await page.textContent('#modalBody');
+  results.push(`  Thùng rác liệt kê giao dịch đã xóa (¥7,000 "Nhầm"): ${trashText.includes('7,000') && trashText.includes('Nhầm')}`);
+  await resetToast();
+  await page.click('#modalBody button:has-text("Khôi phục")');
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(() => results.push('CLICK "Khôi phục" trong thùng rác: saved - OK')).catch(() => results.push('CLICK "Khôi phục": no toast - FAIL'));
+  await page.waitForTimeout(150);
+  const trashTextAfter = await page.textContent('#modalBody');
+  results.push(`  Sau khi khôi phục, thùng rác rỗng lại (không còn "Nhầm"): ${!trashTextAfter.includes('Nhầm') && trashTextAfter.includes('đang trống')}`);
+  await page.evaluate(() => document.getElementById('modal')?.close());
+  await page.waitForTimeout(50);
 
   // Setting a JPY↔VND rate must fold the VND payable ("Vay chị Hoa") INTO
   // Tổng nợ (converted), not just show a cosmetic "≈" that never counts.

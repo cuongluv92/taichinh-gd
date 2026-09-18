@@ -121,6 +121,22 @@ async function deleteTransaction(id) {
   try { await api.core('delete_transaction', { id }); await window.refresh(); toast('Đã xóa giao dịch'); }
   catch (e) { toast(e.message, true); }
 }
+// Xóa giao dịch chỉ đánh dấu deleted_at (đã có sẵn ở backend từ trước, chưa
+// từng nối vào giao diện) — "Thùng rác" lộ ra khả năng khôi phục đó trong
+// 50 giao dịch xóa gần nhất, để lỡ xóa nhầm vẫn gọi lại được.
+async function openTrash() {
+  let items = [];
+  try { ({ items = [] } = await api.core('deleted_transactions')); }
+  catch (e) { return toast(e.message, true); }
+  const row = t => `<div class="tx"><div class="tx-main"><strong>${money(t.amount, t.currency)}${t.transaction_type === 'income' ? ' <span class="status-chip good">Thu</span>' : ''}</strong><span>${esc(String(t.transaction_date).slice(0, 10))} · ${esc(t.category_name || t.account_name || t.transfer_account_name || '')}${t.note ? ` · ${esc(t.note)}` : ''} · Đã xóa lúc ${esc(String(t.deleted_at).slice(0, 16).replace('T', ' '))}</span></div>
+    <div class="tx-actions"><button class="btn sm" ${act('restoreTransaction', t.id)}>Khôi phục</button></div></div>`;
+  infoModal('Thùng rác · Giao dịch đã xóa', `<p class="note">50 giao dịch xóa gần nhất — khôi phục sẽ đưa giao dịch trở lại đúng tháng/danh mục cũ.</p>
+    <div class="list">${items.map(row).join('') || '<div class="empty compact">Thùng rác đang trống.</div>'}</div>`);
+}
+async function restoreTransaction(id) {
+  try { await api.core('restore_transaction', { id }); await window.refresh(); toast('Đã khôi phục giao dịch'); openTrash(); }
+  catch (e) { toast(e.message, true); }
+}
 
 // ---------------- Budget column settings (income / fixed / variable) ----------------
 const COLUMN_META = {
@@ -870,7 +886,7 @@ async function toggleInstallmentPaid(scheduleRowId, cardId) {
 }
 
 Object.assign(window, {
-  openQuickEntry, openTransactionEdit, deleteTransaction, openColumnSettings, openAccount, deleteAccount, openAccountColumnManager,
+  openQuickEntry, openTransactionEdit, deleteTransaction, openTrash, restoreTransaction, openColumnSettings, openAccount, deleteAccount, openAccountColumnManager,
   openAccountAdjustment, deleteAccountAdjustment, openAccountAdjustmentHistory,
   openDebt, deleteDebt, openDebtColumnManager, openDebtAdjustment, deleteDebtAdjustment, openDebtAdjustmentHistory,
   openRecurringManager, openRecurringItemForm, deleteRecurringItem, confirmRecurringItem, skipRecurringItem, unskipRecurringItem,

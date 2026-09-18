@@ -74,6 +74,9 @@ function renderSettings() {
       <h2>Sao lưu dữ liệu</h2>
       <p class="note">Tải toàn bộ dữ liệu gia đình (tài khoản, danh mục, giao dịch, nợ, thẻ...) dưới dạng JSON, hoặc chỉ danh sách giao dịch dưới dạng CSV để mở bằng Excel.</p>
       <div class="row"><button class="btn primary" ${act('exportData')}>⇩ Tải bản sao đầy đủ (JSON)</button><button class="btn" ${act('exportCsv')}>⇩ Xuất CSV giao dịch</button></div>
+      <h4 class="mt-16">Thùng rác</h4>
+      <p class="note">Giao dịch bị xóa vẫn giữ lại 50 lần gần nhất — lỡ xóa nhầm thì khôi phục lại được, không mất hẳn ngay.</p>
+      <button class="btn" ${act('openTrash')}>🗑 Xem thùng rác</button>
     </section>
   </div>`;
 }
