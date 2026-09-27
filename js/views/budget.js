@@ -131,8 +131,8 @@ function scratchColumn(no) {
       ? `<span class="scratch-sign-spacer" aria-hidden="true"></span>`
       : `<button type="button" class="mini-btn scratch-sign" aria-label="Đổi dấu cộng/trừ">${sign === -1 ? '−' : '+'}</button>`;
     return `<div class="scratch-row" data-id="${esc(x.id)}" data-col="${no}" data-sign="${sign}">
-      ${signBtn}
       <input class="scratch-label" type="text" placeholder="Tên khoản" value="${esc(x.label || '')}">
+      ${signBtn}
       <input class="scratch-amount" type="number" step="1" placeholder="0" value="${x.amount ? esc(x.amount) : ''}">
       <button class="mini-btn" type="button" aria-label="Xóa dòng" ${act('deleteScratchItem', x.id)}>✕</button>
     </div>`;
