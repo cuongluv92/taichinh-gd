@@ -262,14 +262,22 @@ const RPC_HANDLERS = {
     const p = body?.p_payload || {};
     if (action === 'list') {
       const month = (p.month || `${MONTH}-01`).slice(0, 7);
-      // Mirrors the SQL exactly: a month with zero items gets seeded once
-      // from the saved template (label, amount AND sign all copied) —
-      // checked fresh on every 'list' call, so deleting rows back to zero
-      // re-seeds them too (same accepted low-stakes edge case as the real
-      // function).
-      if (!SCRATCH_ITEMS.some(x => x.month === month)) {
-        SCRATCH_TEMPLATE.forEach(t => SCRATCH_ITEMS.push({ id: newId('scr'), column_no: t.column_no, month, label: t.label, amount: t.amount, sign: t.sign, sort_order: t.sort_order }));
-      }
+      // Mirrors the SQL exactly: each column seeds itself from the template
+      // independently, checked per (month, column_no) — a column already
+      // touched (real data or an earlier seed) is left alone even if other
+      // columns for the same month are still empty (fixes: only column 1
+      // used to ever seed once the month's total item count was non-zero).
+      // The existence check runs against the state BEFORE any of this
+      // batch's inserts (like the SQL's single set-based INSERT...SELECT),
+      // not against the array as it's being pushed into — otherwise seeding
+      // a column's first template row would block that same column's other
+      // template rows from seeding right behind it.
+      const seededCols = new Set(SCRATCH_ITEMS.filter(x => x.month === month).map(x => x.column_no));
+      SCRATCH_TEMPLATE.forEach(t => {
+        if (!seededCols.has(t.column_no)) {
+          SCRATCH_ITEMS.push({ id: newId('scr'), column_no: t.column_no, month, label: t.label, amount: t.amount, sign: t.sign, sort_order: t.sort_order });
+        }
+      });
       return { columns: SCRATCH_COLUMNS, items: SCRATCH_ITEMS.filter(x => x.month === month) };
     }
     if (action === 'save_template') {
@@ -579,6 +587,28 @@ const RPC_HANDLERS = {
   await page.fill('#monthPicker', NEXT_MONTH);
   await page.waitForTimeout(200);
   results.push(`  A never-opened month (${NEXT_MONTH}) auto-fills "Gửi mẹ" AND "Trừ tạm" with the SAME amounts/sign as the mẫu (total still 10,000), not blank: ${(await page.locator('.scratch-label').first().inputValue()) === 'Gửi mẹ' && (await page.locator('.scratch-amount').first().inputValue()) === '15000' && /10,000/.test(await page.textContent('.money-column.scratch >> nth=0 >> .money-total strong'))}`);
+  await page.fill('#monthPicker', MONTH);
+  await page.waitForTimeout(200);
+
+  // Regression: a column that already has items for a month must not block
+  // ANOTHER column of the SAME month from seeding later, once the mẫu grows
+  // to cover it. Previously the seed check was per-MONTH ("does this month
+  // have any items at all?"), so once column 1 seeded into NEXT_MONTH above,
+  // that month could never seed column 2 either, even after saving a fuller
+  // mẫu — reported live: "cột 2 3 4 nhập số liệu ... nhấn lưu ... chả hiện
+  // lại tháng 11". Fix checks per (month, column) instead.
+  await page.click('.money-column.scratch >> nth=1 >> button:has-text("＋ Thêm dòng")');
+  await page.waitForTimeout(150);
+  await page.fill('.money-column.scratch >> nth=1 >> .scratch-label', 'Thưởng');
+  await page.fill('.money-column.scratch >> nth=1 >> .scratch-amount', '8000');
+  await page.locator('.money-column.scratch >> nth=1 >> .scratch-amount').blur();
+  await page.waitForTimeout(100);
+  await resetToast();
+  await page.click('button:has-text("💾 Lưu")');
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).catch(() => {});
+  await page.fill('#monthPicker', NEXT_MONTH);
+  await page.waitForTimeout(200);
+  results.push(`  Extending mẫu with a 2nd column later still seeds it into ${NEXT_MONTH} even though column 1 already had items there (per-column, not per-month, seeding): ${(await page.locator('.money-column.scratch >> nth=1 >> .scratch-label').first().inputValue()) === 'Thưởng' && (await page.locator('.money-column.scratch >> nth=1 >> .scratch-amount').first().inputValue()) === '8000'}`);
   await page.fill('#monthPicker', MONTH);
   await page.waitForTimeout(200);
 
