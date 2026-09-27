@@ -93,6 +93,8 @@ const RECURRING_ITEMS = [
   { id: 'rec1', target_type: 'account', target_id: 'bank', name: 'Wifi', direction: 'decrease', amount: 6000, currency: 'JPY', day_of_month: 10, is_active: true, note: '' }
 ];
 const RECURRING_SKIPS = [];
+const SCRATCH_COLUMNS = [1, 2, 3, 4].map(column_no => ({ column_no, name: '' }));
+const SCRATCH_ITEMS = [];
 const INVESTMENTS = [
   { id: 'nisa1', name: 'NISA Rakuten', kind: 'nisa', currency: 'JPY', initial_capital: 400000, note: '', created_at: `${MONTH}-01T00:00:00Z`, start_date: '2026-01-01', broker_name: 'Rakuten Securities', nisa_frame: 'both', nisa_annual_limit: 3600000, monthly_amount: 30000, monthly_day: 5, plan_start_month: `${MONTH}-01`, plan_paused: false, expected_return_rate: 5, expected_return_period: 'annual', reinvest_mode: 'none', total_contributed: 100000, total_withdrawn: 0, latest_value: 550000, latest_value_date: `${MONTH}-10`, parent_investment_id: null },
   { id: 'fund1', name: 'eMAXIS Slim toàn cầu', kind: 'securities', currency: 'JPY', initial_capital: 0, note: '', created_at: `${MONTH}-03T00:00:00Z`, ticker: '2559', market: 'TSE', quantity: 10, avg_cost: 15000, current_price: 16500, realized_pl: 0, total_contributed: 150000, total_withdrawn: 0, total_dividends: 0, parent_investment_id: 'nisa1' },
@@ -253,6 +255,30 @@ const RPC_HANDLERS = {
       if (i >= 0) RECURRING_SKIPS.splice(i, 1);
       return { ok: true };
     }
+    return { ok: true };
+  },
+  taichinh_gd_scratch_api: (action, body) => {
+    const p = body?.p_payload || {};
+    if (action === 'list') {
+      const month = (p.month || `${MONTH}-01`).slice(0, 7);
+      return { columns: SCRATCH_COLUMNS, items: SCRATCH_ITEMS.filter(x => x.month === month) };
+    }
+    if (action === 'save_column_name') {
+      const col = SCRATCH_COLUMNS.find(x => x.column_no === Number(p.column_no));
+      if (col) col.name = p.name || '';
+      return { ok: true };
+    }
+    if (action === 'save_item') {
+      if (p.id) {
+        const row = SCRATCH_ITEMS.find(x => x.id === p.id);
+        if (row) { row.label = p.label || ''; row.amount = Number(p.amount || 0); }
+        return { ok: true, id: p.id };
+      }
+      const id = newId('scr');
+      SCRATCH_ITEMS.push({ id, column_no: Number(p.column_no), month: (p.month || `${MONTH}-01`).slice(0, 7), label: p.label || '', amount: Number(p.amount || 0) });
+      return { ok: true, id };
+    }
+    if (action === 'delete_item') { const i = SCRATCH_ITEMS.findIndex(x => x.id === p.id); if (i >= 0) SCRATCH_ITEMS.splice(i, 1); return { ok: true }; }
     return { ok: true };
   },
   taichinh_gd_card_ledger_api: (action, body) => {
@@ -478,6 +504,39 @@ const RPC_HANDLERS = {
 
   results.push(`  Mini KPI row (Thu nhập/Tổng chi/Còn lại/Tỷ lệ) shows on Chi tiêu, same labels as Tổng quan: ${await page.locator('.kpi-grid.sm .kpi .label', { hasText: 'Thu nhập tháng' }).count() > 0 && await page.locator('.kpi-grid.sm .kpi .label', { hasText: 'Tổng chi tiêu tháng' }).count() > 0}`);
   results.push(`APP OPENS ON Chi tiêu BY DEFAULT (nav "Chi tiêu" active, not Tổng quan): ${await page.locator('#nav button[data-view=budget].active').count() > 0}`);
+
+  // ---- Bảng nháp: free-form 4-column scratchpad below the real board,
+  // collapsed by default (one toggle for all 4, not per-column), column
+  // titles and item labels start blank and are plain free text, never fed
+  // into any KPI/stat above.
+  const expenseKpi = page.locator('.kpi-grid.sm .kpi', { has: page.locator('.label', { hasText: /^Tổng chi tiêu tháng$/ }) });
+  const expenseKpiBefore = await expenseKpi.locator('.value').textContent();
+  results.push(`  Bảng nháp collapsed by default (button says "Hiện", no .scratch-row/.scratch-title in DOM): ${await page.locator('button:has-text("Hiện bảng nháp")').count() === 1 && await page.locator('.scratch-title').count() === 0}`);
+  results.push(`  Collapsed bảng nháp doesn't change the 4-column count above: ${(await page.$$('.money-column')).length === 4}`);
+  await page.click('button:has-text("Hiện bảng nháp")');
+  await page.waitForTimeout(100);
+  results.push(`  Clicking toggle reveals exactly 4 free-form columns, titles blank (placeholder "Cột 1", not a real category name): ${await page.locator('.money-column.scratch').count() === 4 && (await page.locator('.scratch-title').first().inputValue()) === ''}`);
+  await page.fill('.money-column.scratch >> nth=0 >> .scratch-title', 'Chuyển khoản lẻ tẻ');
+  await page.locator('.money-column.scratch >> nth=0 >> .scratch-title').blur();
+  await page.click('.money-column.scratch >> nth=0 >> button:has-text("＋ Thêm dòng")');
+  await page.waitForTimeout(150);
+  results.push(`  "+ Thêm dòng" adds one blank row to just that column: ${await page.locator('.money-column.scratch >> nth=0 >> .scratch-row').count() === 1 && await page.locator('.money-column.scratch >> nth=1 >> .scratch-row').count() === 0}`);
+  await page.fill('.money-column.scratch >> nth=0 >> .scratch-label', 'Gửi mẹ');
+  await page.fill('.money-column.scratch >> nth=0 >> .scratch-amount', '15000');
+  results.push(`  Total updates LIVE while typing the amount, before the blur-save round trip: ${/15,000/.test(await page.textContent('.money-column.scratch >> nth=0 >> .money-total strong'))}`);
+  await page.locator('.money-column.scratch >> nth=0 >> .scratch-amount').blur();
+  await page.waitForTimeout(100);
+  await page.evaluate(() => window.refresh());
+  await page.waitForTimeout(150);
+  results.push(`  After refresh, renamed column title AND the row's label/amount persisted server-side (not just local DOM state): ${(await page.locator('.scratch-title').first().inputValue()) === 'Chuyển khoản lẻ tẻ' && (await page.locator('.scratch-label').first().inputValue()) === 'Gửi mẹ' && /15,000/.test(await page.locator('.money-column.scratch >> nth=0 >> .money-total strong').textContent())}`);
+  const expenseKpiAfter = await expenseKpi.locator('.value').textContent();
+  results.push(`  Bảng nháp's ¥15,000 NEVER folds into "Tổng chi tiêu tháng" above (unchanged: ${JSON.stringify(expenseKpiBefore)} → ${JSON.stringify(expenseKpiAfter)}): ${expenseKpiBefore === expenseKpiAfter}`);
+  await page.click('.money-column.scratch >> nth=0 >> button[aria-label="Xóa dòng"]');
+  await page.waitForTimeout(150);
+  results.push(`  "✕" removes the row: ${await page.locator('.money-column.scratch >> nth=0 >> .scratch-row').count() === 0}`);
+  await page.click('button:has-text("Ẩn bảng nháp")');
+  await page.waitForTimeout(100);
+  results.push(`  Toggling again collapses all 4 columns back together: ${await page.locator('.money-column.scratch').count() === 0}`);
 
   // ---- Bonus (ボーナス併用払い): pick tháng 7 (80,000) + tháng 12 (150,000)
   // — each number entered is an ADD-ON over the regular kỳ split (the real

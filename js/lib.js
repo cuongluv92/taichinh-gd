@@ -11,6 +11,7 @@ const QUICK_PREF_KEY = 'taichinh_gd_quick_entry_v1';
 const VIEW_STORE = 'taichinh_gd_last_view_v1';
 const DEVICE_TOKEN_STORE = 'taichinh_gd_device_token_v1';
 const DEVICE_NOTICE_STORE = 'taichinh_gd_device_notice_v1';
+const SCRATCH_OPEN_STORE = 'taichinh_gd_scratch_open_v1';
 
 const localToday = () => {
   const d = new Date();

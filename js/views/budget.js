@@ -108,6 +108,72 @@ function openCreditColumnManager() {
     <div class="list">${rows || '<div class="empty compact">Chưa có thẻ tín dụng.</div>'}</div>
     <button class="btn primary mt-14" ${act('reopenAfterModal', 'openCreditCard')}>＋ Thẻ tín dụng mới</button>`);
 }
+// ---------------------------------------------------------------------
+// Bảng nháp — a free-form 4-column scratchpad, entirely separate from the
+// real budget above: column names and every item's label start blank and
+// are plain free text (no categories), items reset per month, and none of
+// it ever feeds F.statsFor or any KPI/report. Just a private calculator
+// (user's words: "tính toán các khoản để chuyển khoản", not for phân tích).
+// Collapsed by default — one single toggle hides/shows all 4 columns
+// together, there's no per-column hide.
+// ---------------------------------------------------------------------
+function scratchItemsFor(no) { return (state.scratchItems || []).filter(x => x.column_no === no); }
+function scratchColumnName(no) { return (state.scratchColumns || []).find(x => x.column_no === no)?.name || ''; }
+function scratchColumn(no) {
+  const items = scratchItemsFor(no);
+  const total = items.reduce((s, x) => s + n(x.amount), 0);
+  const rows = items.map(x => `<div class="scratch-row" data-id="${esc(x.id)}" data-col="${no}">
+      <input class="scratch-label" type="text" placeholder="Tên khoản" value="${esc(x.label || '')}">
+      <input class="scratch-amount" type="number" step="1" placeholder="0" value="${x.amount ? esc(x.amount) : ''}">
+      <button class="mini-btn" type="button" aria-label="Xóa dòng" ${act('deleteScratchItem', x.id)}>✕</button>
+    </div>`).join('');
+  return `<section class="card money-column scratch">
+    <div class="money-column-head"><input class="scratch-title" type="text" placeholder="Cột ${no}" value="${esc(scratchColumnName(no))}" data-col="${no}"></div>
+    <div class="scratch-items">${rows || '<div class="money-empty">Chưa có dòng nào</div>'}</div>
+    <button class="btn sm mt-8" type="button" ${act('addScratchItem', no)}>＋ Thêm dòng</button>
+    <div class="money-total"><span>Tổng</span><strong>${money(total)}</strong></div>
+  </section>`;
+}
+function renderScratchBoard() {
+  let open = false;
+  try { open = localStorage.getItem(SCRATCH_OPEN_STORE) === '1'; } catch {}
+  return `<div class="mt-16">
+    <button class="btn" type="button" ${act('toggleScratchBoard')}>${open ? '▾ Ẩn bảng nháp' : '▸ Hiện bảng nháp (tính nhanh, không tính vào phân tích)'}</button>
+    ${open ? `<div class="money-board mt-10">${[1, 2, 3, 4].map(scratchColumn).join('')}</div>` : ''}
+  </div>`;
+}
+function toggleScratchBoard() {
+  let open = false;
+  try { open = localStorage.getItem(SCRATCH_OPEN_STORE) === '1'; } catch {}
+  try { localStorage.setItem(SCRATCH_OPEN_STORE, open ? '0' : '1'); } catch {}
+  render();
+}
+async function addScratchItem(columnNo) {
+  try { await api.scratch('save_item', { column_no: columnNo, month: monthDate(state.month), label: '', amount: 0 }); await window.refresh(); }
+  catch (e) { toast(e.message, true); }
+}
+async function deleteScratchItem(id) {
+  try { await api.scratch('delete_item', { id }); await window.refresh(); }
+  catch (e) { toast(e.message, true); }
+}
+function wireBudgetView() {
+  $$('.scratch-row').forEach(row => {
+    const id = row.dataset.id, col = Number(row.dataset.col);
+    const labelEl = row.querySelector('.scratch-label'), amountEl = row.querySelector('.scratch-amount');
+    const save = () => api.scratch('save_item', { id, column_no: col, label: labelEl.value, amount: n(amountEl.value) }).catch(e => toast(e.message, true));
+    labelEl.addEventListener('blur', save);
+    amountEl.addEventListener('blur', save);
+    // Live total feedback while typing, before the blur-save round trip.
+    amountEl.addEventListener('input', () => {
+      const section = row.closest('.money-column');
+      const total = [...section.querySelectorAll('.scratch-amount')].reduce((s, el) => s + n(el.value), 0);
+      section.querySelector('.money-total strong').textContent = money(total);
+    });
+  });
+  $$('.scratch-title').forEach(input => {
+    input.addEventListener('blur', () => api.scratch('save_column_name', { column_no: Number(input.dataset.col), name: input.value }).catch(e => toast(e.message, true)));
+  });
+}
 function renderBudget() {
   const s = F.statsFor(state.month);
   const ratio = pctText(s.expense, s.income);
@@ -118,7 +184,8 @@ function renderBudget() {
     ${kpiCard('Còn lại trong tháng', signedMoney(s.remaining), 'Thu nhập − Tổng chi tiêu tháng', s.remaining < 0 ? 'red' : 'green')}
     ${kpiCard('Tỷ lệ chi tiêu / thu nhập', ratio, s.exceptional > 0 ? `Chưa tính ${money(s.exceptional)} chi bất thường` : 'Tổng chi tiêu so với thu nhập tháng', s.expense > s.income ? 'red' : '')}
   </div>
-  <div class="money-board mt-16">${incomeColumn()}${expenseColumn('fixed', 'Chi cố định')}${expenseColumn('variable', 'Chi biến động')}${creditColumn()}</div>`;
+  <div class="money-board mt-16">${incomeColumn()}${expenseColumn('fixed', 'Chi cố định')}${expenseColumn('variable', 'Chi biến động')}${creditColumn()}</div>
+  ${renderScratchBoard()}`;
 }
 
-Object.assign(window, { renderBudget, openCreditColumnManager });
+Object.assign(window, { renderBudget, openCreditColumnManager, toggleScratchBoard, addScratchItem, deleteScratchItem, wireBudgetView });

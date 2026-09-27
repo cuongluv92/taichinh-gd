@@ -27,6 +27,7 @@ const api = {
   recurringAccount: (action, payload = {}) => { needKey(); return callRpc('taichinh_gd_recurring_account_api', { p_key: state.key, p_action: action, p_payload: payload }); },
   exceptional: (action, payload = {}) => { needKey(); return callRpc('taichinh_gd_exceptional_api', { p_key: state.key, p_action: action, p_payload: payload }); },
   backup: () => { needKey(); return callRpc('taichinh_gd_backup_api', { p_key: state.key }); },
+  scratch: (action, payload = {}) => { needKey(); return callRpc('taichinh_gd_scratch_api', { p_key: state.key, p_action: action, p_payload: payload }); },
   budgetColumn: (kind, effectiveMonth, rows) => { needKey(); return callRpc('taichinh_gd_budget_column_api', { p_key: state.key, p_kind: kind, p_effective_month: monthDate(effectiveMonth), p_rows: rows }); }
 };
 

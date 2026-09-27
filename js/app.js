@@ -14,7 +14,7 @@ function applyBootstrap(d) {
 }
 
 async function loadExtras(month = state.month) {
-  const [ext, exceptional, adjustments, cardExpenses, installments, investments, debts, recurring] = await Promise.all([
+  const [ext, exceptional, adjustments, cardExpenses, installments, investments, debts, recurring, scratch] = await Promise.all([
     api.extension('get'),
     api.exceptional('list'),
     api.accountAdjustment('list'),
@@ -22,7 +22,8 @@ async function loadExtras(month = state.month) {
     api.cardLedger('list_installments'),
     api.investment('list'),
     api.debtLedger('list'),
-    api.recurringAccount('list', { month: monthDate(month) })
+    api.recurringAccount('list', { month: monthDate(month) }),
+    api.scratch('list', { month: monthDate(month) })
   ]);
   state.reporting = { show_vnd_conversion: false, jpy_vnd_rate: null, ...(ext?.reporting || {}) };
   // Cài đặt → "Thiết bị đăng nhập" reads straight off this — extension.get
@@ -39,6 +40,8 @@ async function loadExtras(month = state.month) {
   // Status (pending/confirmed/skipped) is computed server-side for
   // `month`, matching whichever month is currently selected.
   state.recurringAccountItems = recurring?.items || [];
+  state.scratchColumns = scratch?.columns || [];
+  state.scratchItems = scratch?.items || [];
   // Per-investment event history — small dataset for a personal app, needed
   // (not just today's totals) so the Tài sản history chart can show an
   // accurate point-in-time invested value for past months.
@@ -144,6 +147,7 @@ function render() {
   void content.offsetWidth;
   content.classList.add('view-fade');
   if (state.view === 'settings') window.wireSettingsView?.();
+  if (state.view === 'budget') window.wireBudgetView?.();
 }
 
 $('#unlockForm').addEventListener('submit', e => {
