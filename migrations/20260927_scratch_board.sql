@@ -66,7 +66,7 @@ begin
         select column_no, name from taichinh_gd.scratch_columns where household_id=h
       ) x), '[]'::jsonb),
       'items', coalesce((select jsonb_agg(to_jsonb(x) order by x.column_no, x.sort_order, x.created_at) from (
-        select id, column_no, label, amount from taichinh_gd.scratch_items
+        select id, column_no, label, amount, sort_order, created_at from taichinh_gd.scratch_items
         where household_id=h and month=v_month
       ) x), '[]'::jsonb)
     );
