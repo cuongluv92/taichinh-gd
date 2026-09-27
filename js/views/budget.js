@@ -119,7 +119,13 @@ function openCreditColumnManager() {
 // ---------------------------------------------------------------------
 function scratchItemsFor(no) { return (state.scratchItems || []).filter(x => x.column_no === no); }
 function scratchColumnName(no) { return (state.scratchColumns || []).find(x => x.column_no === no)?.name || ''; }
-function scratchRowTotal(row) { return Number(row.dataset.sign || 1) * n(row.querySelector('.scratch-amount').value); }
+// A plain type="number" input can't show grouping separators while typing —
+// this renders/reads `.scratch-amount` as free text with live ","-grouping
+// instead, so a big số tiền is as readable while editing as it is in "Tổng".
+function groupThousands(digits) { return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+function scratchAmountInputValue(v) { return v ? groupThousands(String(Math.trunc(n(v)))) : ''; }
+function scratchAmountValue(el) { return n(el.value.replace(/[^\d]/g, '')); }
+function scratchRowTotal(row) { return Number(row.dataset.sign || 1) * scratchAmountValue(row.querySelector('.scratch-amount')); }
 function scratchColumn(no) {
   const items = scratchItemsFor(no);
   const total = items.reduce((s, x, i) => s + (i === 0 ? 1 : (x.sign === -1 ? -1 : 1)) * n(x.amount), 0);
@@ -133,7 +139,7 @@ function scratchColumn(no) {
     return `<div class="scratch-row" data-id="${esc(x.id)}" data-col="${no}" data-sign="${sign}">
       <input class="scratch-label" type="text" placeholder="Tên khoản" value="${esc(x.label || '')}">
       ${signBtn}
-      <input class="scratch-amount" type="number" step="1" placeholder="0" value="${x.amount ? esc(x.amount) : ''}">
+      <input class="scratch-amount" type="text" inputmode="numeric" placeholder="0" value="${esc(scratchAmountInputValue(x.amount))}">
       <button class="mini-btn" type="button" aria-label="Xóa dòng" ${act('deleteScratchItem', x.id)}>✕</button>
     </div>`;
   }).join('');
@@ -182,11 +188,19 @@ function wireBudgetView() {
   $$('.scratch-row').forEach(row => {
     const id = row.dataset.id, col = Number(row.dataset.col);
     const labelEl = row.querySelector('.scratch-label'), amountEl = row.querySelector('.scratch-amount');
-    const save = () => api.scratch('save_item', { id, column_no: col, label: labelEl.value, amount: n(amountEl.value), sign: Number(row.dataset.sign) }).catch(e => toast(e.message, true));
+    const save = () => api.scratch('save_item', { id, column_no: col, label: labelEl.value, amount: scratchAmountValue(amountEl), sign: Number(row.dataset.sign) }).catch(e => toast(e.message, true));
     labelEl.addEventListener('blur', save);
     amountEl.addEventListener('blur', save);
-    // Live total feedback while typing, before the blur-save round trip.
-    amountEl.addEventListener('input', () => recomputeTotal(row.closest('.money-column')));
+    // Live total feedback while typing, before the blur-save round trip —
+    // also re-groups the digits with "," on every keystroke so a big số
+    // tiền stays readable while editing, not just once saved.
+    amountEl.addEventListener('input', () => {
+      const cursorFromEnd = amountEl.value.length - amountEl.selectionStart;
+      amountEl.value = groupThousands(amountEl.value.replace(/[^\d]/g, ''));
+      const pos = Math.max(0, amountEl.value.length - cursorFromEnd);
+      amountEl.setSelectionRange(pos, pos);
+      recomputeTotal(row.closest('.money-column'));
+    });
     row.querySelector('.scratch-sign')?.addEventListener('click', () => {
       const btn = row.querySelector('.scratch-sign');
       const newSign = Number(row.dataset.sign) === 1 ? -1 : 1;

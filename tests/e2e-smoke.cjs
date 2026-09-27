@@ -586,7 +586,7 @@ const RPC_HANDLERS = {
   const NEXT_MONTH = addMonths(MONTH, 1);
   await page.fill('#monthPicker', NEXT_MONTH);
   await page.waitForTimeout(200);
-  results.push(`  A never-opened month (${NEXT_MONTH}) auto-fills "Gửi mẹ" AND "Trừ tạm" with the SAME amounts/sign as the mẫu (total still 10,000), not blank: ${(await page.locator('.scratch-label').first().inputValue()) === 'Gửi mẹ' && (await page.locator('.scratch-amount').first().inputValue()) === '15000' && /10,000/.test(await page.textContent('.money-column.scratch >> nth=0 >> .money-total strong'))}`);
+  results.push(`  A never-opened month (${NEXT_MONTH}) auto-fills "Gửi mẹ" AND "Trừ tạm" with the SAME amounts/sign as the mẫu (total still 10,000), not blank: ${(await page.locator('.scratch-label').first().inputValue()) === 'Gửi mẹ' && (await page.locator('.scratch-amount').first().inputValue()) === '15,000' && /10,000/.test(await page.textContent('.money-column.scratch >> nth=0 >> .money-total strong'))}`);
   await page.fill('#monthPicker', MONTH);
   await page.waitForTimeout(200);
 
@@ -608,7 +608,7 @@ const RPC_HANDLERS = {
   await page.waitForSelector('#toast.show', { timeout: 1500 }).catch(() => {});
   await page.fill('#monthPicker', NEXT_MONTH);
   await page.waitForTimeout(200);
-  results.push(`  Extending mẫu with a 2nd column later still seeds it into ${NEXT_MONTH} even though column 1 already had items there (per-column, not per-month, seeding): ${(await page.locator('.money-column.scratch >> nth=1 >> .scratch-label').first().inputValue()) === 'Thưởng' && (await page.locator('.money-column.scratch >> nth=1 >> .scratch-amount').first().inputValue()) === '8000'}`);
+  results.push(`  Extending mẫu with a 2nd column later still seeds it into ${NEXT_MONTH} even though column 1 already had items there (per-column, not per-month, seeding): ${(await page.locator('.money-column.scratch >> nth=1 >> .scratch-label').first().inputValue()) === 'Thưởng' && (await page.locator('.money-column.scratch >> nth=1 >> .scratch-amount').first().inputValue()) === '8,000'}`);
   await page.fill('#monthPicker', MONTH);
   await page.waitForTimeout(200);
 
