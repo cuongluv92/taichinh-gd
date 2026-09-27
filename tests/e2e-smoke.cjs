@@ -95,6 +95,7 @@ const RECURRING_ITEMS = [
 const RECURRING_SKIPS = [];
 const SCRATCH_COLUMNS = [1, 2, 3, 4].map(column_no => ({ column_no, name: '' }));
 const SCRATCH_ITEMS = [];
+const SCRATCH_TEMPLATE = [];
 const INVESTMENTS = [
   { id: 'nisa1', name: 'NISA Rakuten', kind: 'nisa', currency: 'JPY', initial_capital: 400000, note: '', created_at: `${MONTH}-01T00:00:00Z`, start_date: '2026-01-01', broker_name: 'Rakuten Securities', nisa_frame: 'both', nisa_annual_limit: 3600000, monthly_amount: 30000, monthly_day: 5, plan_start_month: `${MONTH}-01`, plan_paused: false, expected_return_rate: 5, expected_return_period: 'annual', reinvest_mode: 'none', total_contributed: 100000, total_withdrawn: 0, latest_value: 550000, latest_value_date: `${MONTH}-10`, parent_investment_id: null },
   { id: 'fund1', name: 'eMAXIS Slim toàn cầu', kind: 'securities', currency: 'JPY', initial_capital: 0, note: '', created_at: `${MONTH}-03T00:00:00Z`, ticker: '2559', market: 'TSE', quantity: 10, avg_cost: 15000, current_price: 16500, realized_pl: 0, total_contributed: 150000, total_withdrawn: 0, total_dividends: 0, parent_investment_id: 'nisa1' },
@@ -261,7 +262,21 @@ const RPC_HANDLERS = {
     const p = body?.p_payload || {};
     if (action === 'list') {
       const month = (p.month || `${MONTH}-01`).slice(0, 7);
+      // Mirrors the SQL exactly: a month with zero items gets seeded once
+      // from the saved template (label only, amount 0) — checked fresh on
+      // every 'list' call, so deleting rows back to zero re-seeds them too
+      // (same accepted low-stakes edge case as the real function).
+      if (!SCRATCH_ITEMS.some(x => x.month === month)) {
+        SCRATCH_TEMPLATE.forEach(t => SCRATCH_ITEMS.push({ id: newId('scr'), column_no: t.column_no, month, label: t.label, amount: 0, sort_order: t.sort_order }));
+      }
       return { columns: SCRATCH_COLUMNS, items: SCRATCH_ITEMS.filter(x => x.month === month) };
+    }
+    if (action === 'save_template') {
+      const month = (p.month || `${MONTH}-01`).slice(0, 7);
+      SCRATCH_TEMPLATE.length = 0;
+      SCRATCH_ITEMS.filter(x => x.month === month && String(x.label || '').trim() !== '')
+        .forEach(x => SCRATCH_TEMPLATE.push({ column_no: x.column_no, label: x.label, sort_order: x.sort_order || 0 }));
+      return { ok: true };
     }
     if (action === 'save_column_name') {
       const col = SCRATCH_COLUMNS.find(x => x.column_no === Number(p.column_no));
@@ -531,9 +546,36 @@ const RPC_HANDLERS = {
   results.push(`  After refresh, renamed column title AND the row's label/amount persisted server-side (not just local DOM state): ${(await page.locator('.scratch-title').first().inputValue()) === 'Chuyển khoản lẻ tẻ' && (await page.locator('.scratch-label').first().inputValue()) === 'Gửi mẹ' && /15,000/.test(await page.locator('.money-column.scratch >> nth=0 >> .money-total strong').textContent())}`);
   const expenseKpiAfter = await expenseKpi.locator('.value').textContent();
   results.push(`  Bảng nháp's ¥15,000 NEVER folds into "Tổng chi tiêu tháng" above (unchanged: ${JSON.stringify(expenseKpiBefore)} → ${JSON.stringify(expenseKpiAfter)}): ${expenseKpiBefore === expenseKpiAfter}`);
-  await page.click('.money-column.scratch >> nth=0 >> button[aria-label="Xóa dòng"]');
+
+  // "Lưu làm mẫu" — save the item NAME ("Gửi mẹ") for reuse, so a month
+  // that's never opened the bảng nháp before auto-fills that same label
+  // with a BLANK amount (0), not the ¥15,000 from this month.
+  await resetToast();
+  await page.click('button:has-text("💾 Lưu tên khoản làm mẫu")');
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(() => results.push('CLICK "Lưu tên khoản làm mẫu": saved - OK')).catch(() => results.push('CLICK "Lưu tên khoản làm mẫu": no toast - FAIL'));
+  // Bảng nháp's open/closed toggle is a device-wide preference (localStorage),
+  // not month-scoped, so it's still open here from earlier — no need to
+  // click the toggle again after switching months.
+  const NEXT_MONTH = addMonths(MONTH, 1);
+  await page.fill('#monthPicker', NEXT_MONTH);
+  await page.waitForTimeout(200);
+  results.push(`  A never-opened month (${NEXT_MONTH}) auto-fills "Gửi mẹ" from the saved mẫu, with amount BLANK (0), not carrying over ¥15,000: ${(await page.locator('.scratch-label').first().inputValue()) === 'Gửi mẹ' && (await page.locator('.scratch-amount').first().inputValue()) === ''}`);
+  await page.fill('#monthPicker', MONTH);
+  await page.waitForTimeout(200);
+
+  // Add a throwaway 2nd row before testing delete: deleting the ONLY row
+  // in a column that has a saved mẫu would immediately trigger the
+  // auto-seed-on-empty behavior above and bring "Gửi mẹ" right back — that
+  // re-seed is the documented, accepted behavior, not what this checks.
+  await page.click('.money-column.scratch >> nth=0 >> button:has-text("＋ Thêm dòng")');
   await page.waitForTimeout(150);
-  results.push(`  "✕" removes the row: ${await page.locator('.money-column.scratch >> nth=0 >> .scratch-row').count() === 0}`);
+  await page.fill('.money-column.scratch >> nth=0 >> .scratch-row >> nth=1 >> .scratch-label', 'Tạm tính');
+  await page.locator('.money-column.scratch >> nth=0 >> .scratch-row >> nth=1 >> .scratch-label').blur();
+  await page.waitForTimeout(100);
+  await page.click('.money-column.scratch >> nth=0 >> .scratch-row >> nth=1 >> button[aria-label="Xóa dòng"]');
+  await page.waitForTimeout(150);
+  const col0Labels = await page.locator('.money-column.scratch >> nth=0 >> .scratch-label').evaluateAll(els => els.map(el => el.value));
+  results.push(`  "✕" removes just that row, leaving "Gửi mẹ" (from the mẫu) intact: ${col0Labels.length === 1 && col0Labels[0] === 'Gửi mẹ'}`);
   await page.click('button:has-text("Ẩn bảng nháp")');
   await page.waitForTimeout(100);
   results.push(`  Toggling again collapses all 4 columns back together: ${await page.locator('.money-column.scratch').count() === 0}`);
