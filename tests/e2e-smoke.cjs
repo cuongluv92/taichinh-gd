@@ -263,15 +263,13 @@ const RPC_HANDLERS = {
     if (action === 'list') {
       const month = (p.month || `${MONTH}-01`).slice(0, 7);
       // Mirrors the SQL exactly: each column seeds itself from the mẫu
-      // independently, checked per (month, column_no) — a column already
-      // touched (real data or an earlier seed) is left alone even if other
-      // columns for the same month are still empty. Idempotent: calling
-      // 'list' again for the same month never duplicates rows. Simple, no
-      // button, no preview state — "Lưu" on this month is what the next
-      // never-touched month shows for real, the moment it's opened.
+      // independently, per (month, column_no) — but ONLY into the ONE
+      // month right after the mẫu's own source_month; a further month
+      // (N+2 or later) stays blank until it gets its own save_template
+      // call. Idempotent: calling 'list' again never duplicates rows.
       const seededCols = new Set(SCRATCH_ITEMS.filter(x => x.month === month).map(x => x.column_no));
       SCRATCH_TEMPLATE.forEach(t => {
-        if (!seededCols.has(t.column_no)) {
+        if (!seededCols.has(t.column_no) && t.source_month && addMonths(t.source_month, 1) === month) {
           SCRATCH_ITEMS.push({ id: newId('scr'), column_no: t.column_no, month, label: t.label, amount: t.amount, sign: t.sign, sort_order: t.sort_order });
         }
       });
@@ -281,7 +279,7 @@ const RPC_HANDLERS = {
       const month = (p.month || `${MONTH}-01`).slice(0, 7);
       SCRATCH_TEMPLATE.length = 0;
       SCRATCH_ITEMS.filter(x => x.month === month && String(x.label || '').trim() !== '')
-        .forEach(x => SCRATCH_TEMPLATE.push({ column_no: x.column_no, label: x.label, amount: x.amount || 0, sign: x.sign === -1 ? -1 : 1, sort_order: x.sort_order || 0 }));
+        .forEach(x => SCRATCH_TEMPLATE.push({ column_no: x.column_no, label: x.label, amount: x.amount || 0, sign: x.sign === -1 ? -1 : 1, sort_order: x.sort_order || 0, source_month: month }));
       return { ok: true };
     }
     if (action === 'save_column_name') {
@@ -590,6 +588,14 @@ const RPC_HANDLERS = {
   await page.evaluate(() => window.refresh());
   await page.waitForTimeout(150);
   results.push(`  ...survives a refresh too (total still 10,000): ${(await page.locator('.scratch-label').first().inputValue()) === 'Gửi mẹ' && /10,000/.test(await page.textContent('.money-column.scratch >> nth=0 >> .money-total strong'))}`);
+  // Scope check: the mẫu only unlocks the ONE month right after it — a
+  // month further ahead stays genuinely blank until IT gets its own "Lưu"
+  // (user's explicit spec: "tháng 11 tự hiện ... tháng 12 chỉ khi nào tôi
+  // nhấn lưu tháng 11 thì tháng 12 mới có").
+  const MONTH_AFTER_NEXT = addMonths(MONTH, 2);
+  await page.fill('#monthPicker', MONTH_AFTER_NEXT);
+  await page.waitForTimeout(200);
+  results.push(`  A month further ahead (${MONTH_AFTER_NEXT}, N+2) stays BLANK — the mẫu only unlocks the ONE month right after it, not every month beyond: ${await page.locator('.money-column.scratch >> nth=0 >> .scratch-row').count() === 0}`);
   await page.fill('#monthPicker', MONTH);
   await page.waitForTimeout(200);
 
