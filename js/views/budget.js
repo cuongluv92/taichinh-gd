@@ -143,9 +143,14 @@ function scratchColumn(no) {
       <button class="mini-btn" type="button" aria-label="Xóa dòng" ${act('deleteScratchItem', x.id)}>✕</button>
     </div>`;
   }).join('');
+  // A column with zero items this month, that has a saved mẫu, offers to
+  // copy the mẫu in — but only on explicit click. Nothing here ever writes
+  // to the database on its own just because the month/column was opened.
+  const hasTemplate = !items.length && (state.scratchTemplates || []).some(t => t.column_no === no);
   return `<section class="card money-column scratch">
     <div class="money-column-head"><input class="scratch-title" type="text" placeholder="Cột ${no}" value="${esc(scratchColumnName(no))}" data-col="${no}"></div>
     <div class="scratch-items">${rows || '<div class="money-empty">Chưa có dòng nào</div>'}</div>
+    ${hasTemplate ? `<button class="btn sm mt-8" type="button" ${act('applyScratchTemplate', no)}>📋 Dùng mẫu tháng trước</button>` : ''}
     <button class="btn sm mt-8" type="button" ${act('addScratchItem', no)}>＋ Thêm dòng</button>
     <div class="money-total"><span>Tổng</span><strong>${money(total)}</strong></div>
   </section>`;
@@ -158,7 +163,7 @@ function renderScratchBoard() {
       <button class="btn" type="button" ${act('toggleScratchBoard')}>${open ? '▾ Ẩn bảng nháp' : '▸ Hiện bảng nháp (tính nhanh, không tính vào phân tích)'}</button>
       ${open ? `<button class="btn sm" type="button" ${act('saveScratchTemplate')}>💾 Lưu</button>` : ''}
     </div>
-    ${open ? `<p class="note mt-6">Kỳ đầu mỗi cột là mốc (luôn +), các dòng sau có nút +/− để cộng hoặc trừ vào mốc đó. "Lưu" giữ lại tên VÀ số tiền hiện tại làm mẫu — tháng nào chưa từng mở bảng nháp sẽ tự điền sẵn y hệt, chỉnh lại nếu tháng đó khác.</p>
+    ${open ? `<p class="note mt-6">Kỳ đầu mỗi cột là mốc (luôn +), các dòng sau có nút +/− để cộng hoặc trừ vào mốc đó. "Lưu" giữ lại tên VÀ số tiền hiện tại làm mẫu. Tháng nào chưa nhập gì sẽ có nút "📋 Dùng mẫu" ở cột trống — chỉ điền và lưu khi bạn tự bấm, không tự động lưu gì cả.</p>
     <div class="money-board mt-10">${[1, 2, 3, 4].map(scratchColumn).join('')}</div>` : ''}
   </div>`;
 }
@@ -171,6 +176,10 @@ function toggleScratchBoard() {
   try { open = localStorage.getItem(SCRATCH_OPEN_STORE) === '1'; } catch {}
   try { localStorage.setItem(SCRATCH_OPEN_STORE, open ? '0' : '1'); } catch {}
   render();
+}
+async function applyScratchTemplate(columnNo) {
+  try { await api.scratch('apply_template', { column_no: columnNo, month: monthDate(state.month) }); await window.refresh(); }
+  catch (e) { toast(e.message, true); }
 }
 async function addScratchItem(columnNo) {
   try { await api.scratch('save_item', { column_no: columnNo, month: monthDate(state.month), label: '', amount: 0, sign: 1 }); await window.refresh(); }
@@ -228,4 +237,4 @@ function renderBudget() {
   ${renderScratchBoard()}`;
 }
 
-Object.assign(window, { renderBudget, openCreditColumnManager, toggleScratchBoard, addScratchItem, deleteScratchItem, saveScratchTemplate, wireBudgetView });
+Object.assign(window, { renderBudget, openCreditColumnManager, toggleScratchBoard, addScratchItem, applyScratchTemplate, deleteScratchItem, saveScratchTemplate, wireBudgetView });

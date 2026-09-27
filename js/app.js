@@ -42,6 +42,7 @@ async function loadExtras(month = state.month) {
   state.recurringAccountItems = recurring?.items || [];
   state.scratchColumns = scratch?.columns || [];
   state.scratchItems = scratch?.items || [];
+  state.scratchTemplates = scratch?.templates || [];
   // Per-investment event history — small dataset for a personal app, needed
   // (not just today's totals) so the Tài sản history chart can show an
   // accurate point-in-time invested value for past months.
