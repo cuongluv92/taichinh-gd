@@ -78,7 +78,21 @@ async function boot() {
     navigate(VIEW_META[savedView] ? savedView : 'budget');
   } catch (e) {
     console.error(e);
-    localStorage.removeItem(KEY_STORE); localStorage.removeItem(DEVICE_TOKEN_STORE); state.key = '';
+    // Only a genuine auth failure (wrong key / this device got revoked)
+    // should force the user to retype the key from scratch. Any other
+    // error here (a transient network blip, a bug in one of the
+    // loadExtras calls) used to wipe the saved key unconditionally —
+    // which meant one bad request could lock someone out until they
+    // remembered their own key again, on every single reload. Keep the
+    // key on file for anything else and pre-fill the unlock field with
+    // it, so retrying is one click on "Mở khóa", not re-typing blind.
+    const isAuthFailure = /khóa gia đình không đúng|đã bị đăng xuất/i.test(e.message || '');
+    if (isAuthFailure) {
+      localStorage.removeItem(KEY_STORE); localStorage.removeItem(DEVICE_TOKEN_STORE); state.key = '';
+    } else {
+      const unlockInput = $('#unlockKey');
+      if (unlockInput) unlockInput.value = state.key;
+    }
     setLoading(false); $('#unlock').classList.remove('hidden'); toast(e.message, true);
     return;
   }

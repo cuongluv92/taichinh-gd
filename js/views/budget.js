@@ -119,14 +119,24 @@ function openCreditColumnManager() {
 // ---------------------------------------------------------------------
 function scratchItemsFor(no) { return (state.scratchItems || []).filter(x => x.column_no === no); }
 function scratchColumnName(no) { return (state.scratchColumns || []).find(x => x.column_no === no)?.name || ''; }
+function scratchRowTotal(row) { return Number(row.dataset.sign || 1) * n(row.querySelector('.scratch-amount').value); }
 function scratchColumn(no) {
   const items = scratchItemsFor(no);
-  const total = items.reduce((s, x) => s + n(x.amount), 0);
-  const rows = items.map(x => `<div class="scratch-row" data-id="${esc(x.id)}" data-col="${no}">
+  const total = items.reduce((s, x, i) => s + (i === 0 ? 1 : (x.sign === -1 ? -1 : 1)) * n(x.amount), 0);
+  const rows = items.map((x, i) => {
+    // First row in the column is the baseline — always +, no toggle. Every
+    // other row gets a +/− toggle; the column total nets them against it.
+    const sign = i === 0 ? 1 : (x.sign === -1 ? -1 : 1);
+    const signBtn = i === 0
+      ? `<span class="scratch-sign-spacer" aria-hidden="true"></span>`
+      : `<button type="button" class="mini-btn scratch-sign" aria-label="Đổi dấu cộng/trừ">${sign === -1 ? '−' : '+'}</button>`;
+    return `<div class="scratch-row" data-id="${esc(x.id)}" data-col="${no}" data-sign="${sign}">
+      ${signBtn}
       <input class="scratch-label" type="text" placeholder="Tên khoản" value="${esc(x.label || '')}">
       <input class="scratch-amount" type="number" step="1" placeholder="0" value="${x.amount ? esc(x.amount) : ''}">
       <button class="mini-btn" type="button" aria-label="Xóa dòng" ${act('deleteScratchItem', x.id)}>✕</button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
   return `<section class="card money-column scratch">
     <div class="money-column-head"><input class="scratch-title" type="text" placeholder="Cột ${no}" value="${esc(scratchColumnName(no))}" data-col="${no}"></div>
     <div class="scratch-items">${rows || '<div class="money-empty">Chưa có dòng nào</div>'}</div>
@@ -140,14 +150,14 @@ function renderScratchBoard() {
   return `<div class="mt-16">
     <div class="row wrap">
       <button class="btn" type="button" ${act('toggleScratchBoard')}>${open ? '▾ Ẩn bảng nháp' : '▸ Hiện bảng nháp (tính nhanh, không tính vào phân tích)'}</button>
-      ${open ? `<button class="btn sm" type="button" ${act('saveScratchTemplate')}>💾 Lưu tên khoản làm mẫu cho tháng sau</button>` : ''}
+      ${open ? `<button class="btn sm" type="button" ${act('saveScratchTemplate')}>💾 Lưu</button>` : ''}
     </div>
-    ${open ? `<p class="note mt-6">Lưu mẫu chỉ giữ lại TÊN các khoản (không giữ số tiền) — tháng nào chưa từng mở bảng nháp sẽ tự điền sẵn đúng các tên đó, số tiền để trống chờ bạn gõ lại.</p>
+    ${open ? `<p class="note mt-6">Kỳ đầu mỗi cột là mốc (luôn +), các dòng sau có nút +/− để cộng hoặc trừ vào mốc đó. "Lưu" giữ lại tên VÀ số tiền hiện tại làm mẫu — tháng nào chưa từng mở bảng nháp sẽ tự điền sẵn y hệt, chỉnh lại nếu tháng đó khác.</p>
     <div class="money-board mt-10">${[1, 2, 3, 4].map(scratchColumn).join('')}</div>` : ''}
   </div>`;
 }
 async function saveScratchTemplate() {
-  try { await api.scratch('save_template', { month: monthDate(state.month) }); toast('Đã lưu làm mẫu — các tháng chưa mở bảng nháp sẽ tự điền tên này'); }
+  try { await api.scratch('save_template', { month: monthDate(state.month) }); toast('Đã lưu — tháng chưa mở bảng nháp sẽ tự điền y hệt'); }
   catch (e) { toast(e.message, true); }
 }
 function toggleScratchBoard() {
@@ -157,7 +167,7 @@ function toggleScratchBoard() {
   render();
 }
 async function addScratchItem(columnNo) {
-  try { await api.scratch('save_item', { column_no: columnNo, month: monthDate(state.month), label: '', amount: 0 }); await window.refresh(); }
+  try { await api.scratch('save_item', { column_no: columnNo, month: monthDate(state.month), label: '', amount: 0, sign: 1 }); await window.refresh(); }
   catch (e) { toast(e.message, true); }
 }
 async function deleteScratchItem(id) {
@@ -165,17 +175,25 @@ async function deleteScratchItem(id) {
   catch (e) { toast(e.message, true); }
 }
 function wireBudgetView() {
+  const recomputeTotal = section => {
+    const total = [...section.querySelectorAll('.scratch-row')].reduce((s, row) => s + scratchRowTotal(row), 0);
+    section.querySelector('.money-total strong').textContent = money(total);
+  };
   $$('.scratch-row').forEach(row => {
     const id = row.dataset.id, col = Number(row.dataset.col);
     const labelEl = row.querySelector('.scratch-label'), amountEl = row.querySelector('.scratch-amount');
-    const save = () => api.scratch('save_item', { id, column_no: col, label: labelEl.value, amount: n(amountEl.value) }).catch(e => toast(e.message, true));
+    const save = () => api.scratch('save_item', { id, column_no: col, label: labelEl.value, amount: n(amountEl.value), sign: Number(row.dataset.sign) }).catch(e => toast(e.message, true));
     labelEl.addEventListener('blur', save);
     amountEl.addEventListener('blur', save);
     // Live total feedback while typing, before the blur-save round trip.
-    amountEl.addEventListener('input', () => {
-      const section = row.closest('.money-column');
-      const total = [...section.querySelectorAll('.scratch-amount')].reduce((s, el) => s + n(el.value), 0);
-      section.querySelector('.money-total strong').textContent = money(total);
+    amountEl.addEventListener('input', () => recomputeTotal(row.closest('.money-column')));
+    row.querySelector('.scratch-sign')?.addEventListener('click', () => {
+      const btn = row.querySelector('.scratch-sign');
+      const newSign = Number(row.dataset.sign) === 1 ? -1 : 1;
+      row.dataset.sign = String(newSign);
+      btn.textContent = newSign === -1 ? '−' : '+';
+      recomputeTotal(row.closest('.money-column'));
+      save();
     });
   });
   $$('.scratch-title').forEach(input => {

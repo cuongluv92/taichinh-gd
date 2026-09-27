@@ -263,11 +263,12 @@ const RPC_HANDLERS = {
     if (action === 'list') {
       const month = (p.month || `${MONTH}-01`).slice(0, 7);
       // Mirrors the SQL exactly: a month with zero items gets seeded once
-      // from the saved template (label only, amount 0) — checked fresh on
-      // every 'list' call, so deleting rows back to zero re-seeds them too
-      // (same accepted low-stakes edge case as the real function).
+      // from the saved template (label, amount AND sign all copied) —
+      // checked fresh on every 'list' call, so deleting rows back to zero
+      // re-seeds them too (same accepted low-stakes edge case as the real
+      // function).
       if (!SCRATCH_ITEMS.some(x => x.month === month)) {
-        SCRATCH_TEMPLATE.forEach(t => SCRATCH_ITEMS.push({ id: newId('scr'), column_no: t.column_no, month, label: t.label, amount: 0, sort_order: t.sort_order }));
+        SCRATCH_TEMPLATE.forEach(t => SCRATCH_ITEMS.push({ id: newId('scr'), column_no: t.column_no, month, label: t.label, amount: t.amount, sign: t.sign, sort_order: t.sort_order }));
       }
       return { columns: SCRATCH_COLUMNS, items: SCRATCH_ITEMS.filter(x => x.month === month) };
     }
@@ -275,7 +276,7 @@ const RPC_HANDLERS = {
       const month = (p.month || `${MONTH}-01`).slice(0, 7);
       SCRATCH_TEMPLATE.length = 0;
       SCRATCH_ITEMS.filter(x => x.month === month && String(x.label || '').trim() !== '')
-        .forEach(x => SCRATCH_TEMPLATE.push({ column_no: x.column_no, label: x.label, sort_order: x.sort_order || 0 }));
+        .forEach(x => SCRATCH_TEMPLATE.push({ column_no: x.column_no, label: x.label, amount: x.amount || 0, sign: x.sign === -1 ? -1 : 1, sort_order: x.sort_order || 0 }));
       return { ok: true };
     }
     if (action === 'save_column_name') {
@@ -284,13 +285,14 @@ const RPC_HANDLERS = {
       return { ok: true };
     }
     if (action === 'save_item') {
+      const sign = Number(p.sign) === -1 ? -1 : 1;
       if (p.id) {
         const row = SCRATCH_ITEMS.find(x => x.id === p.id);
-        if (row) { row.label = p.label || ''; row.amount = Number(p.amount || 0); }
+        if (row) { row.label = p.label || ''; row.amount = Number(p.amount || 0); row.sign = sign; }
         return { ok: true, id: p.id };
       }
       const id = newId('scr');
-      SCRATCH_ITEMS.push({ id, column_no: Number(p.column_no), month: (p.month || `${MONTH}-01`).slice(0, 7), label: p.label || '', amount: Number(p.amount || 0) });
+      SCRATCH_ITEMS.push({ id, column_no: Number(p.column_no), month: (p.month || `${MONTH}-01`).slice(0, 7), label: p.label || '', amount: Number(p.amount || 0), sign });
       return { ok: true, id };
     }
     if (action === 'delete_item') { const i = SCRATCH_ITEMS.findIndex(x => x.id === p.id); if (i >= 0) SCRATCH_ITEMS.splice(i, 1); return { ok: true }; }
@@ -547,35 +549,52 @@ const RPC_HANDLERS = {
   const expenseKpiAfter = await expenseKpi.locator('.value').textContent();
   results.push(`  Bảng nháp's ¥15,000 NEVER folds into "Tổng chi tiêu tháng" above (unchanged: ${JSON.stringify(expenseKpiBefore)} → ${JSON.stringify(expenseKpiAfter)}): ${expenseKpiBefore === expenseKpiAfter}`);
 
-  // "Lưu làm mẫu" — save the item NAME ("Gửi mẹ") for reuse, so a month
-  // that's never opened the bảng nháp before auto-fills that same label
-  // with a BLANK amount (0), not the ¥15,000 from this month.
+  // First row (index 0) is the baseline — always +, no sign toggle. A 2nd
+  // row gets a +/− toggle that nets its amount against the baseline.
+  results.push(`  First row (baseline) has NO +/− toggle: ${await page.locator('.money-column.scratch >> nth=0 >> .scratch-row >> nth=0 >> .scratch-sign').count() === 0}`);
+  await page.click('.money-column.scratch >> nth=0 >> button:has-text("＋ Thêm dòng")');
+  await page.waitForTimeout(150);
+  await page.fill('.money-column.scratch >> nth=0 >> .scratch-row >> nth=1 >> .scratch-label', 'Trừ tạm');
+  await page.fill('.money-column.scratch >> nth=0 >> .scratch-row >> nth=1 >> .scratch-amount', '5000');
+  results.push(`  2nd row has a +/− toggle, defaults to "+": ${(await page.locator('.money-column.scratch >> nth=0 >> .scratch-row >> nth=1 >> .scratch-sign').textContent()) === '+'}`);
+  results.push(`  Total is additive by default (15,000 + 5,000 = 20,000): ${/20,000/.test(await page.textContent('.money-column.scratch >> nth=0 >> .money-total strong'))}`);
+  await page.click('.money-column.scratch >> nth=0 >> .scratch-row >> nth=1 >> .scratch-sign');
+  await page.waitForTimeout(100);
+  results.push(`  Clicking the toggle flips it to "−" and total nets to 10,000 (15,000 − 5,000), live: ${(await page.locator('.money-column.scratch >> nth=0 >> .scratch-row >> nth=1 >> .scratch-sign').textContent()) === '−' && /10,000/.test(await page.textContent('.money-column.scratch >> nth=0 >> .money-total strong'))}`);
+  await page.locator('.money-column.scratch >> nth=0 >> .scratch-row >> nth=1 >> .scratch-label').blur();
+  await page.waitForTimeout(100);
+  await page.evaluate(() => window.refresh());
+  await page.waitForTimeout(150);
+  results.push(`  The "−" sign persisted server-side after refresh (total still 10,000): ${/10,000/.test(await page.textContent('.money-column.scratch >> nth=0 >> .money-total strong'))}`);
+
+  // "Lưu" — save name AND amount AND sign for reuse, so a month that's
+  // never opened the bảng nháp before auto-fills the exact same rows.
   await resetToast();
-  await page.click('button:has-text("💾 Lưu tên khoản làm mẫu")');
-  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(() => results.push('CLICK "Lưu tên khoản làm mẫu": saved - OK')).catch(() => results.push('CLICK "Lưu tên khoản làm mẫu": no toast - FAIL'));
+  await page.click('button:has-text("💾 Lưu")');
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).then(() => results.push('CLICK "💾 Lưu": saved - OK')).catch(() => results.push('CLICK "💾 Lưu": no toast - FAIL'));
   // Bảng nháp's open/closed toggle is a device-wide preference (localStorage),
   // not month-scoped, so it's still open here from earlier — no need to
   // click the toggle again after switching months.
   const NEXT_MONTH = addMonths(MONTH, 1);
   await page.fill('#monthPicker', NEXT_MONTH);
   await page.waitForTimeout(200);
-  results.push(`  A never-opened month (${NEXT_MONTH}) auto-fills "Gửi mẹ" from the saved mẫu, with amount BLANK (0), not carrying over ¥15,000: ${(await page.locator('.scratch-label').first().inputValue()) === 'Gửi mẹ' && (await page.locator('.scratch-amount').first().inputValue()) === ''}`);
+  results.push(`  A never-opened month (${NEXT_MONTH}) auto-fills "Gửi mẹ" AND "Trừ tạm" with the SAME amounts/sign as the mẫu (total still 10,000), not blank: ${(await page.locator('.scratch-label').first().inputValue()) === 'Gửi mẹ' && (await page.locator('.scratch-amount').first().inputValue()) === '15000' && /10,000/.test(await page.textContent('.money-column.scratch >> nth=0 >> .money-total strong'))}`);
   await page.fill('#monthPicker', MONTH);
   await page.waitForTimeout(200);
 
-  // Add a throwaway 2nd row before testing delete: deleting the ONLY row
-  // in a column that has a saved mẫu would immediately trigger the
-  // auto-seed-on-empty behavior above and bring "Gửi mẹ" right back — that
-  // re-seed is the documented, accepted behavior, not what this checks.
+  // Add a throwaway 3rd row before testing delete: deleting down to zero
+  // rows in a column that has a saved mẫu would immediately trigger the
+  // auto-seed-on-empty behavior above and bring both rows right back —
+  // that re-seed is the documented, accepted behavior, not what this checks.
   await page.click('.money-column.scratch >> nth=0 >> button:has-text("＋ Thêm dòng")');
   await page.waitForTimeout(150);
-  await page.fill('.money-column.scratch >> nth=0 >> .scratch-row >> nth=1 >> .scratch-label', 'Tạm tính');
-  await page.locator('.money-column.scratch >> nth=0 >> .scratch-row >> nth=1 >> .scratch-label').blur();
+  await page.fill('.money-column.scratch >> nth=0 >> .scratch-row >> nth=2 >> .scratch-label', 'Tạm tính');
+  await page.locator('.money-column.scratch >> nth=0 >> .scratch-row >> nth=2 >> .scratch-label').blur();
   await page.waitForTimeout(100);
-  await page.click('.money-column.scratch >> nth=0 >> .scratch-row >> nth=1 >> button[aria-label="Xóa dòng"]');
+  await page.click('.money-column.scratch >> nth=0 >> .scratch-row >> nth=2 >> button[aria-label="Xóa dòng"]');
   await page.waitForTimeout(150);
   const col0Labels = await page.locator('.money-column.scratch >> nth=0 >> .scratch-label').evaluateAll(els => els.map(el => el.value));
-  results.push(`  "✕" removes just that row, leaving "Gửi mẹ" (from the mẫu) intact: ${col0Labels.length === 1 && col0Labels[0] === 'Gửi mẹ'}`);
+  results.push(`  "✕" removes just that row, leaving "Gửi mẹ" + "Trừ tạm" intact: ${JSON.stringify(col0Labels) === JSON.stringify(['Gửi mẹ', 'Trừ tạm'])}`);
   await page.click('button:has-text("Ẩn bảng nháp")');
   await page.waitForTimeout(100);
   results.push(`  Toggling again collapses all 4 columns back together: ${await page.locator('.money-column.scratch').count() === 0}`);
