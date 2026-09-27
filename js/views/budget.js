@@ -138,9 +138,17 @@ function renderScratchBoard() {
   let open = false;
   try { open = localStorage.getItem(SCRATCH_OPEN_STORE) === '1'; } catch {}
   return `<div class="mt-16">
-    <button class="btn" type="button" ${act('toggleScratchBoard')}>${open ? '▾ Ẩn bảng nháp' : '▸ Hiện bảng nháp (tính nhanh, không tính vào phân tích)'}</button>
-    ${open ? `<div class="money-board mt-10">${[1, 2, 3, 4].map(scratchColumn).join('')}</div>` : ''}
+    <div class="row wrap">
+      <button class="btn" type="button" ${act('toggleScratchBoard')}>${open ? '▾ Ẩn bảng nháp' : '▸ Hiện bảng nháp (tính nhanh, không tính vào phân tích)'}</button>
+      ${open ? `<button class="btn sm" type="button" ${act('saveScratchTemplate')}>💾 Lưu tên khoản làm mẫu cho tháng sau</button>` : ''}
+    </div>
+    ${open ? `<p class="note mt-6">Lưu mẫu chỉ giữ lại TÊN các khoản (không giữ số tiền) — tháng nào chưa từng mở bảng nháp sẽ tự điền sẵn đúng các tên đó, số tiền để trống chờ bạn gõ lại.</p>
+    <div class="money-board mt-10">${[1, 2, 3, 4].map(scratchColumn).join('')}</div>` : ''}
   </div>`;
+}
+async function saveScratchTemplate() {
+  try { await api.scratch('save_template', { month: monthDate(state.month) }); toast('Đã lưu làm mẫu — các tháng chưa mở bảng nháp sẽ tự điền tên này'); }
+  catch (e) { toast(e.message, true); }
 }
 function toggleScratchBoard() {
   let open = false;
@@ -188,4 +196,4 @@ function renderBudget() {
   ${renderScratchBoard()}`;
 }
 
-Object.assign(window, { renderBudget, openCreditColumnManager, toggleScratchBoard, addScratchItem, deleteScratchItem, wireBudgetView });
+Object.assign(window, { renderBudget, openCreditColumnManager, toggleScratchBoard, addScratchItem, deleteScratchItem, saveScratchTemplate, wireBudgetView });
