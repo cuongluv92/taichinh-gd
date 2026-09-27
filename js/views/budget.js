@@ -117,7 +117,15 @@ function openCreditColumnManager() {
 // Collapsed by default — one single toggle hides/shows all 4 columns
 // together, there's no per-column hide.
 // ---------------------------------------------------------------------
-function scratchItemsFor(no) { return (state.scratchItems || []).filter(x => x.column_no === no); }
+function scratchItemsFor(no) {
+  const real = (state.scratchItems || []).filter(x => x.column_no === no);
+  if (real.length) return real;
+  // A column with zero real items this month auto-shows last month's mẫu
+  // as a live preview (id left blank) — nothing is written to the database
+  // just from viewing it. It only actually saves once a row is edited
+  // (existing blur-save below), same as any other row.
+  return (state.scratchTemplates || []).filter(t => t.column_no === no).map(t => ({ ...t, id: '' }));
+}
 function scratchColumnName(no) { return (state.scratchColumns || []).find(x => x.column_no === no)?.name || ''; }
 // A plain type="number" input can't show grouping separators while typing —
 // this renders/reads `.scratch-amount` as free text with live ","-grouping
@@ -136,21 +144,16 @@ function scratchColumn(no) {
     const signBtn = i === 0
       ? `<span class="scratch-sign-spacer" aria-hidden="true"></span>`
       : `<button type="button" class="mini-btn scratch-sign" aria-label="Đổi dấu cộng/trừ">${sign === -1 ? '−' : '+'}</button>`;
-    return `<div class="scratch-row" data-id="${esc(x.id)}" data-col="${no}" data-sign="${sign}">
+    return `<div class="scratch-row" data-id="${esc(x.id)}" data-col="${no}" data-sign="${sign}" data-preview-index="${i}">
       <input class="scratch-label" type="text" placeholder="Tên khoản" value="${esc(x.label || '')}">
       ${signBtn}
       <input class="scratch-amount" type="text" inputmode="numeric" placeholder="0" value="${esc(scratchAmountInputValue(x.amount))}">
       <button class="mini-btn" type="button" aria-label="Xóa dòng" ${act('deleteScratchItem', x.id)}>✕</button>
     </div>`;
   }).join('');
-  // A column with zero items this month, that has a saved mẫu, offers to
-  // copy the mẫu in — but only on explicit click. Nothing here ever writes
-  // to the database on its own just because the month/column was opened.
-  const hasTemplate = !items.length && (state.scratchTemplates || []).some(t => t.column_no === no);
   return `<section class="card money-column scratch">
     <div class="money-column-head"><input class="scratch-title" type="text" placeholder="Cột ${no}" value="${esc(scratchColumnName(no))}" data-col="${no}"></div>
     <div class="scratch-items">${rows || '<div class="money-empty">Chưa có dòng nào</div>'}</div>
-    ${hasTemplate ? `<button class="btn sm mt-8" type="button" ${act('applyScratchTemplate', no)}>📋 Dùng mẫu tháng trước</button>` : ''}
     <button class="btn sm mt-8" type="button" ${act('addScratchItem', no)}>＋ Thêm dòng</button>
     <div class="money-total"><span>Tổng</span><strong>${money(total)}</strong></div>
   </section>`;
@@ -163,7 +166,7 @@ function renderScratchBoard() {
       <button class="btn" type="button" ${act('toggleScratchBoard')}>${open ? '▾ Ẩn bảng nháp' : '▸ Hiện bảng nháp (tính nhanh, không tính vào phân tích)'}</button>
       ${open ? `<button class="btn sm" type="button" ${act('saveScratchTemplate')}>💾 Lưu</button>` : ''}
     </div>
-    ${open ? `<p class="note mt-6">Kỳ đầu mỗi cột là mốc (luôn +), các dòng sau có nút +/− để cộng hoặc trừ vào mốc đó. "Lưu" giữ lại tên VÀ số tiền hiện tại làm mẫu. Tháng nào chưa nhập gì sẽ có nút "📋 Dùng mẫu" ở cột trống — chỉ điền và lưu khi bạn tự bấm, không tự động lưu gì cả.</p>
+    ${open ? `<p class="note mt-6">Kỳ đầu mỗi cột là mốc (luôn +), các dòng sau có nút +/− để cộng hoặc trừ vào mốc đó. "Lưu" giữ lại tên VÀ số tiền hiện tại làm mẫu — tháng sau sẽ tự hiện y hệt, tháng sau nữa lại theo mẫu mới nhất bạn đã lưu. Tự hiện chỉ để xem/sửa — dòng nào bạn không đụng vào thì không lưu gì cả, đụng vào (kể cả bấm +/−) thì dòng đó lưu ngay.</p>
     <div class="money-board mt-10">${[1, 2, 3, 4].map(scratchColumn).join('')}</div>` : ''}
   </div>`;
 }
@@ -177,17 +180,43 @@ function toggleScratchBoard() {
   try { localStorage.setItem(SCRATCH_OPEN_STORE, open ? '0' : '1'); } catch {}
   render();
 }
-async function applyScratchTemplate(columnNo) {
-  try { await api.scratch('apply_template', { column_no: columnNo, month: monthDate(state.month) }); await window.refresh(); }
-  catch (e) { toast(e.message, true); }
-}
 async function addScratchItem(columnNo) {
-  try { await api.scratch('save_item', { column_no: columnNo, month: monthDate(state.month), label: '', amount: 0, sign: 1 }); await window.refresh(); }
-  catch (e) { toast(e.message, true); }
+  try {
+    // The column may currently be showing last month's mẫu as an unsaved
+    // preview (scratchItemsFor's fallback) — commit those rows for real
+    // first, so adding a blank row doesn't wipe the preview out from under
+    // it (a bare save_item would otherwise make this column non-empty with
+    // just the one new blank row, and the preview never shows again).
+    const hasReal = (state.scratchItems || []).some(x => x.column_no === columnNo);
+    const hasTemplate = (state.scratchTemplates || []).some(t => t.column_no === columnNo);
+    if (!hasReal && hasTemplate) await api.scratch('apply_template', { column_no: columnNo, month: monthDate(state.month) });
+    await api.scratch('save_item', { column_no: columnNo, month: monthDate(state.month), label: '', amount: 0, sign: 1 });
+    await window.refresh();
+  } catch (e) { toast(e.message, true); }
 }
 async function deleteScratchItem(id) {
   try { await api.scratch('delete_item', { id }); await window.refresh(); }
   catch (e) { toast(e.message, true); }
+}
+// Touching ANY one row of a still-preview column (mẫu shown but not yet
+// saved) must commit the WHOLE column at once, not just that one row —
+// otherwise the column stops being "empty" after that single insert, and
+// the mẫu's OTHER rows silently vanish on the next reload instead of ever
+// getting saved. apply_template inserts all of the column's mẫu rows in
+// one shot; the follow-up 'list' re-binds every rendered row in that
+// column to its new real id (matched by mẫu order) without touching
+// whatever the user is mid-typing in any of their input fields.
+async function commitPreviewColumn(col) {
+  await api.scratch('apply_template', { column_no: col, month: monthDate(state.month) });
+  const fresh = await api.scratch('list', { month: monthDate(state.month) });
+  state.scratchItems = fresh.items || [];
+  state.scratchTemplates = fresh.templates || [];
+  const realForCol = state.scratchItems.filter(x => x.column_no === col).sort((a, b) => a.sort_order - b.sort_order);
+  $$('.scratch-row').forEach(row => {
+    if (Number(row.dataset.col) !== col) return;
+    const match = realForCol[Number(row.dataset.previewIndex)];
+    if (match) row.dataset.id = match.id;
+  });
 }
 function wireBudgetView() {
   const recomputeTotal = section => {
@@ -195,9 +224,21 @@ function wireBudgetView() {
     section.querySelector('.money-total strong').textContent = money(total);
   };
   $$('.scratch-row').forEach(row => {
-    const id = row.dataset.id, col = Number(row.dataset.col);
+    const col = Number(row.dataset.col);
     const labelEl = row.querySelector('.scratch-label'), amountEl = row.querySelector('.scratch-amount');
-    const save = () => api.scratch('save_item', { id, column_no: col, label: labelEl.value, amount: scratchAmountValue(amountEl), sign: Number(row.dataset.sign) }).catch(e => toast(e.message, true));
+    // Reads row.dataset.id live (not captured once) — a previewed row starts
+    // with no id, so its first save commits the whole column (see above);
+    // the resulting id is stashed back onto the row so the row's OTHER
+    // field (label vs. amount) saves as a plain update afterwards instead
+    // of re-committing or inserting a 2nd duplicate row.
+    const save = () => {
+      const isPreview = row.dataset.id === '' && !(state.scratchItems || []).some(x => x.column_no === col);
+      const commit = isPreview ? commitPreviewColumn(col) : Promise.resolve();
+      return commit
+        .then(() => api.scratch('save_item', { id: row.dataset.id, column_no: col, label: labelEl.value, amount: scratchAmountValue(amountEl), sign: Number(row.dataset.sign) }))
+        .then(r => { if (r?.id) row.dataset.id = r.id; })
+        .catch(e => toast(e.message, true));
+    };
     labelEl.addEventListener('blur', save);
     amountEl.addEventListener('blur', save);
     // Live total feedback while typing, before the blur-save round trip —
@@ -237,4 +278,4 @@ function renderBudget() {
   ${renderScratchBoard()}`;
 }
 
-Object.assign(window, { renderBudget, openCreditColumnManager, toggleScratchBoard, addScratchItem, applyScratchTemplate, deleteScratchItem, saveScratchTemplate, wireBudgetView });
+Object.assign(window, { renderBudget, openCreditColumnManager, toggleScratchBoard, addScratchItem, deleteScratchItem, saveScratchTemplate, wireBudgetView });

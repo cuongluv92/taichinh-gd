@@ -262,12 +262,14 @@ const RPC_HANDLERS = {
     const p = body?.p_payload || {};
     if (action === 'list') {
       const month = (p.month || `${MONTH}-01`).slice(0, 7);
-      // Mirrors the SQL exactly: 'list' never writes anything anymore — it
-      // just hands back the saved mẫu alongside real items, so the frontend
-      // can offer a "Dùng mẫu" button per empty column. Nothing is inserted
-      // into SCRATCH_ITEMS until the user explicitly clicks that button
-      // (see 'apply_template' below) — fixes user-reported "tự lưu hết các
-      // tháng" (auto-saving into every month without asking).
+      // Mirrors the SQL exactly: 'list' never writes anything — it just
+      // hands back the saved mẫu alongside real items. The frontend shows
+      // an empty column's mẫu as a live, auto-shown PREVIEW (no button);
+      // nothing lands in SCRATCH_ITEMS until a row is actually touched,
+      // which goes through 'apply_template' (whole column, atomically) or
+      // plain 'save_item' — fixes user-reported "tự lưu hết các tháng"
+      // (auto-saving into every month without asking) while still letting
+      // next month "tự hiện" the moment this month's mẫu is saved.
       return { columns: SCRATCH_COLUMNS, items: SCRATCH_ITEMS.filter(x => x.month === month), templates: SCRATCH_TEMPLATE };
     }
     if (action === 'apply_template') {
@@ -574,11 +576,10 @@ const RPC_HANDLERS = {
   results.push(`  The "−" sign persisted server-side after refresh (total still 10,000): ${/10,000/.test(await page.textContent('.money-column.scratch >> nth=0 >> .money-total strong'))}`);
 
   // "Lưu" — save name AND amount AND sign for reuse as a mẫu. Per user
-  // feedback, opening a never-visited month must NEVER silently write mẫu
-  // data into the database on its own ("tôi không bao giờ bảo bạn tự lưu
-  // hết các tháng như thế ... chỉ khi tôi nhấn lưu thì mới lưu chứ") — it
-  // only offers a "📋 Dùng mẫu" button per empty column, applied (and thus
-  // actually saved) only on explicit click.
+  // request: the NEXT month auto-shows that mẫu immediately, no button to
+  // click — but it's only a PREVIEW until a row is actually touched, so
+  // merely opening/looking at the month never writes anything on its own
+  // ("chỉ khi tôi nhấn lưu thì mới lưu chứ").
   await resetToast();
   await page.click('button:has-text("💾 Lưu")');
   await page.waitForSelector('#toast.show', { timeout: 1500 }).then(() => results.push('CLICK "💾 Lưu": saved - OK')).catch(() => results.push('CLICK "💾 Lưu": no toast - FAIL'));
@@ -588,23 +589,29 @@ const RPC_HANDLERS = {
   const NEXT_MONTH = addMonths(MONTH, 1);
   await page.fill('#monthPicker', NEXT_MONTH);
   await page.waitForTimeout(200);
-  results.push(`  A never-opened month (${NEXT_MONTH}) stays BLANK — no auto-fill, nothing written just from opening it: ${await page.locator('.money-column.scratch >> nth=0 >> .scratch-row').count() === 0 && await page.locator('.money-column.scratch >> nth=0 >> .money-empty').count() === 1}`);
-  results.push(`  ...and instead offers a "📋 Dùng mẫu" button on that empty column: ${await page.locator('.money-column.scratch >> nth=0 >> button:has-text("Dùng mẫu")').count() === 1}`);
-  await page.click('.money-column.scratch >> nth=0 >> button:has-text("Dùng mẫu")');
-  await page.waitForTimeout(150);
-  results.push(`  Clicking "Dùng mẫu" copies "Gửi mẹ" AND "Trừ tạm" in with the SAME amounts/sign as the mẫu (total 10,000), only now that it was explicitly asked for: ${(await page.locator('.scratch-label').first().inputValue()) === 'Gửi mẹ' && (await page.locator('.scratch-amount').first().inputValue()) === '15,000' && /10,000/.test(await page.textContent('.money-column.scratch >> nth=0 >> .money-total strong'))}`);
+  results.push(`  A never-opened month (${NEXT_MONTH}) auto-shows the mẫu right away, no button needed ("Gửi mẹ"/"Trừ tạm", total 10,000): ${(await page.locator('.scratch-label').first().inputValue()) === 'Gửi mẹ' && /10,000/.test(await page.textContent('.money-column.scratch >> nth=0 >> .money-total strong'))}`);
+  results.push(`  ...but it's still just a PREVIEW so far — nothing written to the database from merely viewing it: ${!SCRATCH_ITEMS.some(x => x.month === NEXT_MONTH)}`);
+  // .blur() alone is a no-op unless the element is actually focused first —
+  // click it to focus, then blur, to really trigger the save handler.
+  await page.click('.money-column.scratch >> nth=0 >> .scratch-row >> nth=0 >> .scratch-amount');
+  await page.locator('.money-column.scratch >> nth=0 >> .scratch-row >> nth=0 >> .scratch-amount').blur();
+  // Committing a previewed column is 3 chained round trips (apply_template →
+  // list → save_item), slower than a plain single-row save — give it room.
+  await page.waitForTimeout(500);
+  results.push(`  Touching (blurring) a previewed row commits the WHOLE column for real, not just that row — "Trừ tạm" is saved too even though only "Gửi mẹ" was touched: ${SCRATCH_ITEMS.filter(x => x.month === NEXT_MONTH && x.column_no === 1).map(x => x.label).sort().join(',') === 'Gửi mẹ,Trừ tạm'}`);
   await page.evaluate(() => window.refresh());
   await page.waitForTimeout(150);
-  results.push(`  "Dùng mẫu" really persisted server-side (survives a refresh, not just local state): ${(await page.locator('.scratch-label').first().inputValue()) === 'Gửi mẹ' && /10,000/.test(await page.textContent('.money-column.scratch >> nth=0 >> .money-total strong'))}`);
+  results.push(`  ...and it survives a refresh (really persisted, not just DOM state), total still 10,000: ${(await page.locator('.scratch-label').first().inputValue()) === 'Gửi mẹ' && /10,000/.test(await page.textContent('.money-column.scratch >> nth=0 >> .money-total strong'))}`);
   await page.fill('#monthPicker', MONTH);
   await page.waitForTimeout(200);
 
-  // Extend the mẫu with a 2nd column, then confirm the offer is scoped
-  // per-column: column 1 of NEXT_MONTH already has real data now (from
-  // "Dùng mẫu" above) so it must NOT show the button again, while column 2
-  // (still untouched) must — this is the per-column regression coverage
-  // for the earlier "cột 2 3 4 ... nhấn lưu ... chả hiện lại tháng 11" bug,
-  // now expressed through the manual apply flow instead of auto-seeding.
+  // Extend the mẫu with a 2nd column, then confirm the preview is scoped
+  // per-column: column 1 of NEXT_MONTH already has real data (touched
+  // above) so it shows that saved row, not a re-offered preview; column 2
+  // (still untouched) auto-shows ITS OWN mẫu independently — the
+  // per-column regression coverage for the earlier "cột 2 3 4 ... nhấn lưu
+  // ... chả hiện lại tháng 11" bug. Then "+ Thêm dòng" on that still-preview
+  // column must commit the mẫu too, not silently discard it for a blank row.
   await page.click('.money-column.scratch >> nth=1 >> button:has-text("＋ Thêm dòng")');
   await page.waitForTimeout(150);
   await page.fill('.money-column.scratch >> nth=1 >> .scratch-label', 'Thưởng');
@@ -616,11 +623,12 @@ const RPC_HANDLERS = {
   await page.waitForSelector('#toast.show', { timeout: 1500 }).catch(() => {});
   await page.fill('#monthPicker', NEXT_MONTH);
   await page.waitForTimeout(200);
-  results.push(`  ${NEXT_MONTH}: column 1 (already has real data) shows NO "Dùng mẫu" button anymore: ${await page.locator('.money-column.scratch >> nth=0 >> button:has-text("Dùng mẫu")').count() === 0}`);
-  results.push(`  ${NEXT_MONTH}: column 2 (still empty) DOES show it, independently of column 1: ${await page.locator('.money-column.scratch >> nth=1 >> button:has-text("Dùng mẫu")').count() === 1}`);
-  await page.click('.money-column.scratch >> nth=1 >> button:has-text("Dùng mẫu")');
+  results.push(`  ${NEXT_MONTH} column 1 (already real) still shows "Gửi mẹ"/"Trừ tạm" as saved rows: ${(await page.locator('.money-column.scratch >> nth=0 >> .scratch-row').count()) === 2}`);
+  results.push(`  ${NEXT_MONTH} column 2 (still untouched) auto-shows ITS OWN mẫu "Thưởng"/8,000, independently of column 1: ${(await page.locator('.money-column.scratch >> nth=1 >> .scratch-label').first().inputValue()) === 'Thưởng' && (await page.locator('.money-column.scratch >> nth=1 >> .scratch-amount').first().inputValue()) === '8,000'}`);
+  results.push(`  ...still unsaved so far: ${!SCRATCH_ITEMS.some(x => x.month === NEXT_MONTH && x.column_no === 2)}`);
+  await page.click('.money-column.scratch >> nth=1 >> button:has-text("＋ Thêm dòng")');
   await page.waitForTimeout(150);
-  results.push(`  Clicking it fills column 2 with "Thưởng" / 8,000: ${(await page.locator('.money-column.scratch >> nth=1 >> .scratch-label').first().inputValue()) === 'Thưởng' && (await page.locator('.money-column.scratch >> nth=1 >> .scratch-amount').first().inputValue()) === '8,000'}`);
+  results.push(`  "+ Thêm dòng" on a still-previewed column commits the mẫu FIRST — "Thưởng" survives alongside the new blank 2nd row: ${(await page.locator('.money-column.scratch >> nth=1 >> .scratch-row').count()) === 2 && (await page.locator('.money-column.scratch >> nth=1 >> .scratch-label').first().inputValue()) === 'Thưởng'}`);
   await page.fill('#monthPicker', MONTH);
   await page.waitForTimeout(200);
 
