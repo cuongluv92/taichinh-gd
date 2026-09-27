@@ -136,6 +136,11 @@ function scratchAmountValue(el) { return n(el.value.replace(/[^\d]/g, '')); }
 function scratchRowTotal(row) { return Number(row.dataset.sign || 1) * scratchAmountValue(row.querySelector('.scratch-amount')); }
 function scratchColumn(no) {
   const items = scratchItemsFor(no);
+  // Preview and real rows render identically (same fields, same total) —
+  // easy to mistake one for the other, especially after the mẫu auto-shows
+  // in every untouched future month. Flag it plainly so it's visible
+  // without having to ask "is this actually saved?" every time.
+  const isPreview = items.length > 0 && !(state.scratchItems || []).some(x => x.column_no === no);
   const total = items.reduce((s, x, i) => s + (i === 0 ? 1 : (x.sign === -1 ? -1 : 1)) * n(x.amount), 0);
   const rows = items.map((x, i) => {
     // First row in the column is the baseline — always +, no toggle. Every
@@ -151,8 +156,9 @@ function scratchColumn(no) {
       <button class="mini-btn" type="button" aria-label="Xóa dòng" ${act('deleteScratchItem', x.id)}>✕</button>
     </div>`;
   }).join('');
-  return `<section class="card money-column scratch">
+  return `<section class="card money-column scratch${isPreview ? ' is-preview' : ''}">
     <div class="money-column-head"><input class="scratch-title" type="text" placeholder="Cột ${no}" value="${esc(scratchColumnName(no))}" data-col="${no}"></div>
+    ${isPreview ? '<p class="scratch-preview-badge">👁 Xem trước từ mẫu — CHƯA lưu, đụng vào một dòng để lưu thật</p>' : ''}
     <div class="scratch-items">${rows || '<div class="money-empty">Chưa có dòng nào</div>'}</div>
     <button class="btn sm mt-8" type="button" ${act('addScratchItem', no)}>＋ Thêm dòng</button>
     <div class="money-total"><span>Tổng</span><strong>${money(total)}</strong></div>

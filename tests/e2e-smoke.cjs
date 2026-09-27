@@ -591,6 +591,7 @@ const RPC_HANDLERS = {
   await page.waitForTimeout(200);
   results.push(`  A never-opened month (${NEXT_MONTH}) auto-shows the mẫu right away, no button needed ("Gửi mẹ"/"Trừ tạm", total 10,000): ${(await page.locator('.scratch-label').first().inputValue()) === 'Gửi mẹ' && /10,000/.test(await page.textContent('.money-column.scratch >> nth=0 >> .money-total strong'))}`);
   results.push(`  ...but it's still just a PREVIEW so far — nothing written to the database from merely viewing it: ${!SCRATCH_ITEMS.some(x => x.month === NEXT_MONTH)}`);
+  results.push(`  ...and the UI plainly says so with a "xem trước — CHƯA lưu" badge (not indistinguishable from real saved data): ${(await page.locator('.money-column.scratch >> nth=0 >> .scratch-preview-badge').count()) === 1}`);
   // .blur() alone is a no-op unless the element is actually focused first —
   // click it to focus, then blur, to really trigger the save handler.
   await page.click('.money-column.scratch >> nth=0 >> .scratch-row >> nth=0 >> .scratch-amount');
@@ -602,6 +603,7 @@ const RPC_HANDLERS = {
   await page.evaluate(() => window.refresh());
   await page.waitForTimeout(150);
   results.push(`  ...and it survives a refresh (really persisted, not just DOM state), total still 10,000: ${(await page.locator('.scratch-label').first().inputValue()) === 'Gửi mẹ' && /10,000/.test(await page.textContent('.money-column.scratch >> nth=0 >> .money-total strong'))}`);
+  results.push(`  ...and the "xem trước" badge is gone now that it's really saved: ${(await page.locator('.money-column.scratch >> nth=0 >> .scratch-preview-badge').count()) === 0}`);
   await page.fill('#monthPicker', MONTH);
   await page.waitForTimeout(200);
 
