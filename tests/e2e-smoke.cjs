@@ -616,6 +616,15 @@ const RPC_HANDLERS = {
   await page.locator('.money-column.scratch >> nth=0 >> .scratch-row >> nth=0 >> .scratch-amount').blur();
   await page.waitForTimeout(150);
   results.push(`  Touching it saves it for real, into the RIGHT month: ${SCRATCH_ITEMS.some(x => x.month === NEXT_MONTH && x.column_no === 1 && x.label === 'Gửi mẹ' && Number(x.amount) === 25000)}`);
+  // Real data-loss bug the user hit live: editing only ONE row of a
+  // still-preview column (here, "Gửi mẹ") must not silently drop the
+  // COLUMN'S OTHER row ("Trừ tạm") — both must persist together, since
+  // scratchItemsFor only shows the mẫu preview when a column has ZERO real
+  // rows (one real row would otherwise hide the rest forever).
+  results.push(`  "Trừ tạm" (the OTHER row in that column, never directly touched) was saved too, not silently dropped: ${SCRATCH_ITEMS.some(x => x.month === NEXT_MONTH && x.column_no === 1 && x.label === 'Trừ tạm')}`);
+  await page.evaluate(() => window.refresh());
+  await page.waitForTimeout(150);
+  results.push(`  Both rows still show after a refresh (total 20,000 = 25,000 − 5,000): ${(await page.locator('.money-column.scratch >> nth=0 >> .scratch-row').count()) === 2 && /20,000/.test(await page.textContent('.money-column.scratch >> nth=0 >> .money-total strong'))}`);
   await page.fill('#monthPicker', MONTH);
   await page.waitForTimeout(200);
 
@@ -634,6 +643,11 @@ const RPC_HANDLERS = {
   await page.fill('#monthPicker', NEXT_MONTH);
   await page.waitForTimeout(200);
   results.push(`  ${NEXT_MONTH} column 2 (still untouched) shows ITS OWN mẫu "Thưởng"/8,000 live, independently of column 1 (already real): ${(await page.locator('.money-column.scratch >> nth=1 >> .scratch-label').first().inputValue()) === 'Thưởng' && (await page.locator('.money-column.scratch >> nth=1 >> .scratch-amount').first().inputValue()) === '8,000'}`);
+  // "+ Thêm dòng" on a still-preview column must commit the mẫu FIRST, not
+  // just add a lone blank row and lose "Thưởng" in the process.
+  await page.click('.money-column.scratch >> nth=1 >> button:has-text("＋ Thêm dòng")');
+  await page.waitForTimeout(150);
+  results.push(`  "+ Thêm dòng" on column 2's mẫu preview commits "Thưởng" for real AND adds the new blank row (2 rows, not just the blank one): ${(await page.locator('.money-column.scratch >> nth=1 >> .scratch-row').count()) === 2 && (await page.locator('.money-column.scratch >> nth=1 >> .scratch-label').first().inputValue()) === 'Thưởng'}`);
   await page.fill('#monthPicker', MONTH);
   await page.waitForTimeout(200);
 

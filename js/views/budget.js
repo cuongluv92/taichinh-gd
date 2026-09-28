@@ -181,8 +181,22 @@ function toggleScratchBoard() {
   render();
 }
 async function addScratchItem(columnNo) {
-  try { await api.scratch('save_item', { column_no: columnNo, month: monthDate(state.month), label: '', amount: 0, sign: 1 }); await window.refresh(); }
-  catch (e) { toast(e.message, true); }
+  try {
+    // If this column is still just showing the live mẫu preview (no real
+    // rows yet), commit ALL of its mẫu rows for real first — otherwise
+    // adding one blank row would make the column non-empty with just that
+    // one row, and the mẫu's OTHER rows would silently vanish (scratchItemsFor
+    // only shows the preview when a column has ZERO real items). Sequential
+    // awaits so each insert's auto sort_order lands correctly.
+    const hasReal = (state.scratchItems || []).some(x => x.column_no === columnNo);
+    if (!hasReal) {
+      for (const t of (state.scratchTemplates || []).filter(x => x.column_no === columnNo)) {
+        await api.scratch('save_item', { column_no: columnNo, month: monthDate(state.month), label: t.label, amount: t.amount, sign: t.sign });
+      }
+    }
+    await api.scratch('save_item', { column_no: columnNo, month: monthDate(state.month), label: '', amount: 0, sign: 1 });
+    await window.refresh();
+  } catch (e) { toast(e.message, true); }
 }
 async function deleteScratchItem(id) {
   try { await api.scratch('delete_item', { id }); await window.refresh(); }
@@ -193,14 +207,30 @@ function wireBudgetView() {
     const total = [...section.querySelectorAll('.scratch-row')].reduce((s, row) => s + scratchRowTotal(row), 0);
     section.querySelector('.money-total strong').textContent = money(total);
   };
-  $$('.scratch-row').forEach(row => {
-    const id = row.dataset.id, col = Number(row.dataset.col);
+  // Saves ONE row using whatever's currently in its own label/amount/sign —
+  // month is required (not just id/col): a row with no id yet (the live mẫu
+  // preview, first ever save) inserts, and without an explicit month the
+  // server falls back to the current real-world month instead of whichever
+  // month is actually being viewed.
+  const saveRow = row => {
+    const col = Number(row.dataset.col);
     const labelEl = row.querySelector('.scratch-label'), amountEl = row.querySelector('.scratch-amount');
-    // month is required here (not just id/col) — a row with no id yet (the
-    // live mẫu preview, first ever save) inserts, and without an explicit
-    // month the server falls back to the current real-world month instead
-    // of whichever month is actually being viewed.
-    const save = () => api.scratch('save_item', { id, column_no: col, month: monthDate(state.month), label: labelEl.value, amount: scratchAmountValue(amountEl), sign: Number(row.dataset.sign) }).catch(e => toast(e.message, true));
+    return api.scratch('save_item', { id: row.dataset.id, column_no: col, month: monthDate(state.month), label: labelEl.value, amount: scratchAmountValue(amountEl), sign: Number(row.dataset.sign) })
+      .then(r => { if (r?.id) row.dataset.id = r.id; });
+  };
+  $$('.scratch-row').forEach(row => {
+    const col = Number(row.dataset.col);
+    const labelEl = row.querySelector('.scratch-label'), amountEl = row.querySelector('.scratch-amount');
+    // Touching ANY row of a still-preview column (mẫu shown, nothing saved
+    // yet) must commit the WHOLE column at once, not just this row —
+    // otherwise the column stops being "empty" after just this one insert,
+    // and the mẫu's OTHER rows vanish instead of ever getting saved. One at
+    // a time (not parallel), so each insert's auto sort_order is correct.
+    const save = () => {
+      const isPreview = row.dataset.id === '' && !(state.scratchItems || []).some(x => x.column_no === col);
+      const rows = isPreview ? [...row.closest('.money-column').querySelectorAll('.scratch-row')] : [row];
+      return rows.reduce((chain, r) => chain.then(() => saveRow(r)), Promise.resolve()).catch(e => toast(e.message, true));
+    };
     labelEl.addEventListener('blur', save);
     amountEl.addEventListener('blur', save);
     // Live total feedback while typing, before the blur-save round trip —
