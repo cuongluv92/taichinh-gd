@@ -262,18 +262,15 @@ const RPC_HANDLERS = {
     const p = body?.p_payload || {};
     if (action === 'list') {
       const month = (p.month || `${MONTH}-01`).slice(0, 7);
-      // Mirrors the SQL exactly: each column seeds itself from the mẫu
-      // independently, per (month, column_no) — but ONLY into the ONE
-      // month right after the mẫu's own source_month; a further month
-      // (N+2 or later) stays blank until it gets its own save_template
-      // call. Idempotent: calling 'list' again never duplicates rows.
-      const seededCols = new Set(SCRATCH_ITEMS.filter(x => x.month === month).map(x => x.column_no));
-      SCRATCH_TEMPLATE.forEach(t => {
-        if (!seededCols.has(t.column_no) && t.source_month && addMonths(t.source_month, 1) === month) {
-          SCRATCH_ITEMS.push({ id: newId('scr'), column_no: t.column_no, month, label: t.label, amount: t.amount, sign: t.sign, sort_order: t.sort_order });
-        }
-      });
-      return { columns: SCRATCH_COLUMNS, items: SCRATCH_ITEMS.filter(x => x.month === month) };
+      // Mirrors the SQL exactly: 'list' never writes anything. It returns
+      // real items plus the mẫu, but ONLY the mẫu that applies to EXACTLY
+      // this month (source_month + 1 month) — a further month gets an
+      // empty templates array, genuinely blank. The frontend shows an
+      // empty column's mẫu live (not persisted) until a row is touched,
+      // so re-saving the mẫu (edit + "Lưu" again) is reflected immediately
+      // in whichever next month hasn't been independently edited yet.
+      const templates = SCRATCH_TEMPLATE.filter(t => t.source_month && addMonths(t.source_month, 1) === month);
+      return { columns: SCRATCH_COLUMNS, items: SCRATCH_ITEMS.filter(x => x.month === month), templates };
     }
     if (action === 'save_template') {
       const month = (p.month || `${MONTH}-01`).slice(0, 7);
@@ -570,10 +567,9 @@ const RPC_HANDLERS = {
   await page.waitForTimeout(150);
   results.push(`  The "−" sign persisted server-side after refresh (total still 10,000): ${/10,000/.test(await page.textContent('.money-column.scratch >> nth=0 >> .money-total strong'))}`);
 
-  // "Lưu" — save name AND amount AND sign as the mẫu. Simple, per user
-  // request: no button, no preview state — pressing "Lưu" here is what
-  // makes the NEXT never-touched month have this data for real,
-  // automatically, the moment it's opened.
+  // "Lưu" — save name AND amount AND sign as the mẫu. Per user request: no
+  // button, no persisted seed — the NEXT never-touched month shows the mẫu
+  // live, right away, but nothing is saved just from looking at it.
   await resetToast();
   await page.click('button:has-text("💾 Lưu")');
   await page.waitForSelector('#toast.show', { timeout: 1500 }).then(() => results.push('CLICK "💾 Lưu": saved - OK')).catch(() => results.push('CLICK "💾 Lưu": no toast - FAIL'));
@@ -583,11 +579,8 @@ const RPC_HANDLERS = {
   const NEXT_MONTH = addMonths(MONTH, 1);
   await page.fill('#monthPicker', NEXT_MONTH);
   await page.waitForTimeout(200);
-  results.push(`  A never-opened month (${NEXT_MONTH}) auto-fills "Gửi mẹ" AND "Trừ tạm" with the SAME amounts/sign as the mẫu (total still 10,000), not blank: ${(await page.locator('.scratch-label').first().inputValue()) === 'Gửi mẹ' && /10,000/.test(await page.textContent('.money-column.scratch >> nth=0 >> .money-total strong'))}`);
-  results.push(`  ...and it's really saved server-side, not just a client-side guess: ${SCRATCH_ITEMS.filter(x => x.month === NEXT_MONTH && x.column_no === 1).map(x => x.label).sort().join(',') === 'Gửi mẹ,Trừ tạm'}`);
-  await page.evaluate(() => window.refresh());
-  await page.waitForTimeout(150);
-  results.push(`  ...survives a refresh too (total still 10,000): ${(await page.locator('.scratch-label').first().inputValue()) === 'Gửi mẹ' && /10,000/.test(await page.textContent('.money-column.scratch >> nth=0 >> .money-total strong'))}`);
+  results.push(`  A never-opened month (${NEXT_MONTH}) shows "Gửi mẹ" AND "Trừ tạm" live, SAME amounts/sign as the mẫu (total 10,000), not blank: ${(await page.locator('.scratch-label').first().inputValue()) === 'Gửi mẹ' && /10,000/.test(await page.textContent('.money-column.scratch >> nth=0 >> .money-total strong'))}`);
+  results.push(`  ...but nothing is saved yet just from viewing it: ${!SCRATCH_ITEMS.some(x => x.month === NEXT_MONTH)}`);
   // Scope check: the mẫu only unlocks the ONE month right after it — a
   // month further ahead stays genuinely blank until IT gets its own "Lưu"
   // (user's explicit spec: "tháng 11 tự hiện ... tháng 12 chỉ khi nào tôi
@@ -595,14 +588,40 @@ const RPC_HANDLERS = {
   const MONTH_AFTER_NEXT = addMonths(MONTH, 2);
   await page.fill('#monthPicker', MONTH_AFTER_NEXT);
   await page.waitForTimeout(200);
-  results.push(`  A month further ahead (${MONTH_AFTER_NEXT}, N+2) stays BLANK — the mẫu only unlocks the ONE month right after it, not every month beyond: ${await page.locator('.money-column.scratch >> nth=0 >> .scratch-row').count() === 0}`);
+  results.push(`  A month further ahead (${MONTH_AFTER_NEXT}, N+2) stays BLANK — the mẫu only unlocks the ONE month right after it: ${await page.locator('.money-column.scratch >> nth=0 >> .scratch-row').count() === 0}`);
+  await page.fill('#monthPicker', MONTH);
+  await page.waitForTimeout(200);
+
+  // Bug fix: editing this month's data and re-saving the mẫu must show up
+  // live in the NEXT month immediately, even though that month was never
+  // touched before — previously the mẫu got frozen into the next month the
+  // FIRST time it was opened, so a later edit + re-"Lưu" never propagated
+  // (user report: "sửa dữ liệu ở tháng 10 sau đó nhấn lưu, tháng 11 không
+  // thay đổi theo").
+  await page.fill('.money-column.scratch >> nth=0 >> .scratch-row >> nth=0 >> .scratch-amount', '20000');
+  await page.locator('.money-column.scratch >> nth=0 >> .scratch-row >> nth=0 >> .scratch-amount').blur();
+  await page.waitForTimeout(100);
+  await resetToast();
+  await page.click('button:has-text("💾 Lưu")');
+  await page.waitForSelector('#toast.show', { timeout: 1500 }).catch(() => {});
+  await page.fill('#monthPicker', NEXT_MONTH);
+  await page.waitForTimeout(200);
+  results.push(`  ${NEXT_MONTH} (still never touched) immediately reflects the RE-SAVED mẫu — "Gửi mẹ" now 20,000, total 15,000, not the old 15,000/10,000: ${(await page.locator('.scratch-amount').first().inputValue()) === '20,000' && /15,000/.test(await page.textContent('.money-column.scratch >> nth=0 >> .money-total strong'))}`);
+  // Touching it now makes it real, independent data — and lands in THIS
+  // month specifically (a real bug caught here: the blur-save handler
+  // didn't send `month` at all, so a first-ever save of a live-preview row,
+  // which has no id yet, silently fell back to inserting into today's
+  // real-world month instead of whichever month was actually being viewed).
+  await page.fill('.money-column.scratch >> nth=0 >> .scratch-row >> nth=0 >> .scratch-amount', '25000');
+  await page.locator('.money-column.scratch >> nth=0 >> .scratch-row >> nth=0 >> .scratch-amount').blur();
+  await page.waitForTimeout(150);
+  results.push(`  Touching it saves it for real, into the RIGHT month: ${SCRATCH_ITEMS.some(x => x.month === NEXT_MONTH && x.column_no === 1 && x.label === 'Gửi mẹ' && Number(x.amount) === 25000)}`);
   await page.fill('#monthPicker', MONTH);
   await page.waitForTimeout(200);
 
   // Regression: a column that already has items for a month must not block
-  // ANOTHER column of the SAME month from seeding later, once the mẫu grows
-  // to cover it — the earlier-reported "cột 2 3 4 ... nhấn lưu ... chả hiện
-  // lại tháng 11" bug. Extend the mẫu with a 2nd column and confirm.
+  // ANOTHER column of the SAME month from showing its own mẫu — the
+  // earlier-reported "cột 2 3 4 ... nhấn lưu ... chả hiện lại tháng 11" bug.
   await page.click('.money-column.scratch >> nth=1 >> button:has-text("＋ Thêm dòng")');
   await page.waitForTimeout(150);
   await page.fill('.money-column.scratch >> nth=1 >> .scratch-label', 'Thưởng');
@@ -614,7 +633,7 @@ const RPC_HANDLERS = {
   await page.waitForSelector('#toast.show', { timeout: 1500 }).catch(() => {});
   await page.fill('#monthPicker', NEXT_MONTH);
   await page.waitForTimeout(200);
-  results.push(`  Extending mẫu with a 2nd column later still seeds it into ${NEXT_MONTH} even though column 1 already had items there (per-column, not per-month, seeding): ${(await page.locator('.money-column.scratch >> nth=1 >> .scratch-label').first().inputValue()) === 'Thưởng' && (await page.locator('.money-column.scratch >> nth=1 >> .scratch-amount').first().inputValue()) === '8,000'}`);
+  results.push(`  ${NEXT_MONTH} column 2 (still untouched) shows ITS OWN mẫu "Thưởng"/8,000 live, independently of column 1 (already real): ${(await page.locator('.money-column.scratch >> nth=1 >> .scratch-label').first().inputValue()) === 'Thưởng' && (await page.locator('.money-column.scratch >> nth=1 >> .scratch-amount').first().inputValue()) === '8,000'}`);
   await page.fill('#monthPicker', MONTH);
   await page.waitForTimeout(200);
 

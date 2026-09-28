@@ -117,7 +117,15 @@ function openCreditColumnManager() {
 // Collapsed by default — one single toggle hides/shows all 4 columns
 // together, there's no per-column hide.
 // ---------------------------------------------------------------------
-function scratchItemsFor(no) { return (state.scratchItems || []).filter(x => x.column_no === no); }
+function scratchItemsFor(no) {
+  const real = (state.scratchItems || []).filter(x => x.column_no === no);
+  if (real.length) return real;
+  // A column with no real items yet shows last month's mẫu live (server
+  // already only sends it for the ONE eligible month) — nothing is saved
+  // just from viewing it, and re-saving the mẫu (edit + "Lưu" again)
+  // shows up here immediately since it's never frozen into the database.
+  return (state.scratchTemplates || []).filter(t => t.column_no === no).map(t => ({ ...t, id: '' }));
+}
 function scratchColumnName(no) { return (state.scratchColumns || []).find(x => x.column_no === no)?.name || ''; }
 // A plain type="number" input can't show grouping separators while typing —
 // this renders/reads `.scratch-amount` as free text with live ","-grouping
@@ -188,7 +196,11 @@ function wireBudgetView() {
   $$('.scratch-row').forEach(row => {
     const id = row.dataset.id, col = Number(row.dataset.col);
     const labelEl = row.querySelector('.scratch-label'), amountEl = row.querySelector('.scratch-amount');
-    const save = () => api.scratch('save_item', { id, column_no: col, label: labelEl.value, amount: scratchAmountValue(amountEl), sign: Number(row.dataset.sign) }).catch(e => toast(e.message, true));
+    // month is required here (not just id/col) — a row with no id yet (the
+    // live mẫu preview, first ever save) inserts, and without an explicit
+    // month the server falls back to the current real-world month instead
+    // of whichever month is actually being viewed.
+    const save = () => api.scratch('save_item', { id, column_no: col, month: monthDate(state.month), label: labelEl.value, amount: scratchAmountValue(amountEl), sign: Number(row.dataset.sign) }).catch(e => toast(e.message, true));
     labelEl.addEventListener('blur', save);
     amountEl.addEventListener('blur', save);
     // Live total feedback while typing, before the blur-save round trip —
