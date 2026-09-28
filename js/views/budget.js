@@ -218,18 +218,30 @@ function wireBudgetView() {
     return api.scratch('save_item', { id: row.dataset.id, column_no: col, month: monthDate(state.month), label: labelEl.value, amount: scratchAmountValue(amountEl), sign: Number(row.dataset.sign) })
       .then(r => { if (r?.id) row.dataset.id = r.id; });
   };
+  // A row's label AND amount fields both blur-save independently — on a
+  // real network (unlike the instant test mock) the label's blur can still
+  // be mid-flight when the amount field also blurs right after. Without
+  // this lock, BOTH would see the column as still empty and each launch
+  // their own full-column commit, racing each other into duplicate rows
+  // (user-reported: first save looked right, the very next save on the
+  // same row "didn't come out"). One shared promise per column serializes
+  // it: whichever blur fires first commits the column; any blur that fires
+  // while that's in flight just waits for it, then re-saves its own row on
+  // top so whatever was just typed there still lands.
+  const commitInFlight = {};
   $$('.scratch-row').forEach(row => {
     const col = Number(row.dataset.col);
     const labelEl = row.querySelector('.scratch-label'), amountEl = row.querySelector('.scratch-amount');
-    // Touching ANY row of a still-preview column (mẫu shown, nothing saved
-    // yet) must commit the WHOLE column at once, not just this row —
-    // otherwise the column stops being "empty" after just this one insert,
-    // and the mẫu's OTHER rows vanish instead of ever getting saved. One at
-    // a time (not parallel), so each insert's auto sort_order is correct.
     const save = () => {
       const isPreview = row.dataset.id === '' && !(state.scratchItems || []).some(x => x.column_no === col);
-      const rows = isPreview ? [...row.closest('.money-column').querySelectorAll('.scratch-row')] : [row];
-      return rows.reduce((chain, r) => chain.then(() => saveRow(r)), Promise.resolve()).catch(e => toast(e.message, true));
+      if (!isPreview) return saveRow(row).catch(e => toast(e.message, true));
+      if (!commitInFlight[col]) {
+        const rows = [...row.closest('.money-column').querySelectorAll('.scratch-row')];
+        commitInFlight[col] = rows.reduce((chain, r) => chain.then(() => saveRow(r)), Promise.resolve())
+          .finally(() => { delete commitInFlight[col]; });
+        return commitInFlight[col].catch(e => toast(e.message, true));
+      }
+      return commitInFlight[col].then(() => saveRow(row)).catch(e => toast(e.message, true));
     };
     labelEl.addEventListener('blur', save);
     amountEl.addEventListener('blur', save);

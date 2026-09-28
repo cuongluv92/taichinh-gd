@@ -454,6 +454,12 @@ const RPC_HANDLERS = {
       let body = {};
       try { body = JSON.parse(route.request().postData() || '{}'); } catch {}
       const handler = RPC_HANDLERS[fn];
+      // Scratch save_item gets an artificial delay so a real network's
+      // round-trip time is representable — a race-condition regression
+      // below relies on two blur-triggered saves genuinely overlapping,
+      // which they never would against this mock's otherwise-instant
+      // resolution.
+      if (fn === 'taichinh_gd_scratch_api' && body.p_action === 'save_item') await new Promise(r => setTimeout(r, 60));
       const json = handler ? handler(body.p_action, body) : {};
       const { __status, ...jsonBody } = json || {};
       await route.fulfill({ status: __status || 200, contentType: 'application/json', body: JSON.stringify(jsonBody) });
@@ -622,9 +628,16 @@ const RPC_HANDLERS = {
   // scratchItemsFor only shows the mẫu preview when a column has ZERO real
   // rows (one real row would otherwise hide the rest forever).
   results.push(`  "Trừ tạm" (the OTHER row in that column, never directly touched) was saved too, not silently dropped: ${SCRATCH_ITEMS.some(x => x.month === NEXT_MONTH && x.column_no === 1 && x.label === 'Trừ tạm')}`);
+  // User report: "lần đầu 0 nó hiện đúng nhưng lần lưu tiếp theo ghi số vào
+  // nó lại không ra" — a SECOND edit on a row that JUST became real (via
+  // the atomic column commit above) must also stick, not just the first.
+  await page.fill('.money-column.scratch >> nth=0 >> .scratch-row >> nth=0 >> .scratch-amount', '30000');
+  await page.locator('.money-column.scratch >> nth=0 >> .scratch-row >> nth=0 >> .scratch-amount').blur();
+  await page.waitForTimeout(150);
+  results.push(`  A SECOND edit on that same now-real row also saves correctly (30,000, not stuck at 25,000): ${SCRATCH_ITEMS.some(x => x.month === NEXT_MONTH && x.column_no === 1 && x.label === 'Gửi mẹ' && Number(x.amount) === 30000) && SCRATCH_ITEMS.filter(x => x.month === NEXT_MONTH && x.column_no === 1 && x.label === 'Gửi mẹ').length === 1}`);
   await page.evaluate(() => window.refresh());
   await page.waitForTimeout(150);
-  results.push(`  Both rows still show after a refresh (total 20,000 = 25,000 − 5,000): ${(await page.locator('.money-column.scratch >> nth=0 >> .scratch-row').count()) === 2 && /20,000/.test(await page.textContent('.money-column.scratch >> nth=0 >> .money-total strong'))}`);
+  results.push(`  Both rows still show after a refresh (total 25,000 = 30,000 − 5,000): ${(await page.locator('.money-column.scratch >> nth=0 >> .scratch-row').count()) === 2 && /25,000/.test(await page.textContent('.money-column.scratch >> nth=0 >> .money-total strong'))}`);
   await page.fill('#monthPicker', MONTH);
   await page.waitForTimeout(200);
 
@@ -643,6 +656,35 @@ const RPC_HANDLERS = {
   await page.fill('#monthPicker', NEXT_MONTH);
   await page.waitForTimeout(200);
   results.push(`  ${NEXT_MONTH} column 2 (still untouched) shows ITS OWN mẫu "Thưởng"/8,000 live, independently of column 1 (already real): ${(await page.locator('.money-column.scratch >> nth=1 >> .scratch-label').first().inputValue()) === 'Thưởng' && (await page.locator('.money-column.scratch >> nth=1 >> .scratch-amount').first().inputValue()) === '8,000'}`);
+
+  // Race-condition regression (user-reported, only shows up on a real
+  // network, not this otherwise-instant mock — hence the artificial delay
+  // above): label-blur and amount-blur on the SAME still-preview row can
+  // fire back-to-back before the FIRST save round-trips. Both used to see
+  // the column as empty and each launch their own full-column commit,
+  // racing into duplicate rows ("lần đầu 0 nó hiện đúng nhưng lần lưu tiếp
+  // theo ghi số vào nó lại không ra"). Point a fresh month at column 2's
+  // same single-row mẫu ("Thưởng"/8,000) to test this in isolation.
+  const RACE_MONTH = addMonths(NEXT_MONTH, 3);
+  // Push a 2nd, independent mẫu row for a different source_month rather
+  // than mutating the existing column-2 row — that one must stay eligible
+  // for NEXT_MONTH's own already-asserted test right above.
+  SCRATCH_TEMPLATE.push({ column_no: 2, label: 'Thưởng', amount: 8000, sign: 1, sort_order: 0, source_month: addMonths(RACE_MONTH, -1) });
+  await page.fill('#monthPicker', RACE_MONTH);
+  await page.waitForTimeout(200);
+  await page.fill('.money-column.scratch >> nth=1 >> .scratch-row >> nth=0 >> .scratch-label', 'Thưởng 2');
+  await page.locator('.money-column.scratch >> nth=1 >> .scratch-row >> nth=0 >> .scratch-label').blur();
+  // Deliberately no wait here — fire the amount blur immediately after,
+  // while the label's save (artificially delayed) is still in flight.
+  await page.fill('.money-column.scratch >> nth=1 >> .scratch-row >> nth=0 >> .scratch-amount', '9000');
+  await page.locator('.money-column.scratch >> nth=1 >> .scratch-row >> nth=0 >> .scratch-amount').blur();
+  await page.waitForTimeout(400);
+  const raceRows = SCRATCH_ITEMS.filter(x => x.month === RACE_MONTH && x.column_no === 2);
+  results.push(`  Racing label-blur + amount-blur on the same preview row creates exactly 1 row, not duplicates: ${raceRows.length === 1}`);
+  results.push(`  ...and BOTH edits landed ("Thưởng 2" AND 9,000) — neither was lost to the race: ${raceRows[0]?.label === 'Thưởng 2' && Number(raceRows[0]?.amount) === 9000}`);
+  await page.fill('#monthPicker', MONTH);
+  await page.waitForTimeout(200);
+
   // "+ Thêm dòng" on a still-preview column must commit the mẫu FIRST, not
   // just add a lone blank row and lose "Thưởng" in the process.
   await page.click('.money-column.scratch >> nth=1 >> button:has-text("＋ Thêm dòng")');
